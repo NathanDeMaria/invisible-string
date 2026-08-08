@@ -374,7 +374,7 @@ class Predictor(ABC):
         return None
 ```
 
-`None` doubles as the capability flag from §8.8 — it's what tells the ratings table
+`None` doubles as the capability flag from §9.8 — it's what tells the ratings table
 and the history job to skip `FlatPredictor`.
 
 ### An observer, not an overridden callback
@@ -508,7 +508,151 @@ a few dollars a month, not zero.
 
 ---
 
-## 8. Changes needed in cassandra
+## 8. CI/CD
+
+### What already exists to match
+
+`EndGame/.github/workflows/on_push.yml` is the house style: a `lint` job matrixed
+over packages (`poetry install`, `ruff format --check`, `ruff check`, `ty check`),
+then a `make-push` job gated on it that builds and pushes the image to ECR. CI calls
+**Makefile targets**, not inlined shell, so local and CI run the same thing — worth
+continuing. cassandra has a `Makefile` with `lint`/`test` but no workflows at all.
+
+Two things not to inherit:
+
+- **EndGame's lint job never runs the tests**, despite `*_test.py` files throughout.
+  Add pytest here from the start.
+- **cassandra's `make lint` runs `ruff check --fix`**, which mutates the tree. Fine
+  locally, wrong in CI — it can "pass" by rewriting code nobody reviewed. Split
+  `make fmt` (mutating, local) from `make lint` (check-only, CI).
+
+Also worth settling deliberately rather than by accident: cassandra type-checks with
+**mypy**, EndGame with **ty**. I'd take mypy for `backend/` — it's pydantic-heavy and
+mypy has the pydantic plugin, where `ty` is still pre-1.0 (`^0.0.65`). Python pins to
+3.14, since that's what cassandra requires.
+
+### Three stacks, one gate
+
+The three directories have independent toolchains and change independently, so
+running all of them on every commit is waste — but naive `paths:` filters plus
+branch protection is the classic footgun: a required check that's skipped never
+reports, and the PR blocks forever.
+
+The pattern that actually works:
+
+```yaml
+jobs:
+  changes:              # always runs, dorny/paths-filter
+    outputs: {backend, frontend, infra}
+  backend:   if: needs.changes.outputs.backend == 'true'
+  frontend:  if: needs.changes.outputs.frontend == 'true'
+  infra:     if: needs.changes.outputs.infra == 'true'
+  ci:        # always runs, needs: [backend, frontend, infra]
+             # fails if any dependency failed; passes if they were skipped
+```
+
+`ci` is the **only** required status check. Everything else is free to skip.
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `ci.yml` | push, PR | the above — lint + test per changed stack |
+| `image.yml` | push to `main` (backend/frontend paths) | build + push to ECR |
+| `terraform.yml` | PR touching `infra/**` → plan; push to `main` → apply | |
+
+### Per-stack checks
+
+**`backend/`** — `ruff format --check`, `ruff check`, `mypy`, `pytest`.
+
+The `ModelRelease` artifact pays off here: tests need a small fixture JSON and
+nothing else — no S3, no model run, no 16 seasons of pickles. Override the release-store
+dependency with a fake via FastAPI's `dependency_overrides` rather than
+reaching for `moto`; it's a one-function seam.
+
+Worth one dedicated test: **validate the golden fixture against cassandra's current
+`ModelRelease` schema.** cassandra is pinned by git rev, so drift only happens when
+you bump the pin — and this is what tells you the bump broke something, rather than
+finding out from a 500 in production.
+
+**`frontend/`** — `eslint`, `prettier --check`, `tsc --noEmit`, `vitest`.
+
+Plus one check that earns its keep with RTK Query: **generate the API client from
+FastAPI's OpenAPI schema and fail if the committed types are stale.** Run the
+backend's schema export, regenerate with `@rtk-query/codegen-openapi`, `git diff
+--exit-code`. Without it, a renamed response field is a runtime `undefined` in the
+browser that nothing catches. This is the highest-value check in the whole setup,
+because it's the one seam where the two stacks can silently disagree.
+
+**`infra/`** — `terraform fmt -check -recursive`, `terraform init -backend=false`,
+`terraform validate`. Add `tflint` if it starts feeling loose; skip `checkov` for
+something this small.
+
+### Credentials: OIDC, not access keys
+
+EndGame uses long-lived `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets.
+Don't carry that forward here — terraform apply needs near-admin permissions, and a
+static key with those rights sitting in repo secrets is the worst artifact in the
+whole design.
+
+Use `aws-actions/configure-aws-credentials` with `role-to-assume` and
+`permissions: id-token: write`. **Two roles, not one:**
+
+| Role | Assumed by | Permissions |
+|---|---|---|
+| `invisible-string-ci-plan` | PRs | read-only + terraform state read |
+| `invisible-string-ci-apply` | pushes to `main` only | apply + ECR push |
+
+The trust policy conditions on `token.actions.githubusercontent.com:sub` matching
+`repo:NathanDeMaria/invisible-string:ref:refs/heads/main` for the apply role. A PR
+from a fork then physically cannot reach apply credentials — which matters because
+`terraform plan` executes provider code and a PR can change what runs.
+
+Related: trigger on `pull_request`, never `pull_request_target`. The latter runs the
+*base* workflow with secrets available to a fork's code.
+
+Bootstrapping is circular — the OIDC provider and both roles are themselves terraform
+in `infra/`. Apply once from your laptop, and thereafter it manages itself.
+
+### Deploying the app
+
+App Runner changes the shape here for the better. Rather than terraform running on
+every app change:
+
+1. `image.yml` builds the multi-stage image (node build → python runtime, per §4) and
+   pushes `:${GITHUB_SHA::7}` plus `:latest`, only from `main`.
+2. The App Runner service has `auto_deployments_enabled = true` watching `:latest`,
+   so the push *is* the deploy. No `apprunner start-deployment`, no terraform.
+
+That keeps "ship the app" (frequent, fast) fully separate from "change the infra"
+(rare, reviewed). Rollback is retagging a known-good SHA as `:latest`.
+
+Reuse EndGame's buildx **registry** layer cache (`type=registry` against a
+`:buildcache` tag) rather than `type=gha` — the comment in `on_push.yml` explains why
+at length, and the reasoning carries over unchanged.
+
+### Terraform apply
+
+Plan on PR with the output posted as a sticky comment; apply on merge to `main`;
+`workflow_dispatch` as a manual escape hatch. State is already S3 with
+`use_lockfile = true`, so native S3 locking handles concurrency — no DynamoDB table.
+Add `concurrency: { group: terraform-apply, cancel-in-progress: false }` so two
+merges can't apply simultaneously.
+
+One tradeoff to make consciously: re-planning at apply time (simpler) versus saving
+the PR's plan file and applying exactly that (correct — what you reviewed is what
+runs). For a solo repo where you're the only one merging, re-plan is fine; if apply
+ever surprises you, that's the knob.
+
+### Keeping up with cassandra
+
+The git-rev pin means bumping cassandra is a manual `poetry lock` and Dependabot
+won't do it. Given how tightly coupled the two are, a weekly scheduled workflow that
+bumps the rev to cassandra's `main`, runs the schema contract test, and opens a PR
+is a small amount of YAML that turns "the artifact schema changed under me" from a
+production surprise into a red check.
+
+---
+
+## 9. Changes needed in cassandra
 
 The webapp shouldn't reimplement any model math, which means a handful of additions
 upstream. Items 1 and 3 (the §1a/§1b correctness fixes) are already in flight on a
@@ -556,14 +700,14 @@ needs to do, just something the release artifacts should be produced after.
 
 ---
 
-## 9. Phasing
+## 10. Phasing
 
 | Phase | Scope |
 |---|---|
 | 1 | cassandra plumbing: calibration persistence, `Predictor.ratings`, `week_observer`, `serving/`, state dicts. One release JSON + `history.parquet` in S3, written by hand from a local run. |
-| 2 | `backend/`: ratings, predict and history endpoints reading those files. Run locally. |
-| 3 | `frontend/`: ratings table, matchup page, rating chart. Still local. |
-| 4 | `infra/`: ECR, App Runner, DNS. Ship it. |
+| 2 | `backend/`: ratings, predict and history endpoints reading those files. Run locally. `ci.yml` with the change-detection gate lands here — cheap now, annoying to retrofit. |
+| 3 | `frontend/`: ratings table, matchup page, rating chart. Still local. Add the OpenAPI codegen drift check with the first typed endpoint. |
+| 4 | `infra/`: OIDC roles first (bootstrapped by hand), then ECR, App Runner, DNS. `image.yml` + `terraform.yml`. Ship it. |
 | 5 | Refresh job + scheduler + admin endpoints. This is where the "live update" lands. |
 | 6 | Nice-to-haves: weekly full-replay guardrail, upcoming games with predictions attached. |
 
@@ -573,7 +717,7 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
 
 ---
 
-## 10. Open questions
+## 11. Open questions
 
 1. **Which model is "the" model per league?** The ratings table needs a default.
    Simplest is a `default_model` field in the release index (or just "highest
@@ -590,3 +734,11 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    authenticated admin path. App Runner has no ALB to hang an IP allowlist off, so
    if the whole app should be private that's either real auth in the app or a
    different hosting shape — worth deciding before phase 4.
+5. **Auto-apply terraform on merge, or keep apply manual?** §8 assumes auto-apply
+   with a `workflow_dispatch` escape hatch, which is pleasant right up until an IAM
+   or App Runner change takes the service down without you watching. Manual apply on
+   a solo repo costs one click and removes that failure mode entirely.
+6. **Backfill CI onto cassandra?** It has `make lint`/`make test` and no workflows,
+   and this repo is about to depend on it by git rev for a schema contract. A copy of
+   `ci.yml`'s backend job there would mean a green cassandra `main` actually means
+   something when you bump the pin.
