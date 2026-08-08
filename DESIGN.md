@@ -5,7 +5,7 @@ results: current ratings per league, and win probability / predicted spread for 
 hypothetical matchup.
 
 ```
-infra/      terraform: ECR, Fargate service + ALB, Batch refresh job, IAM
+infra/      terraform: ECR, App Runner service, Batch refresh job, IAM
 backend/    FastAPI, depends on cassandra as a git dependency
 frontend/   React + Redux Toolkit (RTK Query), built into backend's static dir
 ```
@@ -30,6 +30,49 @@ varies by class:
 `evaluate_models.py` is the only thing that calls `save_state`, and it writes to
 `~/.cassandra/models/<league>/<name>_result_state.json` — **on the machine that ran
 the job**. Nothing about ratings currently reaches S3.
+
+### 1a. Ratings don't currently move
+
+`generate_predictions` — the one loop every pipeline runs through — calls
+`predictor.predict_game(game)`. Since commit `0f93c96` ("Split 'update' and
+'predict'", March 2026), `predict_game` is the *pure* half: it reads ratings and
+returns a probability without mutating anything. `update_game` is the half that
+learns, and **nothing outside the unit tests calls it.**
+
+That commit refactored all four predictors and all four test files, but didn't touch
+`save_predictions.py`. So the caller kept calling what is now the read-only method.
+The consequences, if this is what I think it is:
+
+- `EloPredictor` starts with `ratings or {}` and every team stays at 1500 forever;
+  its win probability is a constant determined only by `home_advantage`.
+- `Glicko`/`Elo538` stay pinned at whatever `OpponentPriorManager` loaded, and
+  `postrun_callback` then saves "final" priors computed from ratings that never moved.
+- In `optimize.py`, `k` cannot affect the Brier objective at all, because nothing
+  ever applies it. Only `home_advantage` does anything.
+
+The fix is one line — `predict_game` → `update_game` in `generate_predictions` — but
+it is **blocking for this entire webapp**, and doubly so for rating history: a chart
+built today is 360 flat lines at 1500. Worth confirming this is a regression and not
+something deliberate I've misread.
+
+### 1b. Games are walked in fetch order, not chronological order
+
+`generate_predictions` iterates `season.weeks` and `week.games` directly. endgame's
+own docstrings are pointed about this: *"Prefer this over `.weeks`: the raw list's
+order depends on how the season happened to be built and merged, so it isn't
+reliably chronological."*
+
+NCAABB seasons carry `season_start = REGULAR_SEASON_START = (11, 1)`, and per the
+`Season` docstring that means `.weeks` is *only a record of how the games were
+fetched* — the chronological view is `calendar_weeks`, rebuilt from game dates,
+precisely because source weeks "can still overlap in time." `iter_weeks()` exists to
+walk this correctly and raises `OverlappingWeeksError` when they do overlap.
+
+So today `pass_week()` fires on boundaries that may overlap in time, over games in an
+arbitrary order. For a rating *timeseries* that makes the x-axis meaningless. It also
+qualifies the incremental-refresh claim in §5a: a fold is only reproducible if the
+sequence is deterministic. `generate_predictions` should use `iter_weeks(season)` and
+`week.games_in_order`.
 
 **Predictions** are `predict_game(game: Game) -> Prediction(team1_win_prob)`. It
 takes a whole `endgame.types.Game`, not two team names — deliberately, per the
@@ -69,7 +112,7 @@ flowchart LR
     S3G --> REF
   end
   REL[("s3://bucket/models/{league}/{model}/<br/>runs/{run_id}.json + latest.json")]
-  REL --> API["FastAPI on Fargate<br/>(cached, 60s TTL + ETag)"]
+  REL --> API["FastAPI on App Runner<br/>(cached, 60s TTL + ETag)"]
   API --> UI["React SPA<br/>(served by the same container)"]
   API -->|"SubmitJob"| REF
 ```
@@ -164,6 +207,9 @@ GET  /api/leagues/{league}/ratings?model=&limit=&offset=
        -> {run_id, created_at, trained_through, metrics,
            ratings: [{rank, team, rating, rd?, wins, losses, delta_7d?}]}
 
+GET  /api/leagues/{league}/history?model=&teams=Duke,UNC&from=&to=      # §6
+       -> {series: [{team, points: [{year, week, date, rating, rd}]}]}
+
 GET  /api/predict?league=&model=&home=&away=&neutral=false&home_advantage=
        -> {home, away, neutral, home_win_prob, away_win_prob,
            predicted_spread, home_rating, away_rating, run_id, model}
@@ -225,11 +271,16 @@ frontend/src/
   ui/                      # shared bits
 ```
 
-Two routes:
+Three routes:
 
 - **`/ratings/:league`** — sortable table (rank, team, rating, RD, W-L, 7-day
   change). TanStack Table for sort/filter. ~360 D1 teams per league, so virtualize
-  the rows but don't paginate — a scannable single list is the point.
+  the rows but don't paginate — a scannable single list is the point. Row selection
+  feeds the compare chart.
+- **`/history/:league`** — rating-over-time lines for the selected teams, defaulting
+  to the current season with a range picker back through 2010. Time on the x-axis,
+  not week number (§6). Reachable from the ratings table with teams preselected, and
+  team-keyed in the query string so a comparison is shareable.
 - **`/matchup`** — two team comboboxes fed from the ratings response already in the
   RTK Query cache (no extra endpoint), a neutral-site toggle, and a result card:
   win probability for each side plus the spread rendered in familiar form
@@ -298,82 +349,230 @@ against the same pydantic model. A posted run always starts a fresh lineage
 
 ---
 
-## 6. Infra (`infra/`)
+## 6. Rating history per team
+
+The predictor callbacks are the right seam for this — `pass_week()` is already
+invoked at exactly the granularity a chart wants, on every pipeline run, for free.
+Two changes make it usable.
+
+### The `ratings` accessor
+
+`Predictor` has no way to read ratings out. `get_rating` is defined per subclass with
+incompatible return types (`float` for Elo/Elo538, `_Rating` for Glicko) and doesn't
+exist at all on `FlatPredictor`. So the base class needs a normalized view:
+
+```python
+class TeamRating(NamedTuple):
+    rating: float
+    rd: float | None = None
+
+class Predictor(ABC):
+    @property
+    def ratings(self) -> dict[str, TeamRating] | None:
+        """None for predictors that don't rate teams."""
+        return None
+```
+
+`None` doubles as the capability flag from §8.8 — it's what tells the ratings table
+and the history job to skip `FlatPredictor`.
+
+### An observer, not an overridden callback
+
+The tempting move is a wrapper `Predictor` that overrides `pass_week()` to snapshot.
+I'd avoid it: `pass_week` is part of the *model's* contract — it's where Glicko
+inflates RD — so a snapshot taken inside it is ambiguous about whether it lands
+before or after that inflation, and a wrapper has to reimplement the whole ABC to
+delegate. Instead, hang an optional observer off the traversal, where the call site
+controls ordering:
+
+```python
+def generate_predictions(
+    predictor, seasons, post_callbacks=False, week_observer=None
+) -> Iterator[GameResult]:
+    for season in seasons:
+        for week in iter_weeks(season):              # §1b
+            for game in week.games_in_order:
+                prediction = predictor.update_game(game)   # §1a
+                yield GameResult(prediction, game, season.year, week.number)
+            if week_observer:
+                week_observer(season.year, week.number, predictor.ratings)
+            predictor.pass_week()
+        predictor.pass_season()
+```
+
+Snapshotting *before* `pass_week`/`pass_season` means each point is "the rating this
+team finished that week with," which is what you want to plot. `pass_season()` is
+then the natural place to capture end-of-season finals — worth keeping deliberate,
+since Glicko's big RD reset happens there, so a post-`pass_season` reading is next
+season's *starting* state, not this season's result.
+
+### Storage
+
+Long format, one file per `(league, model)`:
+`models/{league}/{model}/history.parquet` with columns
+`team, year, week, rating, rd, run_id`.
+
+Sizing: ~360 teams × ~20 weeks × 16 seasons ≈ 115k rows per model. That's a couple of
+MB as Parquet — small enough that the API loads the whole thing once and caches it
+alongside the release, and small enough that per-team files (360 S3 puts, N requests
+to compare three teams) aren't worth it.
+
+The two producers split cleanly along the same line as §5:
+
+- **Full replay** (retrain, or the weekly guardrail) rewrites `history.parquet` end
+  to end — it's the only thing that *can*, since it's the only thing that walks all
+  16 seasons.
+- **Daily refresh** upserts the current `(team, year, week)` rows. Upsert rather than
+  append because ratings move within a week as games land, and the job must stay
+  idempotent.
+
+This also subsumes the `delta_7d` column in the ratings table — with history on hand
+it's a lookup, not a diff against yesterday's release, so releases don't need to be
+retained just to compute it.
+
+### Serving it
+
+```
+GET /api/leagues/{league}/history?model=&teams=Duke,UNC&from=2025&to=2026
+    -> {series: [{team, points: [{year, week, date, rating, rd}]}]}
+```
+
+Team-filtered, because the useful view is 2–5 teams overlaid, not 360. On the
+frontend it's a line chart on the team detail route plus a "compare" affordance from
+the ratings table (select rows → chart them). Include a real `date` per week
+alongside `(year, week)` so the x-axis is time rather than an integer that resets
+every November.
+
+## 7. Infra (`infra/`)
 
 Follows the endgame `jobs/` conventions: `us-east-2`, S3 backend in the
 `nathan-terraform` bucket (key `invisible-string/terraform.tfstate`), a `Makefile`
 with `plan`/`apply`, `scheduled_job`-style module for the Batch piece.
 
+### App Runner instead of Fargate + ALB
+
+**What it is:** point it at a container image in ECR and it runs it — no ECS cluster,
+no task definition, no load balancer, no target groups, no VPC. It hands back an
+HTTPS URL on a managed certificate, autoscales on concurrent requests, and does
+rolling deploys when the image tag moves. Effectively "Fargate with the networking
+already solved."
+
+What it replaces from the previous sketch: the ALB, the ACM cert, the target group,
+the listener rules, the ECS cluster and service, the security groups, and the subnet
+wiring. That's most of the terraform.
+
+The mapping from the Fargate concepts is close to one-to-one:
+
+| Fargate + ALB | App Runner |
+|---|---|
+| task role | `instance_role_arn` — same thing, same IAM policies |
+| execution role (ECR pull) | `access_role_arn` on the image repository config |
+| ALB + ACM + Route53 alias | `aws_apprunner_custom_domain_association` (managed cert, you add the DNS validation records) |
+| target group health check | `health_check_configuration` → `/healthz` |
+| desired count / autoscaling | `aws_apprunner_auto_scaling_configuration_version` |
+
+**The reason it's actually a better fit, not just cheaper:** §3's caching design
+assumes a long-lived process holding the release JSON and `history.parquet` in
+memory. App Runner keeps a warm container, so that holds. This is also why I'd steer
+away from the Lambda + Mangum option I mentioned earlier — per-invocation cold starts
+would mean re-reading multi-MB artifacts from S3 constantly, and the whole caching
+story would have to be rebuilt around something external.
+
+**Cost:** roughly $5–10/mo at 1 vCPU / 2 GB, billed as a low idle rate on provisioned
+memory plus compute only while serving requests. Versus ~$16/mo for the ALB alone
+before any compute. One caveat worth knowing up front: App Runner's minimum is 1
+instance — there's no automatic scale-to-zero, only a manual "pause". So the floor is
+a few dollars a month, not zero.
+
+**Things to know before committing:**
+- One HTTP port, which is exactly what the single-container design in §4 produces.
+- Default egress is the public internet, which is fine — S3 and Batch are public
+  endpoints. A VPC connector is only needed for private resources, and there are none
+  here.
+- Custom domain validation is a CNAME dance; terraform exposes the records to create,
+  but the association can take a few minutes to go active on first apply.
+
+### The rest
+
 - ECR repo for the app image.
-- ECS cluster + Fargate service, 1 task at 0.25 vCPU / 0.5 GB (the release JSON is a
-  few MB at most).
-- ALB + ACM cert + Route53 record.
-- Task role: `s3:GetObject`/`ListBucket` on `models/*` in the endgame bucket,
+- App Runner service + autoscaling config + custom domain association.
+- Instance role: `s3:GetObject`/`ListBucket` on `models/*` in the endgame bucket,
   `s3:PutObject` on the same prefix (only if keeping the POST endpoint),
   `batch:SubmitJob` + `batch:DescribeJobs`, `secretsmanager:GetSecretValue` for the
   admin token.
 - Batch job definition + EventBridge Scheduler rule for the refresh job, reusing the
-  existing job queue.
+  existing job queue. Unchanged by the App Runner switch — the refresh job was never
+  going to run in the web container.
 - Reuse endgame's SNS failure topic pattern for refresh-job alerts.
-
-**Cost note:** the ALB is ~$16/mo and will dominate — the Fargate task itself is a
-couple of dollars. If that's annoying for a personal app, the same container runs on
-App Runner with no ALB, or the FastAPI app runs on Lambda behind a function URL via
-Mangum. Fargate + ALB is the right call if you want it to look like the rest of your
-infra; it just isn't the cheapest shape.
 
 ---
 
-## 7. Changes needed in cassandra
+## 8. Changes needed in cassandra
 
-The webapp shouldn't reimplement any model math, which means a handful of small
-additions upstream. Roughly in dependency order:
+The webapp shouldn't reimplement any model math, which means a handful of additions
+upstream. The first two are blocking; the rest are ordered by dependency.
 
-1. **Persist the prob→spread calibration.** `BaseProbToSpreadPredictor` gets
+1. **Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).**
+   One line. Without it there are no ratings to display, no rating history, and the
+   optimizer's `k` is inert. Everything else here is moot until this lands.
+2. **Persist the prob→spread calibration.** `BaseProbToSpreadPredictor` gets
    `to_dict()` / `from_dict()`; `IsotonicProbToSpreadPredictor` serializes
    `X_thresholds_` / `y_thresholds_`. `evaluate_model` currently fits and discards
    the calibrator — return it instead. **Blocking for the matchup feature.**
-2. **`cassandra/serving/`**: the `ModelRelease` pydantic model, `to_predictor()`,
+3. **Walk seasons chronologically (§1b).** `iter_weeks(season)` and
+   `week.games_in_order` in `generate_predictions`, instead of raw `.weeks`/`.games`.
+   Blocking for rating history; also what makes incremental refresh reproducible.
+4. **A normalized `Predictor.ratings` property (§6)** returning
+   `dict[str, TeamRating] | None`. Feeds the release artifact, the history job, and
+   the "does this model rate teams" check that keeps `FlatPredictor` out of the
+   ratings table.
+5. **A `week_observer` hook on `generate_predictions` (§6)** so history capture
+   doesn't have to subclass or wrap a predictor.
+6. **`cassandra/serving/`**: the `ModelRelease` pydantic model, `to_predictor()`,
    S3 read/write helpers, and a `predict_matchup(predictor, home, away, neutral_site)`
    that builds the synthetic `Game` in one place.
-3. **State as a dict, not a path.** `save_state`/`load_state` are file-based; add
+7. **State as a dict, not a path.** `save_state`/`load_state` are file-based; add
    `state_dict()` / `from_state_dict()` and let the file versions delegate. Avoids
    round-tripping through a temp file in a request handler.
-4. **Make `postrun_callback` re-runnable.** `OpponentPriorManager.save` raising when
+8. **Make `postrun_callback` re-runnable.** `OpponentPriorManager.save` raising when
    priors exist means any second run with `post_callbacks=True` crashes. Either
    overwrite behind an explicit flag, or version the priors file.
-5. **`read_all_seasons` hard-codes `range(2010, 2026)`** — it silently stops picking
+9. **`read_all_seasons` hard-codes `range(2010, 2026)`** — it silently stops picking
    up seasons in 2026. Its own TODO. The refresh job reads the current season
    directly and doesn't hit this, but the optimizer does.
-6. **`league` shouldn't be `NcaabbGender`.** `optimize.py` does
-   `NcaabbGender[config.league]`, which locks everything to mens/womens even though
-   endgame also has nfl and ncaafb. The API treats league as an opaque string; a
-   small registry upstream would let the webapp pick up football for free.
-7. **Bug, unrelated but noticed:** `_serialize_predictions` writes a 7-column header
-   for a 9-field dataclass and does `",".join(asdict(result).values())` on a dict of
-   ints/floats/bools, which raises `TypeError`. `main.py` is the only caller.
-8. **`FlatPredictor` has no ratings** — the ratings table should only offer models
-   that expose them. Worth a capability flag rather than a hardcoded class list.
+10. **`league` shouldn't be `NcaabbGender`.** `optimize.py` does
+    `NcaabbGender[config.league]`, which locks everything to mens/womens even though
+    endgame also has nfl and ncaafb. The API treats league as an opaque string; a
+    small registry upstream would let the webapp pick up football for free.
+11. **Bug, unrelated but noticed:** `_serialize_predictions` writes a 7-column header
+    for a 9-field dataclass and does `",".join(asdict(result).values())` on a dict of
+    ints/floats/bools, which raises `TypeError`. `main.py` is the only caller.
+
+Items 1, 3 and 8 all change model *output*, not just plumbing. Whatever tuned
+parameters exist today were fit against a model that wasn't learning, so they'll need
+re-optimizing afterward — worth doing before wiring up the webapp so the numbers on
+screen are ones you trust.
 
 ---
 
-## 8. Phasing
+## 9. Phasing
 
 | Phase | Scope |
 |---|---|
-| 1 | cassandra: calibration persistence + `serving/` + state dicts. One release JSON in S3, written by hand from a local `evaluate_models.py` run. |
-| 2 | `backend/`: ratings + predict endpoints reading that JSON. Run locally. |
-| 3 | `frontend/`: ratings table + matchup page. Still local. |
-| 4 | `infra/`: ECR, Fargate, ALB, DNS. Ship it. |
+| 0 | cassandra correctness: `update_game` in the pipeline, chronological traversal, then re-optimize. Nothing downstream is trustworthy until this is done. |
+| 1 | cassandra plumbing: calibration persistence, `Predictor.ratings`, `week_observer`, `serving/`, state dicts. One release JSON + `history.parquet` in S3, written by hand from a local run. |
+| 2 | `backend/`: ratings, predict and history endpoints reading those files. Run locally. |
+| 3 | `frontend/`: ratings table, matchup page, rating chart. Still local. |
+| 4 | `infra/`: ECR, App Runner, DNS. Ship it. |
 | 5 | Refresh job + scheduler + admin endpoints. This is where the "live update" lands. |
-| 6 | Nice-to-haves: 7-day rating deltas, weekly full-replay guardrail, upcoming games with predictions attached. |
+| 6 | Nice-to-haves: weekly full-replay guardrail, upcoming games with predictions attached. |
 
 Phases 2–4 need nothing from phase 5, so the app is useful — just manually refreshed
 — from phase 4 on.
 
 ---
 
-## 9. Open questions
+## 10. Open questions
 
 1. **Which model is "the" model per league?** The ratings table needs a default.
    Simplest is a `default_model` field in the release index (or just "highest
@@ -382,11 +581,11 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
 2. **Same bucket as endgame, or a separate one?** Sharing means one IAM policy and
    no cross-account anything; separating keeps model outputs from raw data. I'd share
    it under a `models/` prefix unless you want a different lifecycle policy.
-3. **How much history do you want?** `delta_7d` in the ratings table needs
-   yesterday's-ish release to diff against. Keeping every run makes that free, but
-   if you want a rating *chart* per team, that wants a different storage shape
-   (timeseries per team, not a snapshot per run) — worth deciding before phase 5
-   rather than after.
+3. **How far back should history go?** §6 assumes all 16 seasons, which is only a
+   couple of MB — but it means every full replay rewrites the whole file, and it
+   makes the chart's default view a question (all-time is unreadable; current season
+   is probably the right default with a range picker).
 4. **Public or private?** Everything above assumes public reads and an
-   authenticated admin path. If the whole app should be private, an ALB listener
-   rule on source IP is less work than real auth.
+   authenticated admin path. App Runner has no ALB to hang an IP allowlist off, so
+   if the whole app should be private that's either real auth in the app or a
+   different hosting shape — worth deciding before phase 4.
