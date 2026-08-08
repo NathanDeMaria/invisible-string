@@ -31,7 +31,10 @@ varies by class:
 `~/.cassandra/models/<league>/<name>_result_state.json` — **on the machine that ran
 the job**. Nothing about ratings currently reaches S3.
 
-### 1a. Ratings don't currently move
+### 1a. Ratings don't move on `main` (fixed on a branch)
+
+> Being addressed upstream already — recorded here only because the rest of this
+> design assumes the fixed behavior, not because it's an open action item.
 
 `generate_predictions` — the one loop every pipeline runs through — calls
 `predictor.predict_game(game)`. Since commit `0f93c96` ("Split 'update' and
@@ -50,12 +53,11 @@ The consequences, if this is what I think it is:
 - In `optimize.py`, `k` cannot affect the Brier objective at all, because nothing
   ever applies it. Only `home_advantage` does anything.
 
-The fix is one line — `predict_game` → `update_game` in `generate_predictions` — but
-it is **blocking for this entire webapp**, and doubly so for rating history: a chart
-built today is 360 flat lines at 1500. Worth confirming this is a regression and not
-something deliberate I've misread.
+What this design takes from it: ratings are a genuine fold over the game sequence, so
+a rating timeseries is meaningful and the incremental refresh in §5a is exact. Both
+would be false against `main` as it stands today.
 
-### 1b. Games are walked in fetch order, not chronological order
+### 1b. Games are walked in fetch order, not chronological order (same branch)
 
 `generate_predictions` iterates `season.weeks` and `week.games` directly. endgame's
 own docstrings are pointed about this: *"Prefer this over `.weeks`: the raw list's
@@ -68,11 +70,10 @@ fetched* — the chronological view is `calendar_weeks`, rebuilt from game dates
 precisely because source weeks "can still overlap in time." `iter_weeks()` exists to
 walk this correctly and raises `OverlappingWeeksError` when they do overlap.
 
-So today `pass_week()` fires on boundaries that may overlap in time, over games in an
-arbitrary order. For a rating *timeseries* that makes the x-axis meaningless. It also
-qualifies the incremental-refresh claim in §5a: a fold is only reproducible if the
-sequence is deterministic. `generate_predictions` should use `iter_weeks(season)` and
-`week.games_in_order`.
+On `main`, `pass_week()` therefore fires on boundaries that may overlap in time, over
+games in an arbitrary order. Everything below assumes the fixed form —
+`iter_weeks(season)` and `week.games_in_order` — because a rating timeseries needs a
+meaningful x-axis, and a fold is only reproducible if its sequence is deterministic.
 
 **Predictions** are `predict_game(game: Game) -> Prediction(team1_win_prob)`. It
 takes a whole `endgame.types.Game`, not two team names — deliberately, per the
@@ -510,18 +511,18 @@ a few dollars a month, not zero.
 ## 8. Changes needed in cassandra
 
 The webapp shouldn't reimplement any model math, which means a handful of additions
-upstream. The first two are blocking; the rest are ordered by dependency.
+upstream. Items 1 and 3 (the §1a/§1b correctness fixes) are already in flight on a
+branch and are listed only to mark the dependency; the rest are new work, ordered by
+dependency.
 
-1. **Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).**
-   One line. Without it there are no ratings to display, no rating history, and the
-   optimizer's `k` is inert. Everything else here is moot until this lands.
+1. ~~Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).~~
+   *In flight.*
 2. **Persist the prob→spread calibration.** `BaseProbToSpreadPredictor` gets
    `to_dict()` / `from_dict()`; `IsotonicProbToSpreadPredictor` serializes
    `X_thresholds_` / `y_thresholds_`. `evaluate_model` currently fits and discards
    the calibrator — return it instead. **Blocking for the matchup feature.**
-3. **Walk seasons chronologically (§1b).** `iter_weeks(season)` and
-   `week.games_in_order` in `generate_predictions`, instead of raw `.weeks`/`.games`.
-   Blocking for rating history; also what makes incremental refresh reproducible.
+3. ~~Walk seasons chronologically with `iter_weeks` / `games_in_order` (§1b).~~
+   *In flight.*
 4. **A normalized `Predictor.ratings` property (§6)** returning
    `dict[str, TeamRating] | None`. Feeds the release artifact, the history job, and
    the "does this model rate teams" check that keeps `FlatPredictor` out of the
@@ -548,10 +549,10 @@ upstream. The first two are blocking; the rest are ordered by dependency.
     for a 9-field dataclass and does `",".join(asdict(result).values())` on a dict of
     ints/floats/bools, which raises `TypeError`. `main.py` is the only caller.
 
-Items 1, 3 and 8 all change model *output*, not just plumbing. Whatever tuned
-parameters exist today were fit against a model that wasn't learning, so they'll need
-re-optimizing afterward — worth doing before wiring up the webapp so the numbers on
-screen are ones you trust.
+Items 1, 3 and 8 change model *output*, not just plumbing — any parameters tuned
+before them were fit against a model that wasn't learning. Re-optimizing once they
+land is what makes the numbers on screen ones worth showing; it isn't work this repo
+needs to do, just something the release artifacts should be produced after.
 
 ---
 
@@ -559,7 +560,6 @@ screen are ones you trust.
 
 | Phase | Scope |
 |---|---|
-| 0 | cassandra correctness: `update_game` in the pipeline, chronological traversal, then re-optimize. Nothing downstream is trustworthy until this is done. |
 | 1 | cassandra plumbing: calibration persistence, `Predictor.ratings`, `week_observer`, `serving/`, state dicts. One release JSON + `history.parquet` in S3, written by hand from a local run. |
 | 2 | `backend/`: ratings, predict and history endpoints reading those files. Run locally. |
 | 3 | `frontend/`: ratings table, matchup page, rating chart. Still local. |
@@ -568,7 +568,8 @@ screen are ones you trust.
 | 6 | Nice-to-haves: weekly full-replay guardrail, upcoming games with predictions attached. |
 
 Phases 2–4 need nothing from phase 5, so the app is useful — just manually refreshed
-— from phase 4 on.
+— from phase 4 on. Phase 1 depends on the §1a/§1b fixes landing, but only to produce
+*trustworthy* artifacts; the plumbing itself can be built against either.
 
 ---
 
