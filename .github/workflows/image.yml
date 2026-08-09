@@ -1,0 +1,137 @@
+name: Image
+
+# Build and push the app image. App Runner watches :latest with auto-deploy on,
+# so this push *is* the deploy -- shipping the app never runs terraform
+# (DESIGN.md section 8).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  push:
+    # Same guard as terraform.yml: dormant until the apply role exists rather
+    # than failing red.
+    if: vars.AWS_APPLY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    # Never cancel: a half-pushed manifest is worse than a superseded build,
+    # and :latest moving under App Runner mid-rollout is worse still.
+    concurrency:
+      group: image-push
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # :latest is what App Runner watches; the sha tag is immutable and is
+          # what a rollback re-points :latest at.
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/invisible-string:latest
+            ${{ steps.ecr.outputs.registry }}/invisible-string:${{ github.sha }}
+          # Registry cache rather than type=gha, for the reason EndGame's
+          # on_push.yml documents: gha needs ACTIONS_RUNTIME_TOKEN, which the
+          # runner withholds from `run:` steps. image-manifest/oci-mediatypes
+          # are required because ECR rejects buildx's default cache manifest.
+          cache-from: type=registry,ref=${{ steps.ecr.outputs.registry }}/invisible-string:buildcache
+          cache-to: type=registry,ref=${{ steps.ecr.outputs.registry }}/invisible-string:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+      # Everything below is the deploy check. It belongs here rather than in
+      # terraform.yml because the push is what triggers the rollout.
+      - name: Resolve the service URL
+        id: service
+        run: |
+          url=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='invisible-string'].ServiceUrl | [0]" \
+            --output text)
+          # Empty until create_app_runner_service is flipped on; skip rather
+          # than fail, so pushing an image works before the service exists.
+          if [ -z "$url" ] || [ "$url" = "None" ]; then
+            echo "no App Runner service yet -- skipping the smoke test"
+            echo "url=" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://$url" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for the rollout
+        if: steps.service.outputs.url != ''
+        run: |
+          # App Runner takes a minute or two to swap revisions, so polling the
+          # operation status is more honest than sleeping and hoping.
+          arn=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='invisible-string'].ServiceArn | [0]" \
+            --output text)
+          for _ in $(seq 1 60); do
+            status=$(aws apprunner describe-service --service-arn "$arn" \
+              --query 'Service.Status' --output text)
+            echo "status: $status"
+            case "$status" in
+              RUNNING) exit 0 ;;
+              CREATE_FAILED|DELETED|PAUSED) echo "::error::service is $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::timed out waiting for the service to reach RUNNING"
+          exit 1
+
+      - name: Smoke test
+        if: steps.service.outputs.url != ''
+        env:
+          URL: ${{ steps.service.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 10 --retry-all-errors --retry-delay 6 "$URL/healthz"
+          echo
+
+          # The assertion that earns its keep. /healthz passes even when the
+          # instance role can't read the bucket; this fails, because the
+          # endpoint would 404 or 500 instead of returning rows.
+          body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
+            "$URL/api/leagues/mens/ratings")
+          echo "$body" | jq -e '.ratings | length > 0' > /dev/null
+          echo "$body" | jq -r '"model: \(.model)  teams: \(.ratings | length)"'
+
+          # The SPA is served from the same origin, so a deep link must return
+          # HTML rather than a 404 (DESIGN.md section 4).
+          curl -fsS "$URL/ratings/mens" | grep -q '<div id="root"' \
+            || { echo "::error::SPA fallback did not serve index.html"; exit 1; }
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### image"
+            echo
+            echo "- \`:latest\` and \`:${GITHUB_SHA::7}\` pushed"
+            if [ -n "${{ steps.service.outputs.url }}" ]; then
+              echo "- ${{ steps.service.outputs.url }}"
+            else
+              echo "- no App Runner service yet (create_app_runner_service is false)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

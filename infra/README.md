@@ -5,8 +5,8 @@ Terraform for invisible-string. State lives at
 EndGame jobs stack but under its own key.
 
 Contents so far: the CI authentication (GitHub Actions OIDC provider and two
-roles) and the model-artifact bucket. The App Runner service, ECR repository
-and refresh job land on top of those.
+roles), the model-artifact bucket, the ECR repository and the App Runner
+service. The Batch refresh job lands on top of those.
 
 ```sh
 make init
@@ -132,6 +132,46 @@ with `artifacts_bucket_name` if you'd rather pick your own.
 | Public access fully blocked | The app reads with its instance role, never anonymously |
 | `BucketOwnerEnforced` | ACLs off. The refresh job writes under a different role than the app reads with, and this keeps object ownership unambiguous. |
 | `force_destroy = false` | `terraform destroy` should fail rather than quietly delete published releases |
+
+## App Runner
+
+```sh
+terraform output service_url        # the live API
+terraform output ecr_repository_url # where image.yml pushes
+```
+
+Auto-deploy is on and watches `:latest`, so **pushing the image is the deploy** —
+shipping the app never runs terraform. `image.yml` pushes `:latest` plus an
+immutable `:<sha>`; a rollback re-points `:latest` at an older sha.
+
+### The first apply is three steps
+
+App Runner validates the image when the service is created, so it cannot be
+created before one exists. `create_app_runner_service` defaults to `false` for
+exactly this reason — without the flag the very first apply fails with an
+image-not-found error that reads like a bug rather than an ordering constraint.
+
+```sh
+make apply                                  # 1. ECR repository (+ everything else)
+#    merge to main, or push an image by hand # 2. :latest now exists
+#    set create_app_runner_service = true
+make apply                                  # 3. service comes up
+```
+
+After step 3, `image.yml` also smoke-tests each deploy.
+
+### Two roles again, for different reasons
+
+| Role | Used by | For |
+|---|---|---|
+| `…-apprunner-access` | App Runner itself, before the container exists | pulling the image from ECR |
+| `…-apprunner-instance` | the running container | reading the artifact bucket |
+
+The instance role gets `s3:GetObject` **and** `s3:ListBucket`, and nothing else.
+`ListBucket` isn't redundant: the API discovers which leagues and models exist
+by listing prefixes, so `GetObject` alone returns rows for a known model but
+403s on `/api/leagues`. Scoped to the artifact bucket only, so the web tier has
+no path to EndGame's raw scrape data.
 
 ## Permissions
 
