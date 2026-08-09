@@ -10,6 +10,31 @@ variable "github_repository" {
   default     = "NathanDeMaria/invisible-string"
 }
 
+variable "github_owner_id" {
+  description = <<-EOT
+    Numeric ID of the GitHub account owning the repository.
+
+    GitHub issues OIDC subjects in an immutable, ID-qualified form --
+    `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` -- rather than by name, so the trust
+    policy has to match on IDs. Matching on names alone silently never matches
+    and every assume fails with a generic "Not authorized".
+
+      gh api users/NathanDeMaria --jq .id
+  EOT
+  type        = number
+  default     = 5595197
+}
+
+variable "github_repository_id" {
+  description = <<-EOT
+    Numeric ID of the repository. See github_owner_id.
+
+      gh api repos/NathanDeMaria/invisible-string --jq .id
+  EOT
+  type        = number
+  default     = 1328209264
+}
+
 variable "create_oidc_provider" {
   description = <<-EOT
     Create the GitHub Actions OIDC provider. Set false if the account already

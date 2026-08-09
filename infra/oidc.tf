@@ -40,8 +40,10 @@ data "aws_iam_policy_document" "plan_assume_role" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repository}:ref:refs/heads/*",
-        "repo:${var.github_repository}:pull_request",
+        "${local.subject_repo}:ref:refs/heads/*",
+        "${local.subject_repo}:pull_request",
+        "${local.subject_repo_legacy}:ref:refs/heads/*",
+        "${local.subject_repo_legacy}:pull_request",
       ]
     }
   }
@@ -63,13 +65,17 @@ data "aws_iam_policy_document" "apply_assume_role" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # StringEquals, deliberately. With StringLike a trailing wildcard would
-    # also match refs/heads/main-anything, handing apply rights to any branch
-    # whose name merely starts with "main".
+    # StringLike only because two exact alternatives are listed; neither
+    # contains a wildcard, so "main-hotfix" still cannot match. Keeping the
+    # branch segment literal is what stops any branch merely starting with
+    # "main" from gaining apply rights.
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values = [
+        "${local.subject_repo}:ref:refs/heads/main",
+        "${local.subject_repo_legacy}:ref:refs/heads/main",
+      ]
     }
   }
 }
