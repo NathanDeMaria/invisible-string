@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-08-08T09:00:12Z",
+  "league": "mens",
+  "model": "glicko_tuned",
+  "predictor_class": "GlickoPredictor",
+  "params": {
+    "home_advantage": 95.0,
+    "k": 65.0,
+    "initial_rd": 216.0,
+    "scoring_method": "binary",
+    "weekly_rd_increase": 1.0,
+    "season_rd_increase": 120.0
+  },
+  "ratings": {
+    "Houston": { "rating": 1834.2, "rd": 68.0, "wins": 26, "losses": 4 },
+    "Duke": { "rating": 1834.2, "rd": 71.4, "wins": 24, "losses": 5 },
+    "North Carolina": { "rating": 1790.0, "rd": 74.1, "wins": 22, "losses": 8 },
+    "Kansas": { "rating": 1755.5, "rd": 70.2, "wins": 21, "losses": 9 }
+  },
+  "spread_calibration": {
+    "kind": "isotonic",
+    "x_thresholds": [0.02, 0.25, 0.5, 0.75, 0.98],
+    "y_thresholds": [21.5, 7.0, 0.0, -7.0, -21.5]
+  },
+  "metrics": {
+    "brier_score": 0.1782,
+    "against_spread_accuracy": 0.508,
+    "n_games": 98342,
+    "n_spread_games": 21150
+  },
+  "trained_through": {
+    "season_year": 2026,
+    "last_game_date": "2026-08-07T23:15:00Z",
+    "processed_game_ids": ["401710001", "401710002"]
+  },
+  "created_at": "2026-08-08T09:00:12Z",
+  "created_by": "refresh",
+  "parent_run_id": "2026-08-07T09:00:08Z"
+}

@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "invisible-string-backend"
+version = "0.1.0"
+description = "API over cassandra model results"
+authors = []
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+# Tightens to ^3.14 when cassandra becomes a dependency -- that's its floor.
+# Nothing here needs 3.14 yet, and the wider range means CI can matrix over
+# both while the schema still lives in app/schema.py.
+python = ">=3.13,<4.0"
+fastapi = "^0.121.0"
+pydantic = "^2.12.5"
+pydantic-settings = "^2.13.0"
+uvicorn = { extras = ["standard"], version = "^0.40.0" }
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+httpx = "^0.28.1"
+ruff = "^0.16.1"
+ty = "^0.0.65"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.per-file-ignores]
+# these just re-export names for the public API
+"__init__.py" = ["F401"]

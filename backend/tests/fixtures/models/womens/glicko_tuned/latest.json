@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "run_id": "2026-08-08T09:02:10Z",
+  "league": "womens",
+  "model": "glicko_tuned",
+  "predictor_class": "GlickoPredictor",
+  "params": {
+    "home_advantage": 95.0,
+    "k": 65.0,
+    "initial_rd": 216.0,
+    "scoring_method": "binary",
+    "weekly_rd_increase": 1.0,
+    "season_rd_increase": 120.0
+  },
+  "ratings": {
+    "South Carolina": {
+      "rating": 1902.7,
+      "rd": 62.3,
+      "wins": 29,
+      "losses": 1
+    },
+    "UConn": {
+      "rating": 1866.1,
+      "rd": 65.8,
+      "wins": 27,
+      "losses": 3
+    }
+  },
+  "spread_calibration": {
+    "kind": "isotonic",
+    "x_thresholds": [
+      0.02,
+      0.25,
+      0.5,
+      0.75,
+      0.98
+    ],
+    "y_thresholds": [
+      21.5,
+      7.0,
+      0.0,
+      -7.0,
+      -21.5
+    ]
+  },
+  "metrics": {
+    "brier_score": 0.1601,
+    "against_spread_accuracy": 0.522,
+    "n_games": 91004,
+    "n_spread_games": 15320
+  },
+  "trained_through": {
+    "season_year": 2026,
+    "last_game_date": "2026-08-07T23:15:00Z",
+    "processed_game_ids": [
+      "401710001",
+      "401710002"
+    ]
+  },
+  "created_at": "2026-08-08T09:02:10Z",
+  "created_by": "refresh",
+  "parent_run_id": "2026-08-07T09:00:08Z"
+}
