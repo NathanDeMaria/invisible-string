@@ -1,10 +1,13 @@
 name: CI
 
 on:
+  # "**" not "*" -- a single star matches one path segment, so `["*"]` silently
+  # skips every branch with a slash in it (claude/foo, feature/bar). The
+  # workflow registers, shows as active, and simply never runs.
   push:
-    branches: ["*"]
+    branches: ["**"]
   pull_request:
-    branches: ["*"]
+    branches: ["**"]
 
 permissions:
   contents: read
