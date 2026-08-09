@@ -85,6 +85,22 @@ def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:
 
 @lru_cache(maxsize=1)
 def _build_store(settings: Settings) -> ReleaseStore:
+    """S3 when a bucket is configured, otherwise the local directory.
+
+    Cached, because the S3 store holds the release cache -- rebuilding it per
+    request would throw that away and call S3 every time.
+    """
+    if settings.releases_bucket:
+        # Imported here rather than at module scope: app.s3 imports
+        # ReleaseNotFound from this module, and boto3 is a slow import that
+        # local-only runs shouldn't pay for.
+        from app.s3 import S3ReleaseStore
+
+        return S3ReleaseStore(
+            bucket=settings.releases_bucket,
+            prefix=settings.releases_prefix,
+            ttl_seconds=settings.releases_cache_ttl_seconds,
+        )
     return LocalReleaseStore(settings.releases_root)
 
 
