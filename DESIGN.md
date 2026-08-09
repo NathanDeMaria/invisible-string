@@ -107,12 +107,12 @@ it. This is the contract between cassandra and the webapp, and it's the only one
 ```mermaid
 flowchart LR
   subgraph batch["AWS Batch (existing pattern)"]
-    EG["endgame daily games job<br/>8am CT"] --> S3G[("s3://bucket/seasons/…")]
+    EG["endgame daily games job<br/>8am CT"] --> S3G[("endgame bucket<br/>seasons/ odds/")]
     OPT["cassandra optimize<br/>(manual / rare)"] --> REL
     REF["refresh job<br/>9am CT + on demand"] --> REL
-    S3G --> REF
+    S3G -->|read| REF
   end
-  REL[("s3://bucket/models/{league}/{model}/<br/>runs/{run_id}.json + latest.json")]
+  REL[("invisible-string bucket<br/>models/{league}/{model}/<br/>runs/{run_id}.json + latest.json")]
   REL --> API["FastAPI on App Runner<br/>(cached, 60s TTL + ETag)"]
   API --> UI["React SPA<br/>(served by the same container)"]
   API -->|"SubmitJob"| REF
@@ -170,9 +170,14 @@ backend — one definition, no drift.
 }
 ```
 
-Layout: `models/{league}/{model}/runs/{run_id}.json` plus
-`models/{league}/{model}/latest.json` (a copy, not a pointer — one GET to serve).
+Layout, in this repo's own bucket (§11.2): `models/{league}/{model}/runs/{run_id}.json`
+plus `models/{league}/{model}/latest.json` (a copy, not a pointer — one GET to serve).
 Keeping every run means rollback is `aws s3 cp runs/<old>.json latest.json`.
+
+Discovering which models exist for a league is a `ListObjectsV2` on
+`models/{league}/` delimited at `/`, then one GET per `latest.json`. At a handful of
+models per league that's fine behind the §3 cache, and it's why the instance role
+needs `ListBucket` and not just `GetObject`.
 
 `ratings` includes W-L because the refresh job already has the season in memory and
 the API otherwise would have to read season pickles just to fill a table column.
@@ -203,6 +208,7 @@ backend/
 ```
 GET  /api/leagues
        -> [{league, models: [{name, is_default, run_id, created_at, metrics}]}]
+       # is_default = lowest metrics.brier_score for the league (§11.1)
 
 GET  /api/leagues/{league}/ratings?model=&limit=&offset=
        -> {run_id, created_at, trained_through, metrics,
@@ -413,10 +419,10 @@ Long format, one file per `(league, model)`:
 `models/{league}/{model}/history.parquet` with columns
 `team, year, week, rating, rd, run_id`.
 
-Sizing: ~360 teams × ~20 weeks × 16 seasons ≈ 115k rows per model. That's a couple of
-MB as Parquet — small enough that the API loads the whole thing once and caches it
-alongside the release, and small enough that per-team files (360 S3 puts, N requests
-to compare three teams) aren't worth it.
+All seasons back to 2010 (§11.3). Sizing: ~360 teams × ~20 weeks × 16 seasons ≈ 115k
+rows per model. That's a couple of MB as Parquet — small enough that the API loads
+the whole thing once and caches it alongside the release, and small enough that
+per-team files (360 S3 puts, N requests to compare three teams) aren't worth it.
 
 The two producers split cleanly along the same line as §5:
 
@@ -495,15 +501,24 @@ a few dollars a month, not zero.
 
 ### The rest
 
+- **The artifact bucket** (§11.2), owned here rather than by endgame. Versioning on,
+  so a bad `latest.json` overwrite is recoverable independently of the `runs/`
+  history. Public access blocked — the app reads it with its instance role, not
+  anonymously.
 - ECR repo for the app image.
 - App Runner service + autoscaling config + custom domain association.
-- Instance role: `s3:GetObject`/`ListBucket` on `models/*` in the endgame bucket,
-  `s3:PutObject` on the same prefix (only if keeping the POST endpoint),
+- Instance role: `s3:GetObject` + `s3:ListBucket` on the artifact bucket,
+  `s3:PutObject` on `models/*` there (only if keeping the POST endpoint),
   `batch:SubmitJob` + `batch:DescribeJobs`, `secretsmanager:GetSecretValue` for the
-  admin token.
+  admin token. **No access to the endgame bucket at all** — the web tier has no path
+  to raw scrape data, which is a real benefit of the two-bucket split.
 - Batch job definition + EventBridge Scheduler rule for the refresh job, reusing the
   existing job queue. Unchanged by the App Runner switch — the refresh job was never
-  going to run in the web container.
+  going to run in the web container. Its job role spans both buckets: read on
+  endgame's `seasons/`, write on this one. That's a cross-stack reference, so either
+  a `terraform_remote_state` data source against endgame's state or a plain
+  `aws_s3_bucket` data lookup by name — the latter is looser but avoids coupling the
+  two state files.
 - Reuse endgame's SNS failure topic pattern for refresh-job alerts.
 
 ---
@@ -760,26 +775,48 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
 
 ---
 
-## 11. Open questions
+## 11. Decisions
 
-1. **Which model is "the" model per league?** The ratings table needs a default.
-   Simplest is a `default_model` field in the release index (or just "highest
-   against-spread accuracy"), but it should be an explicit choice you control, not
-   inferred.
-2. **Same bucket as endgame, or a separate one?** Sharing means one IAM policy and
-   no cross-account anything; separating keeps model outputs from raw data. I'd share
-   it under a `models/` prefix unless you want a different lifecycle policy.
-3. **How far back should history go?** §6 assumes all 16 seasons, which is only a
-   couple of MB — but it means every full replay rewrites the whole file, and it
-   makes the chart's default view a question (all-time is unreadable; current season
-   is probably the right default with a range picker).
-4. **Public or private?** Everything above assumes public reads and an
-   authenticated admin path. App Runner has no ALB to hang an IP allowlist off, so
-   if the whole app should be private that's either real auth in the app or a
-   different hosting shape — worth deciding before phase 4.
-5. **Backfill CI onto cassandra, and move it to `ty`?** It has `make lint`/`make
-   test` and no workflows, and this repo is about to depend on it by git rev for a
-   schema contract — a green cassandra `main` should mean something when you bump the
-   pin. Doing that is also the moment to drop its mypy/`ty` divergence with the other
-   two repos, though its `ruff.lint.select = ["I"]` (isort only, versus EndGame's
-   `["E","F","I"]`) will surface real findings on first run.
+1. **Default model per league: lowest Brier score.** Selected from each release's
+   `metrics`, no manual pointer to maintain.
+
+   Brier is an error measure, so **lower is better** — the selection is a `min`, and
+   `optimize.py` maximizes `-brier`, so a `target` copied straight from a
+   `PredictorConfig` is already negated. Getting that sign wrong picks the *worst*
+   model and looks entirely plausible on screen, so it's worth a unit test with two
+   fixture releases rather than trusting a comparator.
+
+   Chosen over ATS accuracy because Brier is computed over every game while ATS only
+   covers games with odds (`n_spread_games` is roughly a fifth of `n_games`), and
+   because it's what the optimizer targets — so the site's featured model is the one
+   the pipeline was actually trying to produce. The cost is that the default moves on
+   its own when a new run lands; if that ever surprises you, an explicit
+   `default_model` override field is a small addition.
+
+2. **Separate bucket for model artifacts**, owned by this repo's terraform rather
+   than endgame's. Its own versioning, lifecycle and retention, independent of the
+   raw scrape data.
+
+   The one consequence to plan for: the refresh job now spans two buckets — read
+   `seasons/` from endgame's, write releases to this one — so it needs a policy for
+   each. The App Runner instance role only ever touches this repo's bucket, which is
+   a nice tightening: the web tier has no path to raw data at all.
+
+3. **History covers all seasons (2010–present).** ~115k rows, a couple of MB; full
+   replay rewrites the whole file. Chart defaults to the current season with a range
+   picker back through 2010 — all-time as a default view is unreadable at 360 teams.
+
+4. **Public reads, bearer-token auth on `/api/admin/*`.** Ratings, matchup and
+   history are open; the token lives in Secrets Manager. Shareable matchup and
+   comparison links work, which §4 leans on.
+
+5. **cassandra CI: not now.** The schema contract test in this repo (§8) catches
+   drift when the pinned rev is bumped, which covers the case that actually breaks
+   the webapp. Revisit if bumping the pin starts feeling risky.
+
+### Still genuinely open
+
+- Re-plan at apply time versus applying a saved plan artifact (§8). Fine as-is while
+  you're the only one merging.
+- Whether `optimize.py`'s league-as-`NcaabbGender` should become a registry (§9.10),
+  which is what would let the site pick up nfl/ncaafb for free.
