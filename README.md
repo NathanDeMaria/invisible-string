@@ -86,5 +86,14 @@ fails a build instead of becoming `undefined` in the browser.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/latest.json` |
+| `INVISIBLE_STRING_RELEASES_BUCKET` | unset | Read releases from this S3 bucket. Unset means read from disk instead, which is what tests and local dev use. |
+| `INVISIBLE_STRING_RELEASES_PREFIX` | `models/` | Key prefix within the bucket |
+| `INVISIBLE_STRING_RELEASES_CACHE_TTL_SECONDS` | `60` | How long a release is served from memory before S3 is re-checked |
+| `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/latest.json`. Used only when no bucket is set. |
 | `INVISIBLE_STRING_STATIC_DIR` | `./static` | Built SPA. Skipped when absent, which is the local-dev case. |
+
+Releases are cached in-process for the TTL, then revalidated with a conditional
+GET — S3 answers `304` when nothing changed, which is the usual case. So a new
+release is picked up within a TTL of being written, with no shared cache and
+nothing to invalidate. The flip side is a bounded staleness window; both
+directions are covered by tests.
