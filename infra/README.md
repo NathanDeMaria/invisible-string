@@ -57,22 +57,39 @@ That's the whole reason there are two roles rather than one.
 
 ### The `sub` claim
 
-The trust policies key off `token.actions.githubusercontent.com:sub`, whose
-shape depends on the event — which is the easy thing to get wrong:
+The trust policies key off `token.actions.githubusercontent.com:sub`. Two
+things about it are easy to get wrong, and both produce the same unhelpful
+`Not authorized to perform sts:AssumeRoleWithWebIdentity` while every piece of
+configuration looks correct.
 
-| Event | `sub` |
+**It is ID-qualified, not name-based.** GitHub issues subjects in an immutable
+form that embeds the numeric owner and repository IDs:
+
+```
+repo:NathanDeMaria@5595197/invisible-string@1328209264:ref:refs/heads/main
+```
+
+not `repo:NathanDeMaria/invisible-string:ref:refs/heads/main`. Matching on
+names alone never matches anything. IDs are the point of the format — a
+repository can be renamed, but nobody else can take over its ID by claiming the
+old name. `github_owner_id` and `github_repository_id` carry them; the
+name-based form is also listed, harmlessly, in case an account ever issues it.
+
+**Its shape depends on the event:**
+
+| Event | tail of `sub` |
 |---|---|
-| push to a branch | `repo:OWNER/REPO:ref:refs/heads/BRANCH` |
-| pull request | `repo:OWNER/REPO:pull_request` |
-| tag push | `repo:OWNER/REPO:ref:refs/tags/TAG` |
+| push to a branch | `:ref:refs/heads/BRANCH` |
+| pull request | `:pull_request` |
+| tag push | `:ref:refs/tags/TAG` |
 
-A plan role trusting only `ref:refs/heads/*` therefore fails on every PR, which
-is why both patterns are listed.
+A plan role trusting only `ref:refs/heads/*` fails on every PR, which is why
+both are listed.
 
-The apply role uses `StringEquals`, not `StringLike`. With a wildcard, a branch
-named `main-hotfix` would also match and get apply rights.
+The apply role's patterns keep the branch segment literal (`refs/heads/main`,
+no wildcard), so a branch named `main-hotfix` can't pick up apply rights.
 
-Verified against these subjects:
+Verified against these subjects, including the real one captured from a run:
 
 | Scenario | plan | apply |
 |---|---|---|
@@ -81,8 +98,13 @@ Verified against these subjects:
 | pull request | yes | no |
 | branch named `main-hotfix` | yes | no |
 | tag push | no | no |
-| fork of this repo | no | no |
-| another repo, same owner | no | no |
+| different repository ID | no | no |
+| different owner ID | no | no |
+| look-alike owner name | no | no |
+
+If this ever fails again, print the token's claims in the workflow rather than
+reasoning about them — the subject is the only thing that isn't visible from
+the AWS side.
 
 ## Permissions
 
