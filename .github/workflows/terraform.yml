@@ -45,6 +45,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # TEMPORARY: prints the OIDC token's claims so the trust policy can be
+      # compared against what GitHub actually sends, rather than what it is
+      # assumed to send. Decodes and prints only the claims -- never the token
+      # itself, which is a short-lived credential. Remove once the assume works.
+      - name: Debug OIDC claims
+        run: |
+          token=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          python3 -c '
+          import base64, json, sys
+          payload = sys.argv[1].split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          keys = ("iss", "aud", "sub", "repository", "repository_owner",
+                  "ref", "event_name", "workflow_ref")
+          print(json.dumps({k: claims.get(k) for k in keys}, indent=2))
+          ' "$token"
+
       - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
