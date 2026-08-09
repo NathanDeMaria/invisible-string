@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 
 from app.api.ratings import router as ratings_router
+from app.settings import get_settings
+from app.spa import mount_spa
 
 
 def create_app() -> FastAPI:
@@ -10,6 +12,12 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Only when a build is present. Running the API bare (tests, `make run`
+    # alongside the vite dev server) is the normal local case.
+    static_dir = get_settings().static_dir
+    if static_dir.is_dir():
+        mount_spa(app, static_dir)
 
     return app
 

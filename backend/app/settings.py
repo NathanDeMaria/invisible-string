@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     # store replaces this with a bucket name in a later change.
     releases_root: Path = Path("./data")
 
+    # The built frontend. Present in the container image; absent in local
+    # dev, where vite serves the app and proxies /api here.
+    static_dir: Path = Path("./static")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

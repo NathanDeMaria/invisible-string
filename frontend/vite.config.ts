@@ -5,9 +5,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   // Dev only. In production the built assets are served by FastAPI from the
-  // same origin, so there's no proxy and no CORS.
+  // same origin, so there's no proxy and no CORS. Overridable because under
+  // docker compose the API is another service, not 127.0.0.1.
   server: {
-    proxy: { "/api": "http://127.0.0.1:8000" },
+    proxy: {
+      "/api": process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:8000",
+    },
   },
   test: {
     environment: "jsdom",

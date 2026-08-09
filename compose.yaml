@@ -1,0 +1,64 @@
+# Two ways to run this locally.
+#
+#   docker compose up app        production shape: one container, one port,
+#                                the real image -- http://localhost:8000
+#
+#   docker compose --profile dev up
+#                                hot reload: vite on :5173 proxying /api to
+#                                uvicorn --reload on :8000
+#
+# Both read the test fixtures, so neither needs AWS. Swap the mount for a real
+# releases directory once the S3 store lands.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/tests/fixtures:/srv/data:ro
+    environment:
+      INVISIBLE_STRING_RELEASES_ROOT: /srv/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  api-dev:
+    profiles: ["dev"]
+    image: python:3.14-slim
+    working_dir: /srv
+    command: >
+      sh -c "pip install --no-cache-dir poetry==2.2.1 &&
+             poetry config virtualenvs.create false &&
+             poetry install --only main --no-root &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/srv
+    environment:
+      INVISIBLE_STRING_RELEASES_ROOT: /srv/tests/fixtures
+      # No build in this mode -- vite serves the frontend.
+      INVISIBLE_STRING_STATIC_DIR: /srv/nonexistent
+
+  web-dev:
+    profiles: ["dev"]
+    image: node:22-slim
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # vite.config.ts proxies /api to 127.0.0.1 by default, which inside a
+      # container is the container itself. Point it at the api-dev service.
+      VITE_API_PROXY_TARGET: http://api-dev:8000
+    depends_on:
+      - api-dev
