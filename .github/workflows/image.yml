@@ -106,19 +106,36 @@ jobs:
           URL: ${{ steps.service.outputs.url }}
         run: |
           set -euo pipefail
+
+          # 1. The service is up.
           curl -fsS --retry 10 --retry-all-errors --retry-delay 6 "$URL/healthz"
           echo
 
-          # The assertion that earns its keep. /healthz passes even when the
-          # instance role can't read the bucket; this fails, because the
-          # endpoint would 404 or 500 instead of returning rows.
-          body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
-            "$URL/api/leagues/mens/ratings")
-          echo "$body" | jq -e '.ratings | length > 0' > /dev/null
-          echo "$body" | jq -r '"model: \(.model)  teams: \(.ratings | length)"'
+          # 2. It can reach the bucket. /api/leagues lists prefixes, so this
+          #    fails on a missing s3:ListBucket -- which /healthz would not
+          #    notice. An *empty* list is a legitimate answer here: it means
+          #    the read worked and nothing has been published yet.
+          leagues=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
+            "$URL/api/leagues")
+          count=$(echo "$leagues" | jq 'length')
+          echo "leagues published: $count"
 
-          # The SPA is served from the same origin, so a deep link must return
-          # HTML rather than a 404 (DESIGN.md section 4).
+          if [ "$count" -eq 0 ]; then
+            echo "::warning::Bucket has no releases yet; ratings assertion skipped"
+          else
+            # 3. Rows actually come back. This is the assertion that earns its
+            #    keep once there is data: /healthz and an empty /api/leagues
+            #    both pass while GetObject is broken.
+            league=$(echo "$leagues" | jq -r '.[0].league')
+            body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
+              "$URL/api/leagues/$league/ratings")
+            echo "$body" | jq -e '.ratings | length > 0' > /dev/null
+            echo "$body" | jq -r '"\(.league)/\(.model): \(.ratings | length) teams"'
+          fi
+
+          # 4. The SPA is served from the same origin, so a deep link must
+          #    return HTML rather than a 404 (DESIGN.md section 4). Independent
+          #    of whether any data exists.
           curl -fsS "$URL/ratings/mens" | grep -q '<div id="root"' \
             || { echo "::error::SPA fallback did not serve index.html"; exit 1; }
 
