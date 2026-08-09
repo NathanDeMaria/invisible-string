@@ -5,7 +5,7 @@ results: current ratings per league, and win probability / predicted spread for
 a hypothetical matchup. See [DESIGN.md](./DESIGN.md).
 
 ```
-infra/      terraform: ECR, App Runner, Batch refresh job, IAM   (not yet built)
+infra/      terraform: CI OIDC roles now; App Runner, ECR, Batch to come
 backend/    FastAPI, serves the API and the built SPA
 frontend/   React + Redux Toolkit (RTK Query)
 ```

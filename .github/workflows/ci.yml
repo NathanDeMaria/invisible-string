@@ -124,14 +124,33 @@ jobs:
       - name: Build
         run: make build
 
-  # infra job lands with that directory. Add it to `needs` on the gate below
-  # at the same time.
+  infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          # `make lint` parses terraform's own output; the wrapper's extra
+          # framing gets in the way and nothing here reads the step outputs.
+          terraform_wrapper: false
+
+      # fmt, init -backend=false, validate. No credentials and no state, so
+      # this runs on forks and needs no OIDC role.
+      - name: Lint
+        run: make lint
 
   # The single required status check. Branch protection points at this and
   # nothing else, so path filters can skip whatever they like without leaving
   # a required check permanently pending.
   ci:
-    needs: [changes, backend, frontend]
+    needs: [changes, backend, frontend, infra]
     if: always()
     runs-on: ubuntu-latest
     steps:

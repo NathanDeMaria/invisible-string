@@ -1,0 +1,10 @@
+# Every variable has a default; copy this to terraform.tfvars only to override.
+
+# aws_region           = "us-east-2"
+# github_repository    = "NathanDeMaria/invisible-string"
+# state_bucket         = "nathan-terraform"
+# resource_name_prefix = "invisible-string"
+
+# Set false if this AWS account already has a GitHub Actions OIDC provider.
+# IAM permits exactly one per URL, so a second create fails.
+# create_oidc_provider = false
