@@ -38,10 +38,17 @@ jobs:
     defaults:
       run:
         working-directory: infra
-    # Superseded plans are safe to cancel; superseded applies are not (see below).
+    # Keyed on the branch, not github.ref: a push and its pull_request see
+    # different refs (refs/heads/x vs refs/pull/N/merge), so keying on the ref
+    # puts them in *different* groups and both plan the same state at once --
+    # one then dies on the terraform state lock.
+    #
+    # cancel-in-progress stays false even for plans. Killing terraform while it
+    # holds the lock leaves a stale lock behind that needs a manual
+    # force-unlock, which is worse than letting a superseded plan finish.
     concurrency:
-      group: terraform-plan-${{ github.ref }}
-      cancel-in-progress: true
+      group: terraform-plan-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
 
@@ -61,7 +68,11 @@ jobs:
         id: plan
         run: |
           set +e
-          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee /tmp/plan.txt
+          # -lock-timeout so an overlap waits its turn instead of failing.
+          # The concurrency group prevents plan-vs-plan; this also covers
+          # plan-vs-apply, which are in different groups by design.
+          terraform plan -no-color -input=false -lock-timeout=180s \
+            -out=tfplan 2>&1 | tee /tmp/plan.txt
           code=${PIPESTATUS[0]}
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit $code
@@ -153,7 +164,7 @@ jobs:
       # Re-plans rather than applying a saved plan from the branch. Simpler,
       # and fine while one person merges; DESIGN.md section 8 records the
       # tradeoff if that ever stops being true.
-      - run: terraform apply -auto-approve -input=false
+      - run: terraform apply -auto-approve -input=false -lock-timeout=180s
 
       - name: Summary
         if: always()
