@@ -1,0 +1,41 @@
+{
+  "name": "invisible-string",
+
+  // A Dockerfile rather than Features: the toolchain is pinned in one place
+  // and the image can be checked with plain `docker build`.
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // The bind below stops the container from starting if the directory is
+  // missing, which is easy to hit on a fresh machine.
+  "initializeCommand": "mkdir -p ${localEnv:HOME}${localEnv:USERPROFILE}/.aws",
+
+  "mounts": [
+    // Read-only on purpose: this container can *use* your AWS credentials but
+    // can't rewrite them. On SSO, run `aws sso login` on the host -- the
+    // cached token is read through this mount. Drop `,readonly` to log in
+    // from inside instead.
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/vscode/.aws,type=bind,readonly"
+  ],
+
+  "containerEnv": {
+    // Matches infra/variables.tf's default. Override per-command with
+    // `AWS_PROFILE=... make apply` if you use named profiles.
+    "AWS_REGION": "us-east-2"
+  },
+
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hashicorp.terraform",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}

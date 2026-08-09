@@ -10,6 +10,22 @@ backend/    FastAPI, serves the API and the built SPA
 frontend/   React + Redux Toolkit (RTK Query)
 ```
 
+## Devcontainer
+
+`.devcontainer/` has python 3.14, node 22, terraform and the aws CLI pinned to
+the versions CI uses. "Reopen in Container" in VS Code, or
+`devcontainer up --workspace-folder .` with the CLI.
+
+Your `~/.aws` is mounted **read-only**, so the container can use your
+credentials but not rewrite them. On SSO, run `aws sso login` on the host
+first — the cached token is read through that mount.
+
+This is the easiest way to run the one-time infra bootstrap:
+
+```sh
+cd infra && make init && make apply
+```
+
 ## Running it locally
 
 Both modes read the test fixtures in `backend/tests/fixtures`, so neither needs
