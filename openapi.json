@@ -1,0 +1,372 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LeagueSummary": {
+        "properties": {
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelSummary"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "models"
+        ],
+        "title": "LeagueSummary",
+        "type": "object"
+      },
+      "Metrics": {
+        "description": "Evaluation metrics for a release.\n\n`brier_score` is an error measure, so lower is better -- see\n`pick_default` in releases.py, which is the one place that matters.",
+        "properties": {
+          "against_spread_accuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Against Spread Accuracy"
+          },
+          "brier_score": {
+            "title": "Brier Score",
+            "type": "number"
+          },
+          "n_games": {
+            "title": "N Games",
+            "type": "integer"
+          },
+          "n_spread_games": {
+            "default": 0,
+            "title": "N Spread Games",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "brier_score",
+          "n_games"
+        ],
+        "title": "Metrics",
+        "type": "object"
+      },
+      "ModelSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/Metrics"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "is_default",
+          "run_id",
+          "created_at",
+          "metrics"
+        ],
+        "title": "ModelSummary",
+        "type": "object"
+      },
+      "RatingsResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/Metrics"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/TeamRow"
+            },
+            "title": "Ratings",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "trained_through": {
+            "$ref": "#/components/schemas/TrainedThrough"
+          }
+        },
+        "required": [
+          "league",
+          "model",
+          "run_id",
+          "created_at",
+          "trained_through",
+          "metrics",
+          "ratings"
+        ],
+        "title": "RatingsResponse",
+        "type": "object"
+      },
+      "TeamRow": {
+        "properties": {
+          "losses": {
+            "title": "Losses",
+            "type": "integer"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "number"
+          },
+          "rd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rd"
+          },
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rank",
+          "team",
+          "rating",
+          "rd",
+          "wins",
+          "losses"
+        ],
+        "title": "TeamRow",
+        "type": "object"
+      },
+      "TrainedThrough": {
+        "description": "Watermark for the incremental refresh job.\n\n`processed_game_ids` is a set of ids rather than a timestamp because games\nget re-fetched and scores corrected; ids are what make the refresh\nidempotent. Current season only -- it's a resume marker, not an audit log.",
+        "properties": {
+          "last_game_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Game Date"
+          },
+          "processed_game_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Processed Game Ids",
+            "type": "array"
+          },
+          "season_year": {
+            "title": "Season Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "season_year"
+        ],
+        "title": "TrainedThrough",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "invisible-string",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/leagues": {
+      "get": {
+        "operationId": "list_leagues_api_leagues_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LeagueSummary"
+                  },
+                  "title": "Response List Leagues Api Leagues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Leagues"
+      }
+    },
+    "/api/leagues/{league}/ratings": {
+      "get": {
+        "operationId": "get_ratings_api_leagues__league__ratings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the league's lowest-Brier model.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the league's lowest-Brier model.",
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ratings"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz"
+      }
+    }
+  }
+}

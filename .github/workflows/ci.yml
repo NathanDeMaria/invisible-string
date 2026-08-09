@@ -39,6 +39,7 @@ jobs:
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              - 'openapi.json'
               - '.github/workflows/ci.yml'
             infra:
               - 'infra/**'
@@ -82,14 +83,55 @@ jobs:
       - name: Test
         run: make test
 
-  # frontend and infra jobs land with those directories. Add them to `needs`
-  # on the gate below at the same time.
+      # The committed schema is what the frontend generates its types from, so
+      # a response-model change that nobody exported has to fail here rather
+      # than reach the browser as an undefined field.
+      - name: OpenAPI schema is current
+        run: |
+          make openapi
+          git diff --exit-code ../openapi.json
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # The other half of the contract: types regenerated from the committed
+      # schema must match what's checked in.
+      - name: Generated types are current
+        run: make codegen-check
+
+      - name: Build
+        run: make build
+
+  # infra job lands with that directory. Add it to `needs` on the gate below
+  # at the same time.
 
   # The single required status check. Branch protection points at this and
   # nothing else, so path filters can skip whatever they like without leaving
   # a required check permanently pending.
   ci:
-    needs: [changes, backend]
+    needs: [changes, backend, frontend]
     if: always()
     runs-on: ubuntu-latest
     steps:

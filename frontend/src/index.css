@@ -1,0 +1,130 @@
+:root {
+  --bg: #fbfaf8;
+  --fg: #1c1b19;
+  --muted: #6b6862;
+  --line: #e4e0d9;
+  --accent: #7b3f2e;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16151a;
+    --fg: #eceaf3;
+    --muted: #96919f;
+    --line: #2e2c36;
+    --accent: #d99a6c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    16px/1.5 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+.app {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+header h1 {
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.75rem;
+}
+
+nav {
+  display: flex;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.5rem;
+}
+
+nav a {
+  color: var(--muted);
+  text-decoration: none;
+  text-transform: capitalize;
+  padding-bottom: 0.5rem;
+  margin-bottom: -0.55rem;
+  border-bottom: 2px solid transparent;
+}
+
+nav a.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.25rem 0 0.75rem;
+}
+
+.controls input,
+.controls select {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.controls input {
+  flex: 1;
+}
+
+.meta,
+.loading,
+.empty,
+.error {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+table.ratings {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.ratings th,
+.ratings td {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.ratings th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.ratings .num {
+  text-align: right;
+}
+
+.ratings .rank {
+  color: var(--muted);
+  width: 2.5rem;
+}
+
+.ratings tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}

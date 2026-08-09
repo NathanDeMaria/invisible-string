@@ -9,3 +9,4 @@ dist/
 .terraform/
 *.tfstate
 *.tfstate.*
+frontend/dist/
