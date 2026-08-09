@@ -526,10 +526,16 @@ Two things not to inherit:
   locally, wrong in CI — it can "pass" by rewriting code nobody reviewed. Split
   `make fmt` (mutating, local) from `make lint` (check-only, CI).
 
-Also worth settling deliberately rather than by accident: cassandra type-checks with
-**mypy**, EndGame with **ty**. I'd take mypy for `backend/` — it's pydantic-heavy and
-mypy has the pydantic plugin, where `ty` is still pre-1.0 (`^0.0.65`). Python pins to
-3.14, since that's what cassandra requires.
+Type checking is **`ty`**, matching EndGame. (cassandra still uses mypy — that
+divergence is worth closing in whichever direction, see §11.5.) My earlier pitch for
+mypy leaned on the pydantic plugin, which overstated things: pydantic v2 implements
+PEP 681 `@dataclass_transform`, so model `__init__` signatures are inferred natively
+by any conforming checker and the plugin isn't load-bearing the way it was under v1.
+`ty` being pre-1.0 (`^0.0.65`) is the real cost, and it's a pinned dev dependency in
+a repo you own — cheap to hold back if a release regresses.
+
+Python pins to 3.14, since that's what cassandra requires. Note EndGame's workflow
+uses 3.12, so this is not a copy-paste of its `setup-python` step.
 
 ### Three stacks, one gate
 
@@ -557,11 +563,11 @@ jobs:
 |---|---|---|
 | `ci.yml` | push, PR | the above — lint + test per changed stack |
 | `image.yml` | push to `main` (backend/frontend paths) | build + push to ECR |
-| `terraform.yml` | PR touching `infra/**` → plan; push to `main` → apply | |
+| `terraform.yml` | `infra/**` on any branch or PR → plan; push to `main` → apply | |
 
 ### Per-stack checks
 
-**`backend/`** — `ruff format --check`, `ruff check`, `mypy`, `pytest`.
+**`backend/`** — `ruff format --check`, `ruff check`, `ty check`, `pytest`.
 
 The `ModelRelease` artifact pays off here: tests need a small fixture JSON and
 nothing else — no S3, no model run, no 16 seasons of pickles. Override the release-store
@@ -586,28 +592,51 @@ because it's the one seam where the two stacks can silently disagree.
 `terraform validate`. Add `tflint` if it starts feeling loose; skip `checkov` for
 something this small.
 
-### Credentials: OIDC, not access keys
+### Credentials: OIDC, two roles
 
-EndGame uses long-lived `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets.
-Don't carry that forward here — terraform apply needs near-admin permissions, and a
-static key with those rights sitting in repo secrets is the worst artifact in the
-whole design.
+**Decided:** no long-lived keys. EndGame's `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY` repo secrets don't come along — terraform apply needs
+near-admin permissions, and a static key with those rights in repo secrets is the
+worst artifact in the design.
 
-Use `aws-actions/configure-aws-credentials` with `role-to-assume` and
-`permissions: id-token: write`. **Two roles, not one:**
+`aws-actions/configure-aws-credentials` with `role-to-assume`, and
+`permissions: { id-token: write, contents: read }` on the job.
 
 | Role | Assumed by | Permissions |
 |---|---|---|
-| `invisible-string-ci-plan` | PRs | read-only + terraform state read |
-| `invisible-string-ci-apply` | pushes to `main` only | apply + ECR push |
+| `invisible-string-ci-plan` | any branch push, any PR | read-only AWS + read/write terraform state (plan needs the lock) |
+| `invisible-string-ci-apply` | pushes to `main` only | terraform apply + ECR push |
 
-The trust policy conditions on `token.actions.githubusercontent.com:sub` matching
-`repo:NathanDeMaria/invisible-string:ref:refs/heads/main` for the apply role. A PR
-from a fork then physically cannot reach apply credentials — which matters because
-`terraform plan` executes provider code and a PR can change what runs.
+The separation only means something if the trust policies are right, and the `sub`
+claim formats are easy to get wrong — they differ per event type:
 
-Related: trigger on `pull_request`, never `pull_request_target`. The latter runs the
-*base* workflow with secrets available to a fork's code.
+```jsonc
+// plan role — branch pushes and PRs from this repo
+"StringLike": {
+  "token.actions.githubusercontent.com:sub": [
+    "repo:NathanDeMaria/invisible-string:ref:refs/heads/*",
+    "repo:NathanDeMaria/invisible-string:pull_request"
+  ]
+}
+
+// apply role — main only, exact match, no wildcard
+"StringEquals": {
+  "token.actions.githubusercontent.com:sub":
+    "repo:NathanDeMaria/invisible-string:ref:refs/heads/main",
+  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+}
+```
+
+Note the PR case is `:pull_request`, **not** a `refs/heads/` ref — a plan role
+trusting only `ref:refs/heads/*` silently fails on every PR. And the apply role uses
+`StringEquals`, because `StringLike` with a stray `*` is how `refs/heads/main-hotfix`
+ends up with apply rights.
+
+Two supporting rules:
+- Trigger on `pull_request`, never `pull_request_target`. The latter runs the *base*
+  workflow with secrets exposed to a fork's code.
+- `terraform plan` executes provider code, so treating plan credentials as
+  untrusted-input-adjacent is the whole point of splitting the roles.
 
 Bootstrapping is circular — the OIDC provider and both roles are themselves terraform
 in `infra/`. Apply once from your laptop, and thereafter it manages itself.
@@ -631,16 +660,30 @@ at length, and the reasoning carries over unchanged.
 
 ### Terraform apply
 
-Plan on PR with the output posted as a sticky comment; apply on merge to `main`;
-`workflow_dispatch` as a manual escape hatch. State is already S3 with
-`use_lockfile = true`, so native S3 locking handles concurrency — no DynamoDB table.
-Add `concurrency: { group: terraform-apply, cancel-in-progress: false }` so two
-merges can't apply simultaneously.
+**Decided: plan on every branch, apply on `main`**, plus `workflow_dispatch` as a
+manual escape hatch. Matches EndGame's `branches: ["*"]` trigger style.
 
-One tradeoff to make consciously: re-planning at apply time (simpler) versus saving
-the PR's plan file and applying exactly that (correct — what you reviewed is what
-runs). For a solo repo where you're the only one merging, re-plan is fine; if apply
-ever surprises you, that's the knob.
+Planning on branch pushes rather than only on PRs means a plan often has no PR to
+comment on. So write the plan to **`$GITHUB_STEP_SUMMARY`** unconditionally — it
+renders on the run page either way — and post the sticky PR comment only when
+`github.event_name == 'pull_request'`. One code path for the plan itself, comment as
+an add-on, no branch-vs-PR special-casing in the terraform step.
+
+Wrap the plan body in `<details>` and truncate past ~60KB; GitHub silently drops
+step summaries over 1MB and comments over 65KB, and a first apply that creates the
+App Runner service plus IAM will produce a large plan.
+
+State is already S3 with `use_lockfile = true`, so native S3 locking handles
+concurrency — no DynamoDB table. Add
+`concurrency: { group: terraform-apply, cancel-in-progress: false }` so two merges
+can't apply simultaneously, and note this is deliberately *not* `cancel-in-progress`:
+killing terraform mid-apply is how you get a stale lock and a half-built service.
+Plan jobs can cancel freely (`group: terraform-plan-${{ github.ref }}`).
+
+One tradeoff left open: re-planning at apply time (simpler) versus uploading the
+branch's plan file as an artifact and applying exactly that (correct — what you
+reviewed is what runs). Re-plan is fine while you're the only one merging; if an
+apply ever surprises you, that's the knob.
 
 ### Keeping up with cassandra
 
@@ -734,11 +777,9 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    authenticated admin path. App Runner has no ALB to hang an IP allowlist off, so
    if the whole app should be private that's either real auth in the app or a
    different hosting shape — worth deciding before phase 4.
-5. **Auto-apply terraform on merge, or keep apply manual?** §8 assumes auto-apply
-   with a `workflow_dispatch` escape hatch, which is pleasant right up until an IAM
-   or App Runner change takes the service down without you watching. Manual apply on
-   a solo repo costs one click and removes that failure mode entirely.
-6. **Backfill CI onto cassandra?** It has `make lint`/`make test` and no workflows,
-   and this repo is about to depend on it by git rev for a schema contract. A copy of
-   `ci.yml`'s backend job there would mean a green cassandra `main` actually means
-   something when you bump the pin.
+5. **Backfill CI onto cassandra, and move it to `ty`?** It has `make lint`/`make
+   test` and no workflows, and this repo is about to depend on it by git rev for a
+   schema contract — a green cassandra `main` should mean something when you bump the
+   pin. Doing that is also the moment to drop its mypy/`ty` divergence with the other
+   two repos, though its `ruff.lint.select = ["I"]` (isort only, versus EndGame's
+   `["E","F","I"]`) will surface real findings on first run.
