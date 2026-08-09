@@ -4,9 +4,9 @@ Terraform for invisible-string. State lives at
 `s3://nathan-terraform/invisible-string/terraform.tfstate`, alongside the
 EndGame jobs stack but under its own key.
 
-Right now this stack contains only the CI authentication: the GitHub Actions
-OIDC provider and two roles. The App Runner service, ECR repository, artifact
-bucket and refresh job land on top of it.
+Contents so far: the CI authentication (GitHub Actions OIDC provider and two
+roles) and the model-artifact bucket. The App Runner service, ECR repository
+and refresh job land on top of those.
 
 ```sh
 make init
@@ -105,6 +105,33 @@ Verified against these subjects, including the real one captured from a run:
 If this ever fails again, print the token's claims in the workflow rather than
 reasoning about them — the subject is the only thing that isn't visible from
 the AWS side.
+
+## The artifact bucket
+
+Holds the `ModelRelease` JSON and rating history the API serves
+(DESIGN.md section 11.2). Owned by this stack rather than by EndGame, so it
+gets its own versioning and lifecycle — and so the App Runner instance role
+can be scoped to this bucket alone, leaving the web tier no path to the raw
+scrape data.
+
+```sh
+terraform output artifacts_bucket
+```
+
+Feed that to the app as `INVISIBLE_STRING_RELEASES_BUCKET`.
+
+The name defaults to `invisible-string-artifacts-<account id>`. The account
+suffix isn't decoration: S3 bucket names are globally unique across every AWS
+account, so the unsuffixed name is likely already taken by a stranger. Override
+with `artifacts_bucket_name` if you'd rather pick your own.
+
+| Setting | Why |
+|---|---|
+| Versioning on | A bad `latest.json` overwrite is recoverable without digging through `runs/` |
+| Noncurrent versions expire after 90d | `latest.json` is rewritten every refresh; without this, versioning accumulates one copy per day forever. Safe because every release is also written to `runs/{run_id}.json`, which is never overwritten. |
+| Public access fully blocked | The app reads with its instance role, never anonymously |
+| `BucketOwnerEnforced` | ACLs off. The refresh job writes under a different role than the app reads with, and this keeps object ownership unambiguous. |
+| `force_destroy = false` | `terraform destroy` should fail rather than quietly delete published releases |
 
 ## Permissions
 

@@ -20,6 +20,11 @@ locals {
   # nothing -- GitHub signs the claim, it can't be spoofed.
   subject_repo_legacy = "repo:${var.github_repository}"
 
+  artifacts_bucket = coalesce(
+    var.artifacts_bucket_name,
+    "${var.resource_name_prefix}-artifacts-${data.aws_caller_identity.current.account_id}",
+  )
+
   oidc_provider_arn = var.create_oidc_provider ? (
     aws_iam_openid_connect_provider.github[0].arn
     ) : (
