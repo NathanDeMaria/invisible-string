@@ -62,3 +62,15 @@ variable "resource_name_prefix" {
   type        = string
   default     = "invisible-string"
 }
+
+variable "artifacts_bucket_name" {
+  description = <<-EOT
+    Name for the model-artifact bucket.
+
+    Defaults to <prefix>-artifacts-<account id>. S3 bucket names are globally
+    unique across every AWS account, so an unsuffixed name is likely to be
+    taken by someone else entirely.
+  EOT
+  type        = string
+  default     = null
+}

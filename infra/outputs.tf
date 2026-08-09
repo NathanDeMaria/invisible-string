@@ -12,3 +12,13 @@ output "oidc_provider_arn" {
   description = "GitHub Actions OIDC provider trusted by both roles"
   value       = local.oidc_provider_arn
 }
+
+output "artifacts_bucket" {
+  description = "Set INVISIBLE_STRING_RELEASES_BUCKET to this to serve real releases"
+  value       = aws_s3_bucket.artifacts.bucket
+}
+
+output "artifacts_bucket_arn" {
+  description = "For scoping the App Runner instance role and the refresh job"
+  value       = aws_s3_bucket.artifacts.arn
+}

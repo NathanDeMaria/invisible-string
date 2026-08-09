@@ -86,7 +86,7 @@ fails a build instead of becoming `undefined` in the browser.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `INVISIBLE_STRING_RELEASES_BUCKET` | unset | Read releases from this S3 bucket. Unset means read from disk instead, which is what tests and local dev use. |
+| `INVISIBLE_STRING_RELEASES_BUCKET` | unset | Read releases from this S3 bucket (`cd infra && terraform output artifacts_bucket`). Unset means read from disk instead, which is what tests and local dev use. |
 | `INVISIBLE_STRING_RELEASES_PREFIX` | `models/` | Key prefix within the bucket |
 | `INVISIBLE_STRING_RELEASES_CACHE_TTL_SECONDS` | `60` | How long a release is served from memory before S3 is re-checked |
 | `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/latest.json`. Used only when no bucket is set. |
