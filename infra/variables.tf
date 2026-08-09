@@ -74,3 +74,34 @@ variable "artifacts_bucket_name" {
   type        = string
   default     = null
 }
+
+variable "create_app_runner_service" {
+  description = <<-EOT
+    Create the App Runner service.
+
+    Defaults to false because App Runner validates the image at create time and
+    would fail before one has ever been pushed. First run is: apply with this
+    false to get the ECR repository, push an image, then set it true and apply
+    again. See the ordering note in apprunner.tf.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "app_runner_cpu" {
+  description = "vCPU for the service. The app is I/O bound and caches in memory."
+  type        = string
+  default     = "0.25 vCPU"
+}
+
+variable "app_runner_memory" {
+  description = "Memory for the service"
+  type        = string
+  default     = "0.5 GB"
+}
+
+variable "app_runner_max_size" {
+  description = "Autoscaling ceiling. Min is always 1; App Runner has no scale-to-zero."
+  type        = number
+  default     = 2
+}
