@@ -46,6 +46,22 @@ RUN case "$(uname -m)" in \
     && node --version \
     && npm --version
 
+# Create ~/.aws owned by vscode *before* devcontainer.json binds files into it.
+# Docker creates missing mount parents as root, and the aws CLI writes into
+# ~/.aws/cli/cache, so an unowned parent turns into a permission error at the
+# first command that tries to cache anything.
+RUN mkdir -p /home/vscode/.aws \
+    && chown -R vscode:vscode /home/vscode/.aws
+
+# Bash history survives container rebuilds via the /commandhistory volume,
+# matching the cassandra devcontainer.
+RUN mkdir -p /commandhistory \
+    && chown -R vscode:vscode /commandhistory \
+    && printf '%s\n' \
+    "export PROMPT_COMMAND='history -a'" \
+    "export HISTFILE=/commandhistory/.bash_history" \
+    >> /home/vscode/.bashrc
+
 # poetry, as the vscode user so it lands on that user's PATH
 USER vscode
 RUN pipx install poetry==2.2.1 && poetry --version

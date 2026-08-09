@@ -4,19 +4,25 @@
   // A Dockerfile rather than Features: the toolchain is pinned in one place
   // and the image can be checked with plain `docker build`.
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "context": ".."
   },
 
-  // The bind below stops the container from starting if the directory is
-  // missing, which is easy to hit on a fresh machine.
-  "initializeCommand": "mkdir -p ${localEnv:HOME}${localEnv:USERPROFILE}/.aws",
+  // Bind mounts fail to start the container when the source path is missing,
+  // and an SSO-only machine has no ~/.aws/credentials. Create the lot first.
+  "initializeCommand": "mkdir -p ${localEnv:HOME}${localEnv:USERPROFILE}/.aws/sso ${localEnv:HOME}${localEnv:USERPROFILE}/.aws/login && touch ${localEnv:HOME}${localEnv:USERPROFILE}/.aws/config ${localEnv:HOME}${localEnv:USERPROFILE}/.aws/credentials",
 
   "mounts": [
-    // Read-only on purpose: this container can *use* your AWS credentials but
-    // can't rewrite them. On SSO, run `aws sso login` on the host -- the
-    // cached token is read through this mount. Drop `,readonly` to log in
-    // from inside instead.
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/vscode/.aws,type=bind,readonly"
+    // Same split as cassandra's devcontainer: the static credential files are
+    // read-only so nothing in here can rewrite them, while sso/ and login/ are
+    // writable so `aws sso login` works from inside the container rather than
+    // forcing you back to the host.
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws/config,target=/home/vscode/.aws/config,type=bind,consistency=cached,readonly",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws/credentials,target=/home/vscode/.aws/credentials,type=bind,consistency=cached,readonly",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws/sso,target=/home/vscode/.aws/sso,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws/login,target=/home/vscode/.aws/login,type=bind,consistency=cached",
+
+    "source=invisible-string-bashhistory,target=/commandhistory,type=volume"
   ],
 
   "containerEnv": {
@@ -30,11 +36,19 @@
 
   "customizations": {
     "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.rulers": [88],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      },
       "extensions": [
         "hashicorp.terraform",
         "ms-python.python",
         "charliermarsh.ruff",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "anthropic.claude-code"
       ]
     }
   }

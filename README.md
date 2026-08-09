@@ -16,9 +16,11 @@ frontend/   React + Redux Toolkit (RTK Query)
 the versions CI uses. "Reopen in Container" in VS Code, or
 `devcontainer up --workspace-folder .` with the CLI.
 
-Your `~/.aws` is mounted **read-only**, so the container can use your
-credentials but not rewrite them. On SSO, run `aws sso login` on the host
-first — the cached token is read through that mount.
+`~/.aws` is mounted the way cassandra's devcontainer does it: `config` and
+`credentials` read-only, `sso/` and `login/` writable. So the container can use
+your credentials without being able to rewrite them, and `aws sso login` still
+works from inside. An `initializeCommand` creates those paths first, since a
+bind mount whose source is missing stops the container from starting.
 
 This is the easiest way to run the one-time infra bootstrap:
 
