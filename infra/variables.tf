@@ -85,7 +85,7 @@ variable "create_app_runner_service" {
     again. See the ordering note in apprunner.tf.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "app_runner_cpu" {
