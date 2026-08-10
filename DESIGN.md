@@ -81,11 +81,22 @@ comment in `base_predictor.py`. For a hypothetical matchup we have to synthesize
 `Game`, which is fine (Elo/Elo538/Glicko only read `home`, `away`, `neutral_site`
 in `predict_game`) but shouldn't be re-invented by every caller.
 
-**Spreads are not part of the predictor.** `evaluate_model` fits an
-`IsotonicRegression` from win prob → market spread, uses it to compute
-against-the-spread accuracy, and then **throws it away**. There is no persisted
-prob→spread mapping anywhere. This is the single biggest gap for the matchup
-feature.
+**Margins are not part of the predictor.** They're a separate fit, and one that
+changed shape after this document was first written. Historically `evaluate_model`
+fit an `IsotonicRegression` from win prob → **market spread** with
+`increasing=False`, used it for against-the-spread accuracy, and then threw it
+away — no persisted mapping anywhere, which was the single biggest gap for the
+matchup feature.
+
+Since cassandra's `e80ef85` it fits win prob → **margin of victory**,
+`increasing=True`, and persists it (§9.2). Two consequences worth stating plainly:
+
+- **It trains on every game with a final score**, not the ~20% a book hung a line
+  on. That's five times the data, and it stops the calibration inheriting the
+  market's coverage bias — books price the games people bet on.
+- **The sign flipped.** Both threshold lists now ascend, and a higher win
+  probability means a *more positive* number: the home team wins by more. The
+  display convention below did not change; the API just negates at the boundary.
 
 **Everything is expensive.** `read_all_seasons` pulls 16 years of season pickles;
 `OddsDatabase.from_s3` lists and reads *every* odds key in the bucket. This is
@@ -95,6 +106,9 @@ minutes of work and hundreds of MB. It must never happen inside a request.
 - `team1` == home. `team1_win_prob` is the home team's win probability.
 - `spread` is the market handicap applied to home: `team1_covered = spread + (home_score - away_score) > 0`. So **negative spread = home favored**, and a
   predicted spread of `-6.5` renders as "Duke -6.5".
+- `margin` is the plain difference, `home_score - away_score`, so **positive
+  margin = home won**. It is the negation of the spread, which is why the one
+  line in §3 that converts between them is worth reading twice.
 
 ---
 
@@ -147,15 +161,23 @@ backend — one definition, no drift.
     "…":    { "rating": 1500.0, "rd": 216.0, "wins": 0, "losses": 0 }
   },
 
-  // isotonic fit serialized as knots; np.interp at serve time, no sklearn,
-  // no pickle-version fragility
-  "spread_calibration": {
+  // win prob -> margin of victory. A union discriminated on `kind`, because
+  // cassandra's DEFAULT_FITTERS scores more than one and stores the winner.
+  // Serialized as parameters, never as a pickled estimator: serving needs
+  // np.interp and nothing else, and a scikit-learn upgrade can't make old
+  // releases unreadable.
+  "margin_calibration": {
     "kind": "isotonic",
-    "x_thresholds": [0.02, 0.05, ...],   // ascending win probs
-    "y_thresholds": [21.5, 18.0, ...]    // descending spreads (increasing=False)
+    "x_thresholds": [0.0803, 0.0867, ...],  // ascending win probs
+    "y_thresholds": [-14.69, -14.69, ...]   // ascending margins (increasing=True)
   },
+  // or: { "kind": "logistic", "scale": 11.83 } — isotonic flattens outside the
+  // win probs the season contained; logistic keeps extrapolating, which is the
+  // lopsided-matchup case §3 clamps for.
 
-  "metrics": { "brier_score": 0.1782, "against_spread_accuracy": 0.514,
+  "metrics": { "brier_score": 0.1782, "margin_mae": 9.4,
+               "against_spread_accuracy": 0.514,
+               "spread_game_margin_mae": 9.1, "market_margin_mae": 8.8,
                "n_games": 98342, "n_spread_games": 21150 },
 
   "trained_through": {
@@ -169,6 +191,25 @@ backend — one definition, no drift.
   "parent_run_id": "2026-08-07T09:00:08Z"      // null for a full retrain
 }
 ```
+
+### Reading the metrics
+
+`brier_score` stays the selection rule (§11.1) — it's over every game and it's what
+the optimizer targets. The three MAEs are margin errors in points, and two of them
+are only meaningful as a pair:
+
+| Field | Over | Says |
+|---|---|---|
+| `margin_mae` | every game with a final score | how far off the margin fit is, on its own terms. Not comparable across leagues, and not comparable to anything else. |
+| `spread_game_margin_mae` | just the games a book priced | the model's error on that subset |
+| `market_margin_mae` | the same subset | the closing line's error on it |
+
+The signal is the **gap** between the last two. `margin_mae` alone means very little
+— it's measured on a different, larger population than the market number, so
+comparing them directly flatters the model on exactly the games nobody was willing
+to price. The bottom two are None for a league with no odds coverage, because
+cassandra maps nan to null on the way out: `json.dumps` writes nan as a bare `NaN`
+token that isn't valid JSON and that `JSON.parse` rejects.
 
 Layout, in this repo's own bucket (§11.2): `models/{league}/{model}/runs/{run_id}.json`
 plus `models/{league}/{model}/latest.json` (a copy, not a pointer — one GET to serve).
@@ -240,9 +281,24 @@ support.
 3. `predictor.predict_game(synthetic_game(home, away, neutral))`, where the synthetic
    `Game` is `home_score=0, away_score=0, completed=False, date=now, game_id="synthetic"`.
    That helper belongs in cassandra, not here.
-4. `predicted_spread = float(np.interp(p, x_thresholds, y_thresholds))`.
-   (`np.interp` needs ascending `xp`, which `X_thresholds_` is; a decreasing `fp` is
-   fine.) Clamp `p` into `[x[0], x[-1]]` so extreme mismatches don't extrapolate.
+4. **Negate at the boundary.** The calibration predicts margin; the wire format is
+   the market's spread.
+
+   ```python
+   margin = float(release.margin_predictor().predict_margins([p])[0])
+   predicted_spread = -margin      # renders as "Duke -6.5"
+   ```
+
+   `margin_predictor()` rehydrates whichever fitter won — knots through
+   `np.interp` for the isotonic one, a closed form for the logistic one — and
+   clamps `p` into the fitted range, which sklearn would have returned `nan` for.
+   Don't reimplement it here: the whole point of storing the fit as parameters is
+   that reading it needs no scikit-learn, not that every caller reinvents the
+   evaluation. Note that this repo's image genuinely cannot fit — cassandra keeps
+   scikit-learn in a poetry `fit` group, and poetry groups aren't part of package
+   metadata, so the git dependency doesn't pull it in. A `No module named sklearn`
+   here always means code is trying to *fit* rather than to *read* a fit; the fix
+   is never to add sklearn.
 
 Rebuilding the predictor per request is microseconds — it's a dict assignment. Cache
 the constructed predictor per `run_id` anyway.
@@ -719,10 +775,13 @@ dependency.
 
 1. ~~Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).~~
    *In flight.*
-2. **Persist the prob→spread calibration.** `BaseProbToSpreadPredictor` gets
-   `to_dict()` / `from_dict()`; `IsotonicProbToSpreadPredictor` serializes
-   `X_thresholds_` / `y_thresholds_`. `evaluate_model` currently fits and discards
-   the calibrator — return it instead. **Blocking for the matchup feature.**
+2. ~~**Persist the prob→spread calibration.**~~ *Landed (`e80ef85`).* It arrived
+   larger than specified, and better: the fit targets **margin of victory** rather
+   than market spread, so it trains on every game with a final score instead of the
+   fifth that carry a line, and it's a union discriminated on `kind` rather than a
+   single isotonic shape. See §1 and §2. The sign flipped with it — that's the part
+   this repo had to be careful about, because a stale fixture produces spreads that
+   look plausible and are backwards.
 3. ~~Walk seasons chronologically with `iter_weeks` / `games_in_order` (§1b).~~
    *In flight.*
 4. **A normalized `Predictor.ratings` property (§6)** returning
@@ -731,9 +790,11 @@ dependency.
    ratings table.
 5. **A `week_observer` hook on `generate_predictions` (§6)** so history capture
    doesn't have to subclass or wrap a predictor.
-6. **`cassandra/serving/`**: the `ModelRelease` pydantic model, `to_predictor()`,
-   S3 read/write helpers, and a `predict_matchup(predictor, home, away, neutral_site)`
-   that builds the synthetic `Game` in one place.
+6. ~~**`cassandra/serving/`**: the `ModelRelease` pydantic model, `to_predictor()`,
+   S3 read/write helpers, and a `predict_matchup(...)`.~~ *Landed.* The schema now
+   lives at `cassandra/serving/release.py` and this repo consumes it by git rev, so
+   `backend/app/schema.py` is a re-export and `backend/tests/test_schema_contract.py`
+   is what tells you a rev bump broke the artifact format.
 7. **State as a dict, not a path.** `save_state`/`load_state` are file-based; add
    `state_dict()` / `from_state_dict()` and let the file versions delegate. Avoids
    round-tripping through a temp file in a request handler.

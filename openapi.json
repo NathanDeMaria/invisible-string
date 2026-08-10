@@ -36,7 +36,7 @@
         "type": "object"
       },
       "Metrics": {
-        "description": "Evaluation metrics for a release.\n\n`brier_score` is an error measure, so lower is better -- see\n`pick_default` in releases.py, which is the one place that matters.",
+        "description": "Evaluation metrics for a release.\n\n`brier_score` is an error measure, so lower is better -- see `pick_default`\nin releases.py, which is the one place that matters.\n\nThe three MAEs are margin-of-victory errors in points, and only two of them\nsay anything on their own. `margin_mae` is over every game with a final\nscore; the signal is the *gap* between `spread_game_margin_mae` and\n`market_margin_mae`, which are the model's error and the closing line's\nerror over the same subset of games -- the ones a book hung a number on.\nBoth are None for a league with no odds coverage: cassandra maps nan to null\non the way out, because `json.dumps` emits nan as a bare `NaN` token that is\nnot valid JSON and that browsers reject.",
         "properties": {
           "against_spread_accuracy": {
             "anyOf": [
@@ -53,6 +53,21 @@
             "title": "Brier Score",
             "type": "number"
           },
+          "margin_mae": {
+            "title": "Margin Mae",
+            "type": "number"
+          },
+          "market_margin_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Margin Mae"
+          },
           "n_games": {
             "title": "N Games",
             "type": "integer"
@@ -61,10 +76,22 @@
             "default": 0,
             "title": "N Spread Games",
             "type": "integer"
+          },
+          "spread_game_margin_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread Game Margin Mae"
           }
         },
         "required": [
           "brier_score",
+          "margin_mae",
           "n_games"
         ],
         "title": "Metrics",

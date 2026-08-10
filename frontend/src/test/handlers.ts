@@ -2,9 +2,16 @@ import { HttpResponse, http } from "msw";
 
 import type { LeagueSummary, RatingsResponse } from "../services/api";
 
+// Mirrors backend/tests/fixtures/models/mens/glicko_tuned. `margin_mae` is
+// over every game with a final score; the other two are the model's and the
+// closing line's error over just the games a book priced, and are null for a
+// league with no odds coverage.
 const metrics = {
   brier_score: 0.1782,
+  margin_mae: 9.4,
   against_spread_accuracy: 0.508,
+  spread_game_margin_mae: 9.1,
+  market_margin_mae: 8.8,
   n_games: 98342,
   n_spread_games: 21150,
 };

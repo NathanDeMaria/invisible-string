@@ -18,14 +18,17 @@
     "North Carolina": { "rating": 1790.0, "rd": 74.1, "wins": 22, "losses": 8 },
     "Kansas": { "rating": 1755.5, "rd": 70.2, "wins": 21, "losses": 9 }
   },
-  "spread_calibration": {
+  "margin_calibration": {
     "kind": "isotonic",
     "x_thresholds": [0.02, 0.25, 0.5, 0.75, 0.98],
-    "y_thresholds": [21.5, 7.0, 0.0, -7.0, -21.5]
+    "y_thresholds": [-21.5, -7.0, 0.0, 7.0, 21.5]
   },
   "metrics": {
     "brier_score": 0.1782,
+    "margin_mae": 9.4,
     "against_spread_accuracy": 0.508,
+    "spread_game_margin_mae": 9.1,
+    "market_margin_mae": 8.8,
     "n_games": 98342,
     "n_spread_games": 21150
   },

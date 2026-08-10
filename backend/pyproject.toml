@@ -6,9 +6,18 @@ authors = []
 packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
-# Tightens to ^3.14 when cassandra becomes a dependency -- that's its floor.
-# Nothing here needs 3.14 yet, and the wider range means CI can matrix over
-# both while the schema still lives in app/schema.py.
+# Tightens to ^3.14 in the same commit that adds cassandra -- that's its floor.
+# Nothing here needs 3.14 yet, and the wider range means CI can matrix over both
+# while app/schema.py still carries its own copy of the ModelRelease schema.
+#
+# The pin is waiting on one thing: the rev of the cassandra commit that adds
+# cassandra/serving/ (DESIGN.md section 9.6). It looks like
+#
+#   cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "..." }
+#
+# and it deliberately does NOT bring scikit-learn: cassandra keeps that in a
+# poetry `fit` group, and groups aren't part of package metadata. Reading a
+# stored fit must never require the ability to produce one.
 python = ">=3.13,<4.0"
 fastapi = "^0.121.0"
 pydantic = "^2.12.5"

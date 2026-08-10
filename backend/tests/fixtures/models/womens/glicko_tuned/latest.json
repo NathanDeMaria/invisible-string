@@ -26,7 +26,7 @@
       "losses": 3
     }
   },
-  "spread_calibration": {
+  "margin_calibration": {
     "kind": "isotonic",
     "x_thresholds": [
       0.02,
@@ -36,18 +36,21 @@
       0.98
     ],
     "y_thresholds": [
-      21.5,
-      7.0,
-      0.0,
+      -21.5,
       -7.0,
-      -21.5
+      0.0,
+      7.0,
+      21.5
     ]
   },
   "metrics": {
     "brier_score": 0.1601,
-    "against_spread_accuracy": 0.522,
+    "margin_mae": 8.7,
+    "against_spread_accuracy": null,
+    "spread_game_margin_mae": null,
+    "market_margin_mae": null,
     "n_games": 91004,
-    "n_spread_games": 15320
+    "n_spread_games": 0
   },
   "trained_through": {
     "season_year": 2026,
