@@ -36,7 +36,7 @@
         "type": "object"
       },
       "Metrics": {
-        "description": "Evaluation metrics for a release.\n\n`brier_score` is an error measure, so lower is better -- see `pick_default`\nin releases.py, which is the one place that matters.\n\nThe three MAEs are margin-of-victory errors in points, and only two of them\nsay anything on their own. `margin_mae` is over every game with a final\nscore; the signal is the *gap* between `spread_game_margin_mae` and\n`market_margin_mae`, which are the model's error and the closing line's\nerror over the same subset of games -- the ones a book hung a number on.\nBoth are None for a league with no odds coverage: cassandra maps nan to null\non the way out, because `json.dumps` emits nan as a bare `NaN` token that is\nnot valid JSON and that browsers reject.",
+        "description": "Evaluation metrics for a release.\n\n`brier_score` and the MAEs are error measures, so lower is better -- a\nconsumer picking a default model wants a min, not a max.\n\nThe optional fields are None for a league the odds database doesn't cover\nat all. They're None rather than nan on purpose: `score_predictions`\nreturns nan there, and nan survives json.dumps as the literal `NaN`, which\nis not valid JSON and which browsers reject.",
         "properties": {
           "against_spread_accuracy": {
             "anyOf": [
