@@ -11,7 +11,6 @@ common case. Several tasks converge on a new release within one TTL of it being
 written without any shared state, cache-bust endpoint or sticky routing.
 """
 
-import json
 import threading
 import time
 from dataclasses import dataclass
@@ -20,7 +19,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from app.releases import ReleaseNotFound
+from app.releases import ReleaseNotFound, parse_release
 from app.schema import ModelRelease
 
 # S3 answers a matching If-None-Match with 304, which botocore raises rather
@@ -116,7 +115,11 @@ class S3ReleaseStore:
                 hit.checked_at = time.monotonic()
             return hit.release
 
-        release = ModelRelease.model_validate(json.loads(response["Body"].read()))
+        # Deliberately outside the cache write below: an unreadable object is
+        # never cached, so fixing the artifact takes effect on the next
+        # request rather than after the TTL. The cost is one GET per request
+        # while it stays broken, which at a handful of models is fine.
+        release = parse_release(response["Body"].read(), league, model)
         with self._lock:
             self._releases[cache_key] = _Cached(
                 release=release,

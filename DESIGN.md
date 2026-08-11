@@ -75,11 +75,12 @@ games in an arbitrary order. Everything below assumes the fixed form —
 `iter_weeks(season)` and `week.games_in_order` — because a rating timeseries needs a
 meaningful x-axis, and a fold is only reproducible if its sequence is deterministic.
 
-**Predictions** are `predict_game(game: Game) -> Prediction(team1_win_prob)`. It
-takes a whole `endgame.types.Game`, not two team names — deliberately, per the
-comment in `base_predictor.py`. For a hypothetical matchup we have to synthesize a
-`Game`, which is fine (Elo/Elo538/Glicko only read `home`, `away`, `neutral_site`
-in `predict_game`) but shouldn't be re-invented by every caller.
+**Predictions** are `predict_game(matchup: Matchup) -> Prediction(team1_win_prob)`.
+`Matchup` is a Protocol — the pre-game half of a game (`home`, `away`,
+`neutral_site`, `date`, `game_id`) — which `Game` satisfies structurally. So a
+hypothetical matchup needs no synthetic `Game` with fake scores, and an
+implementation taking a `Matchup` can't peek at the results. `update_game` is the
+half that takes a whole `Game` and learns from it.
 
 **Margins are not part of the predictor.** They're a separate fit, and one that
 changed shape after this document was first written. Historically `evaluate_model`
@@ -278,9 +279,12 @@ support.
 
 1. Fetch the cached `ModelRelease`.
 2. `release.to_predictor()` — rebuilds e.g. `GlickoPredictor(league, **params, ratings=...)`.
-3. `predictor.predict_game(synthetic_game(home, away, neutral))`, where the synthetic
-   `Game` is `home_score=0, away_score=0, completed=False, date=now, game_id="synthetic"`.
-   That helper belongs in cassandra, not here.
+3. `predictor.predict_game(matchup)`. This got simpler than originally written:
+   `predict_game` now takes a `Matchup` — a Protocol in
+   `cassandra/predictor/types.py` covering "the part of a game that's known before
+   it's played" (`home`, `away`, `neutral_site`, `date`, `game_id`). `Game`
+   satisfies it structurally, so no synthetic `Game` with fake scores is needed, and
+   an implementation taking a `Matchup` *cannot* reach the results even by accident.
 4. **Negate at the boundary.** The calibration predicts margin; the wire format is
    the market's spread.
 
@@ -780,12 +784,12 @@ production surprise into a red check.
 ## 9. Changes needed in cassandra
 
 The webapp shouldn't reimplement any model math, which means a handful of additions
-upstream. Items 1 and 3 (the §1a/§1b correctness fixes) are already in flight on a
-branch and are listed only to mark the dependency; the rest are new work, ordered by
-dependency.
+upstream. Items 1, 2 and 3 have landed; the rest are new work, ordered by dependency.
 
 1. ~~Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).~~
-   *In flight.*
+   *Landed.* `generate_predictions` now calls `update_game`, so ratings are a real
+   fold over the game sequence — which is what makes a rating timeseries meaningful
+   and the §5a incremental refresh exact.
 2. ~~**Persist the prob→spread calibration.**~~ *Landed (`e80ef85`).* It arrived
    larger than specified, and better: the fit targets **margin of victory** rather
    than market spread, so it trains on every game with a final score instead of the
@@ -794,18 +798,30 @@ dependency.
    this repo had to be careful about, because a stale fixture produces spreads that
    look plausible and are backwards.
 3. ~~Walk seasons chronologically with `iter_weeks` / `games_in_order` (§1b).~~
-   *In flight.*
+   *Landed.* Seasons are sorted by year and walked with `iter_weeks(season)` /
+   `week.games_in_order`.
 4. **A normalized `Predictor.ratings` property (§6)** returning
    `dict[str, TeamRating] | None`. Feeds the release artifact, the history job, and
    the "does this model rate teams" check that keeps `FlatPredictor` out of the
    ratings table.
 5. **A `week_observer` hook on `generate_predictions` (§6)** so history capture
    doesn't have to subclass or wrap a predictor.
-6. ~~**`cassandra/serving/`**: the `ModelRelease` pydantic model, `to_predictor()`,
-   S3 read/write helpers, and a `predict_matchup(...)`.~~ *Landed.* The schema now
-   lives at `cassandra/serving/release.py` and this repo consumes it by git rev, so
-   `backend/app/schema.py` is a re-export and `backend/tests/test_schema_contract.py`
-   is what tells you a rev bump broke the artifact format.
+6. **`cassandra/serving/`** — *partly landed.* The `ModelRelease` pydantic model is
+   there (`cassandra/serving/release.py`), this repo consumes it by git rev, and
+   `backend/app/schema.py` is a re-export. Three pieces of the original item are
+   still open, and the first is what blocks the matchup feature:
+
+   - **`ModelRelease.to_predictor()`** rebuilding the *rating* predictor from
+     `predictor_class` + `params` + `ratings`. The `to_predictor()` that exists
+     belongs to the margin calibration, not the release. Without it, the only route
+     back to a `GlickoPredictor` is `load_state(path)` — a temp file in a request
+     handler, which is what item 7 exists to avoid. **Blocking `/api/predict`.**
+   - **`predict_matchup(...)`**. Cheaper than originally scoped: `Matchup` is now a
+     Protocol in `cassandra/predictor/types.py` — "the part of a game that's known
+     before it's played" — so no synthetic `Game` is needed, and §3 above is
+     simpler than written.
+   - **S3 read/write helpers.** Nothing upstream writes a release yet; the bucket is
+     seeded by hand via `scripts/seed-artifacts.sh`. Phase 5 needs the writer.
 7. **State as a dict, not a path.** `save_state`/`load_state` are file-based; add
    `state_dict()` / `from_state_dict()` and let the file versions delegate. Avoids
    round-tripping through a temp file in a request handler.

@@ -6,17 +6,50 @@ implementation, and the cache in front of it, land in a later change.
 """
 
 import json
+import logging
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from pydantic import ValidationError
+
 from app.schema import ModelRelease
 from app.settings import Settings, get_settings
+
+log = logging.getLogger(__name__)
 
 
 class ReleaseNotFound(LookupError):
     """No release exists for the requested league/model."""
+
+
+class ReleaseUnreadable(ValueError):
+    """A release object exists but doesn't match the current schema.
+
+    Distinct from ReleaseNotFound because the two want opposite responses: a
+    missing model is a 404, a *stale* one is the bucket and the code having
+    drifted apart, and telling someone "not found" about an object that is
+    plainly sitting there sends them looking in the wrong place.
+
+    In practice this means an artifact written before a cassandra rev bump.
+    Renaming `spread_calibration` to `margin_calibration` did exactly this to
+    every release published before it.
+    """
+
+
+def parse_release(raw: str | bytes, league: str, model: str) -> ModelRelease:
+    """Validate one artifact, naming which one when it doesn't validate.
+
+    Both stores go through here so the failure looks the same locally and in
+    S3, and so pydantic's error never escapes as a bare 500.
+    """
+    try:
+        return ModelRelease.model_validate(json.loads(raw))
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ReleaseUnreadable(
+            f"{league}/{model} does not match the current ModelRelease schema"
+        ) from exc
 
 
 class ReleaseStore(Protocol):
@@ -72,14 +105,43 @@ class LocalReleaseStore:
             raw = path.read_text()
         except FileNotFoundError as exc:
             raise ReleaseNotFound(f"no release for {league}/{model}") from exc
-        return ModelRelease.model_validate(json.loads(raw))
+        return parse_release(raw, league, model)
 
 
 def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:
-    """Every model's current release for a league, in Brier order (best first)."""
-    releases = [store.get_latest(league, m) for m in store.list_models(league)]
+    """Every model's *readable* current release, in Brier order (best first).
+
+    One bad object must not take down the league. Before this skipped, a single
+    artifact left over from an older schema turned `/api/leagues` -- the index
+    for every league -- into a 500, because the validation error escaped from
+    the middle of a list comprehension. Degrading to "that model is missing" is
+    the behavior worth having; the log line is where the detail goes.
+    """
+    releases: list[ModelRelease] = []
+    unreadable: list[str] = []
+
+    for model in store.list_models(league):
+        try:
+            releases.append(store.get_latest(league, model))
+        except ReleaseNotFound:
+            # Listed a moment ago and gone now, or never written. Not an error
+            # worth failing the whole league over either.
+            continue
+        except ReleaseUnreadable as exc:
+            log.warning("skipping unreadable release: %s", exc)
+            unreadable.append(model)
+
     if not releases:
+        # Only claim "not found" when nothing is there. If objects exist and
+        # every one of them is stale, say so -- that's a different problem with
+        # a different fix, and it's the one that follows a rev bump.
+        if unreadable:
+            raise ReleaseUnreadable(
+                f"every release for league {league!r} is unreadable: "
+                f"{', '.join(sorted(unreadable))}"
+            )
         raise ReleaseNotFound(f"no releases for league {league!r}")
+
     return sorted(releases, key=lambda r: (r.metrics.brier_score, r.run_id))
 
 
