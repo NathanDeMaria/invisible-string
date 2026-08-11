@@ -285,20 +285,31 @@ support.
    the market's spread.
 
    ```python
-   margin = float(release.margin_predictor().predict_margins([p])[0])
-   predicted_spread = -margin      # renders as "Duke -6.5"
+   predictor = release.margin_predictor()   # None if the release carries no fit
+   margin = float(predictor.predict_margins(np.array([p]))[0])
+   predicted_spread = -margin               # renders as "Duke -6.5"
    ```
 
-   `margin_predictor()` rehydrates whichever fitter won — knots through
-   `np.interp` for the isotonic one, a closed form for the logistic one — and
-   clamps `p` into the fitted range, which sklearn would have returned `nan` for.
-   Don't reimplement it here: the whole point of storing the fit as parameters is
-   that reading it needs no scikit-learn, not that every caller reinvents the
-   evaluation. Note that this repo's image genuinely cannot fit — cassandra keeps
+   `margin_predictor()` rehydrates whichever fitter won — `np.interp` over the
+   knots for the isotonic one, `scale * logit(p)` for the logistic one. It
+   returns `None` when `margin_calibration` is null, which is a real case: a
+   release written before the fit existed, or a predictor flat enough that there
+   was no slope to fit. `/api/predict` should answer with the win probability and
+   omit the spread rather than 500.
+
+   Don't reimplement the evaluation here. Storing the fit as parameters is what
+   lets reading it work without scikit-learn — it isn't an invitation for every
+   caller to reinvent `np.interp`. The isotonic predictor also clamps outside the
+   fitted range, where `IsotonicRegression` itself returns `nan`; a season only
+   spans roughly `[0.05, 0.95]`, so a lopsided matchup lands outside it and the
+   nan would surface as a blank number a long way from here.
+
+   This image genuinely cannot fit, by construction: cassandra keeps
    scikit-learn in a poetry `fit` group, and poetry groups aren't part of package
-   metadata, so the git dependency doesn't pull it in. A `No module named sklearn`
-   here always means code is trying to *fit* rather than to *read* a fit; the fix
-   is never to add sklearn.
+   metadata, so the git dependency doesn't pull it in and
+   `IsotonicProbToMarginFitter.fit` imports it lazily. A `No module named sklearn`
+   here therefore always means code is trying to *fit* rather than to *read* a
+   fit; the fix is never to add sklearn.
 
 Rebuilding the predictor per request is microseconds — it's a dict assignment. Cache
 the constructed predictor per `run_id` anyway.

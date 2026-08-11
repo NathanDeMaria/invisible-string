@@ -1,10 +1,9 @@
 """The schema contract test DESIGN.md section 8 asks for.
 
-Every golden fixture is validated against the `ModelRelease` this app actually
-serves through. Once `backend/pyproject.toml` pins cassandra and `app.schema`
-becomes a re-export of `cassandra.serving`, this file is unchanged and starts
-answering a much better question: *did bumping the rev break the artifact
-format?* -- which is a red check here instead of a 500 in production.
+Every golden fixture is validated against cassandra's own `ModelRelease` --
+`app.schema` re-exports it, and `backend/pyproject.toml` pins the rev. That
+makes this the test that answers "did bumping the pin break the artifact
+format?" with a red check here, rather than with a 500 in production.
 
 The awkward part is that pydantic ignores unknown keys by default, so most of
 the obvious ways to write this test pass on a fixture that was only half
@@ -17,6 +16,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from app.schema import ModelRelease
@@ -24,9 +24,9 @@ from app.schema import ModelRelease
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE_FILES = sorted((FIXTURES / "models").rglob("latest.json"))
 
-# A heavy home favourite. The number matters: it has to sit inside the knot
-# range of every isotonic fixture, otherwise the bracketing below silently
-# degenerates to an endpoint and stops testing the interesting part.
+# A heavy home favourite, and by symmetry 0.1 is the same underdog. Both sit
+# inside the knot range of every isotonic fixture, so the clamp isn't what's
+# being measured.
 HEAVY_FAVOURITE = 0.9
 
 
@@ -101,28 +101,30 @@ class TestGoldenFixtures:
         that look completely plausible and are backwards, and no other test in
         this repo would notice.
 
-        Deliberately asserted on the knots rather than by interpolating:
-        `np.interp` belongs to `ModelRelease.margin_predictor()`, not here.
-        Bracketing works because the fit is monotone increasing -- whatever the
-        interpolant returns at 0.9 lies between the two surrounding knots, so
-        both being positive settles it.
+        Asserted through `margin_predictor()` rather than by reading knots, so
+        this exercises the same call `/api/predict` will make -- including the
+        clamping that turns an out-of-range win probability into an answer
+        instead of the nan sklearn would have returned.
         """
-        calibration = ModelRelease.model_validate(_load(path)).margin_calibration
-        assert calibration is not None
+        margin = _margin_at(_load(path), HEAVY_FAVOURITE)
+        assert margin > 0, f"margin at p={HEAVY_FAVOURITE} is not positive"
+        assert rendered_spread(margin) < 0
 
-        if calibration.kind == "isotonic":
-            low, high = _bracket(
-                calibration.x_thresholds, calibration.y_thresholds, HEAVY_FAVOURITE
-            )
-            assert low > 0, f"margin at p={HEAVY_FAVOURITE} is not positive"
-            assert high > 0
-            assert rendered_spread(low) < 0
-            assert rendered_spread(high) < 0
-        else:
-            # margin = scale * logit(p), so the sign of the margin above p=0.5
-            # is the sign of scale. A negative scale is the same bug wearing a
-            # different hat.
-            assert calibration.scale > 0
+    def test_the_underdog_side_mirrors_it(self, path: Path) -> None:
+        """The other half of the sign convention.
+
+        A fit that was negated *twice* -- or a fixture whose y-values are all
+        positive -- passes the favourite test and fails here.
+        """
+        assert _margin_at(_load(path), 1 - HEAVY_FAVOURITE) < 0
+
+    def test_a_pickem_is_roughly_level(self, path: Path) -> None:
+        """p=0.5 should predict a game that finishes near level.
+
+        Loose on purpose: isotonic knots land where the data put them, so this
+        is a sanity bound, not a calibration check.
+        """
+        assert abs(_margin_at(_load(path), 0.5)) < 3.0
 
     def test_isotonic_thresholds_ascend(self, path: Path) -> None:
         """`increasing=True`, both axes.
@@ -140,8 +142,13 @@ class TestGoldenFixtures:
         assert ys == sorted(ys)
 
 
-def _bracket(xs: list[float], ys: list[float], p: float) -> tuple[float, float]:
-    """The two y-knots surrounding `p`. Fails rather than clamping."""
-    assert xs[0] <= p <= xs[-1], f"p={p} is outside the fitted range {xs[0]}..{xs[-1]}"
-    i = max(j for j, x in enumerate(xs) if x <= p)
-    return (ys[i], ys[min(i + 1, len(ys) - 1)])
+def _margin_at(raw: dict[str, object], win_prob: float) -> float:
+    """The margin a release predicts for a home team with this win probability.
+
+    Exactly the call `/api/predict` will make: rehydrate the stored fit and
+    evaluate it. No sklearn involved, and no second implementation of np.interp
+    living in this repo.
+    """
+    predictor = ModelRelease.model_validate(raw).margin_predictor()
+    assert predictor is not None
+    return float(predictor.predict_margins(np.array([win_prob]))[0])
