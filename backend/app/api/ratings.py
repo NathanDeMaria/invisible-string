@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,11 +7,14 @@ from pydantic import BaseModel, ConfigDict
 from app.releases import (
     ReleaseNotFound,
     ReleaseStore,
+    ReleaseUnreadable,
     get_release_store,
     latest_releases,
     pick_default,
 )
 from app.schema import Metrics, ModelRelease, TrainedThrough
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -75,9 +79,11 @@ def list_leagues(
     for league in store.list_leagues():
         try:
             releases = latest_releases(store, league)
-        except ReleaseNotFound:
-            # A league directory with no readable releases isn't an error, it's
-            # just not ready to show yet.
+        except (ReleaseNotFound, ReleaseUnreadable):
+            # A league with nothing servable isn't an error here, it's just not
+            # ready to show. Unreadable is included on purpose: this endpoint is
+            # the index for *every* league, so one league's stale artifact must
+            # not blank the others. `latest_releases` has already logged which.
             continue
         default = pick_default(releases)
         summaries.append(
@@ -115,6 +121,13 @@ def get_ratings(
         )
     except ReleaseNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ReleaseUnreadable as exc:
+        # 502, not 404 and not 500: the artifact is there, we fetched it, and
+        # it's the *upstream* data that's wrong. Nothing the caller can change,
+        # and nothing a retry will fix -- it needs a republish. Saying "not
+        # found" would send someone hunting for a missing object that exists.
+        log.warning("serving 502 for %s: %s", league, exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return RatingsResponse(
         league=release.league,
