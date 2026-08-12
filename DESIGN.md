@@ -31,35 +31,37 @@ varies by class:
 `~/.cassandra/models/<league>/<name>_result_state.json` — **on the machine that ran
 the job**. Nothing about ratings currently reaches S3.
 
-### 1a. Ratings don't move on `main` (fixed on a branch)
+### 1a. Ratings didn't move on `main` — fixed (§9.1)
 
-> Being addressed upstream already — recorded here only because the rest of this
-> design assumes the fixed behavior, not because it's an open action item.
+> **Resolved upstream.** Kept because it explains why the rest of this document
+> assumes ratings are a real fold, and why any parameters tuned before the fix
+> are worth re-optimizing.
 
-`generate_predictions` — the one loop every pipeline runs through — calls
+`generate_predictions` — the one loop every pipeline runs through — called
 `predictor.predict_game(game)`. Since commit `0f93c96` ("Split 'update' and
 'predict'", March 2026), `predict_game` is the *pure* half: it reads ratings and
 returns a probability without mutating anything. `update_game` is the half that
-learns, and **nothing outside the unit tests calls it.**
+learns, and **nothing outside the unit tests called it.**
 
 That commit refactored all four predictors and all four test files, but didn't touch
-`save_predictions.py`. So the caller kept calling what is now the read-only method.
-The consequences, if this is what I think it is:
+`save_predictions.py`. So the caller kept calling what had become the read-only
+method. The consequences, while it lasted:
 
-- `EloPredictor` starts with `ratings or {}` and every team stays at 1500 forever;
-  its win probability is a constant determined only by `home_advantage`.
-- `Glicko`/`Elo538` stay pinned at whatever `OpponentPriorManager` loaded, and
-  `postrun_callback` then saves "final" priors computed from ratings that never moved.
-- In `optimize.py`, `k` cannot affect the Brier objective at all, because nothing
-  ever applies it. Only `home_advantage` does anything.
+- `EloPredictor` started with `ratings or {}` and every team stayed at 1500 forever;
+  its win probability was a constant determined only by `home_advantage`.
+- `Glicko`/`Elo538` stayed pinned at whatever `OpponentPriorManager` loaded, and
+  `postrun_callback` then saved "final" priors computed from ratings that never moved.
+- In `optimize.py`, `k` could not affect the Brier objective at all, because nothing
+  ever applied it. Only `home_advantage` did anything.
 
 What this design takes from it: ratings are a genuine fold over the game sequence, so
 a rating timeseries is meaningful and the incremental refresh in §5a is exact. Both
-would be false against `main` as it stands today.
+are true now, and neither was before the fix — which is why the artifacts worth
+publishing are the ones produced after it.
 
-### 1b. Games are walked in fetch order, not chronological order (same branch)
+### 1b. Games were walked in fetch order, not chronological order — fixed (§9.3)
 
-`generate_predictions` iterates `season.weeks` and `week.games` directly. endgame's
+`generate_predictions` iterated `season.weeks` and `week.games` directly. endgame's
 own docstrings are pointed about this: *"Prefer this over `.weeks`: the raw list's
 order depends on how the season happened to be built and merged, so it isn't
 reliably chronological."*
@@ -70,10 +72,11 @@ fetched* — the chronological view is `calendar_weeks`, rebuilt from game dates
 precisely because source weeks "can still overlap in time." `iter_weeks()` exists to
 walk this correctly and raises `OverlappingWeeksError` when they do overlap.
 
-On `main`, `pass_week()` therefore fires on boundaries that may overlap in time, over
-games in an arbitrary order. Everything below assumes the fixed form —
-`iter_weeks(season)` and `week.games_in_order` — because a rating timeseries needs a
-meaningful x-axis, and a fold is only reproducible if its sequence is deterministic.
+So `pass_week()` fired on boundaries that could overlap in time, over games in an
+arbitrary order. `generate_predictions` now sorts seasons by year and walks
+`iter_weeks(season)` / `week.games_in_order`, which is what everything below
+assumes — a rating timeseries needs a meaningful x-axis, and a fold is only
+reproducible if its sequence is deterministic.
 
 **Predictions** are `predict_game(matchup: Matchup) -> Prediction(team1_win_prob)`.
 `Matchup` is a Protocol — the pre-game half of a game (`home`, `away`,
@@ -784,12 +787,21 @@ production surprise into a red check.
 ## 9. Changes needed in cassandra
 
 The webapp shouldn't reimplement any model math, which means a handful of additions
-upstream. Items 1, 2 and 3 have landed; the rest are new work, ordered by dependency.
+upstream.
+
+**Status is only as fresh as the last time someone looked**, and this section has
+been wrong in both directions — items marked open that had quietly landed, and
+item 6 marked done on a reading that missed half of it. Verified against
+cassandra `d4f5760`; re-check before planning off it rather than trusting the
+strikethroughs.
+
+Three things are still open: **5** blocks rating-over-time, **8** is a crash
+waiting for a second run, and the writer in **6** is what would stop the bucket
+being seeded by hand.
 
 1. ~~Call `update_game`, not `predict_game`, in `generate_predictions` (§1a).~~
-   *Landed.* `generate_predictions` now calls `update_game`, so ratings are a real
-   fold over the game sequence — which is what makes a rating timeseries meaningful
-   and the §5a incremental refresh exact.
+   *Landed.* Ratings are a real fold over the game sequence now — which is what
+   makes a rating timeseries meaningful and the §5a incremental refresh exact.
 2. ~~**Persist the prob→spread calibration.**~~ *Landed (`e80ef85`).* It arrived
    larger than specified, and better: the fit targets **margin of victory** rather
    than market spread, so it trains on every game with a final score instead of the
@@ -800,49 +812,64 @@ upstream. Items 1, 2 and 3 have landed; the rest are new work, ordered by depend
 3. ~~Walk seasons chronologically with `iter_weeks` / `games_in_order` (§1b).~~
    *Landed.* Seasons are sorted by year and walked with `iter_weeks(season)` /
    `week.games_in_order`.
-4. **A normalized `Predictor.ratings` property (§6)** returning
-   `dict[str, TeamRating] | None`. Feeds the release artifact, the history job, and
-   the "does this model rate teams" check that keeps `FlatPredictor` out of the
-   ratings table.
+4. ~~**A normalized `Predictor.ratings` property (§6).**~~ *Landed.* A `ratings`
+   property returning `dict[str, Rating]`, raising `RatingsUnsupported` for a
+   predictor that doesn't rate teams — which is what keeps `FlatPredictor` out of
+   the ratings table. It came with an inverse, `from_ratings(league, ratings,
+   **params)`, which is the seam a consumer holding a release comes in through, and
+   `cassandra.serving.ratings_from_predictor` for the snapshot direction.
 5. **A `week_observer` hook on `generate_predictions` (§6)** so history capture
-   doesn't have to subclass or wrap a predictor.
-6. **`cassandra/serving/`** — *partly landed.* The `ModelRelease` pydantic model is
-   there (`cassandra/serving/release.py`), this repo consumes it by git rev, and
-   `backend/app/schema.py` is a re-export. Three pieces of the original item are
-   still open, and the first is what blocks the matchup feature:
+   doesn't have to subclass or wrap a predictor. **Still open — blocks §6.**
+6. **`cassandra/serving/`** — *nearly landed.* The `ModelRelease` model lives at
+   `cassandra/serving/release.py`, this repo consumes it by git rev, and
+   `backend/app/schema.py` is a re-export.
 
-   - **`ModelRelease.to_predictor()`** rebuilding the *rating* predictor from
-     `predictor_class` + `params` + `ratings`. The `to_predictor()` that exists
-     belongs to the margin calibration, not the release. Without it, the only route
-     back to a `GlickoPredictor` is `load_state(path)` — a temp file in a request
-     handler, which is what item 7 exists to avoid. **Blocking `/api/predict`.**
-   - **`predict_matchup(...)`**. Cheaper than originally scoped: `Matchup` is now a
-     Protocol in `cassandra/predictor/types.py` — "the part of a game that's known
-     before it's played" — so no synthetic `Game` is needed, and §3 above is
-     simpler than written.
-   - **S3 read/write helpers.** Nothing upstream writes a release yet; the bucket is
-     seeded by hand via `scripts/seed-artifacts.sh`. Phase 5 needs the writer.
-7. **State as a dict, not a path.** `save_state`/`load_state` are file-based; add
-   `state_dict()` / `from_state_dict()` and let the file versions delegate. Avoids
-   round-tripping through a temp file in a request handler.
-8. **Make `postrun_callback` re-runnable.** `OpponentPriorManager.save` raising when
-   priors exist means any second run with `post_callbacks=True` crashes. Either
-   overwrite behind an explicit flag, or version the priors file.
-9. **`read_all_seasons` hard-codes `range(2010, 2026)`** — it silently stops picking
-   up seasons in 2026. Its own TODO. The refresh job reads the current season
-   directly and doesn't hit this, but the optimizer does.
-10. **`league` shouldn't be `NcaabbGender`.** `optimize.py` does
-    `NcaabbGender[config.league]`, which locks everything to mens/womens even though
-    endgame also has nfl and ncaafb. The API treats league as an opaque string; a
-    small registry upstream would let the webapp pick up football for free.
-11. **Bug, unrelated but noticed:** `_serialize_predictions` writes a 7-column header
-    for a 9-field dataclass and does `",".join(asdict(result).values())` on a dict of
-    ints/floats/bools, which raises `TypeError`. `main.py` is the only caller.
+   - ~~Rehydrate the rating predictor.~~ *Landed* as
+     `ModelRelease.rating_predictor()` — named to sit beside `margin_predictor()`
+     rather than the `to_predictor()` originally sketched, because a release
+     rehydrates two different predictors and a caller holding both wants to see
+     which is which. Raises `UnknownPredictorClass` for a release written by a
+     newer cassandra, and `RatingsUnsupported` for a class that doesn't rate teams;
+     `/api/predict` maps those to 502 and 422.
+   - ~~`predict_matchup(...)`.~~ *Landed* in `cassandra/predictor/matchup.py`.
+     Cheaper than originally scoped, because `Matchup` became a Protocol — "the
+     part of a game that's known before it's played" — so there is no synthetic
+     `Game` with fake scores, and an implementation taking a `Matchup` cannot reach
+     the results even by accident.
+   - **S3 read/write helpers.** Still open. Nothing upstream writes a release, so
+     the bucket is seeded by hand via `scripts/seed-artifacts.sh`. Phase 5 needs
+     the writer, and so does publishing a real model rather than fixtures.
+7. ~~**State as a dict, not a path.**~~ *Landed.* `state_dict()` /
+   `from_state_dict()`, with `save_state`/`load_state` delegating to them — so
+   nothing has to round-trip through a temp file to rebuild a predictor.
+8. **Make `postrun_callback` re-runnable.** `OpponentPriorManager.save` still
+   raises `ValueError` when the priors file exists, so any second run with
+   `post_callbacks=True` crashes. Either overwrite behind an explicit flag, or
+   version the priors file. **Still open.**
+9. ~~**`read_all_seasons` hard-codes `range(2010, 2026)`.**~~ *Landed.* It lists
+   `seasons/` keys and matches them with a regex, so a new season is picked up
+   without a code change.
+10. ~~**`league` shouldn't be `NcaabbGender`.**~~ *Landed.* `optimize.py` takes
+    `league: str`, and says so plainly when a league has no seasons in the bucket
+    rather than failing obscurely. The API already treats league as an opaque
+    string, so football is now a data question rather than a code one.
+11. ~~**Bug: `_serialize_predictions` column mismatch.**~~ *Landed.* The header
+    comes from `fields(_Prediction)` and rows go through `csv.writer`, so the count
+    can't drift and a team name containing a comma is quoted.
 
-Items 1, 3 and 8 change model *output*, not just plumbing — any parameters tuned
-before them were fit against a model that wasn't learning. Re-optimizing once they
-land is what makes the numbers on screen ones worth showing; it isn't work this repo
-needs to do, just something the release artifacts should be produced after.
+**One gap worth recording, found while writing the publish hand-off.** The
+predictions dataframe is built from `_Prediction`, which carries no `game_id` and
+no `date` — the id is right there in `_build_prediction`, used for the odds
+lookup, but isn't carried through. So `trained_through.last_game_date` and
+`processed_game_ids` cannot be filled by anything downstream. Both are optional,
+so releases publish and serve fine without them; what they block is §5a, where
+`processed_game_ids` is the idempotency watermark that makes a refresh exact
+rather than a full replay. Two fields on a dataclass.
+
+Items 1 and 3 changed model *output*, not just plumbing — any parameters tuned
+before them were fit against a model that wasn't learning. Both have landed, so
+**re-optimizing is what makes the numbers on screen worth showing**. It isn't work
+this repo does, just something the release artifacts should be produced after.
 
 ---
 
