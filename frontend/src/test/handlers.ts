@@ -1,6 +1,10 @@
 import { HttpResponse, http } from "msw";
 
-import type { LeagueSummary, RatingsResponse } from "../services/api";
+import type {
+  LeagueSummary,
+  PredictResponse,
+  RatingsResponse,
+} from "../services/api";
 
 // Mirrors backend/tests/fixtures/models/mens/glicko_tuned. `margin_mae` is
 // over every game with a final score; the other two are the model's and the
@@ -75,8 +79,54 @@ const elo: RatingsResponse = {
   ],
 };
 
+/**
+ * Stands in for the real predictor with something monotone in the rating gap,
+ * so the sign relationships the UI depends on hold: whoever is more likely to
+ * win lays the points, and `predicted_spread` is from the *home* team's side.
+ */
+export const predictionFor = ({
+  home,
+  away,
+  neutral = false,
+}: {
+  home: string;
+  away: string;
+  neutral?: boolean;
+}): PredictResponse => {
+  const ratingOf = (team: string) =>
+    glicko.ratings.find((row) => row.team === team)?.rating ?? 1500;
+  const edge = ratingOf(home) - ratingOf(away) + (neutral ? 0 : 95);
+  const homeProb = 1 / (1 + Math.pow(10, -edge / 400));
+
+  return {
+    league: "mens",
+    model: "glicko_tuned",
+    run_id: "r1",
+    home,
+    away,
+    neutral,
+    home_win_prob: homeProb,
+    away_win_prob: 1 - homeProb,
+    // Margin is positive when home wins by that much; the wire format negates.
+    predicted_spread: -(edge / 25),
+    home_rating: ratingOf(home),
+    away_rating: ratingOf(away),
+  };
+};
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
+  http.get("/api/predict", ({ request }) => {
+    const q = new URL(request.url).searchParams;
+    const home = q.get("home") ?? "";
+    const away = q.get("away") ?? "";
+    if (!home || !away) {
+      return HttpResponse.json({ detail: "missing team" }, { status: 422 });
+    }
+    return HttpResponse.json(
+      predictionFor({ home, away, neutral: q.get("neutral") === "true" }),
+    );
+  }),
   http.get("/api/leagues/:league/ratings", ({ params, request }) => {
     if (params.league !== "mens") {
       return HttpResponse.json({ detail: "not found" }, { status: 404 });
