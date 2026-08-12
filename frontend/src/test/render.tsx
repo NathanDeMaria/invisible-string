@@ -4,6 +4,7 @@ import { Provider } from "react-redux";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { createStore } from "../app/store";
+import { LocationProbe } from "./LocationProbe";
 
 interface Options {
   route?: string;
@@ -23,6 +24,7 @@ export function renderApp(
   return render(
     <Provider store={createStore()}>
       <MemoryRouter initialEntries={[route]}>
+        <LocationProbe />
         {path ? (
           <Routes>
             <Route path={path} element={ui} />

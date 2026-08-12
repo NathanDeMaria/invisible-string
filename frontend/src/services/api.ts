@@ -10,9 +10,18 @@ export type LeagueSummary = components["schemas"]["LeagueSummary"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
+export type PredictResponse = components["schemas"]["PredictResponse"];
 
 export interface RatingsArgs {
   league: string;
+  model?: string;
+}
+
+export interface PredictArgs {
+  league: string;
+  home: string;
+  away: string;
+  neutral?: boolean;
   model?: string;
 }
 
@@ -35,7 +44,21 @@ export const api = createApi({
         params: model ? { model } : undefined,
       }),
     }),
+    predict: builder.query<PredictResponse, PredictArgs>({
+      query: ({ league, home, away, neutral, model }) => ({
+        url: "predict",
+        // A GET, so RTK Query caches a matchup for free and re-picking a
+        // previous pair is instant (DESIGN.md section 3).
+        params: {
+          league,
+          home,
+          away,
+          ...(neutral ? { neutral: true } : {}),
+          ...(model ? { model } : {}),
+        },
+      }),
+    }),
   }),
 });
 
-export const { useGetLeaguesQuery, useGetRatingsQuery } = api;
+export const { useGetLeaguesQuery, useGetRatingsQuery, usePredictQuery } = api;
