@@ -113,25 +113,36 @@ jobs:
 
           # 2. It can reach the bucket. /api/leagues lists prefixes, so this
           #    fails on a missing s3:ListBucket -- which /healthz would not
-          #    notice. An *empty* list is a legitimate answer here: it means
-          #    the read worked and nothing has been published yet.
+          #    notice.
           leagues=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
             "$URL/api/leagues")
           count=$(echo "$leagues" | jq 'length')
           echo "leagues published: $count"
 
+          # An empty list used to pass with a warning, from back when the
+          # service could exist before anything had ever been published. That
+          # window is closed -- seeding is `scripts/seed-artifacts.sh` now --
+          # and tolerating empty costs more than it saves, because the API
+          # skips releases it can't parse (DESIGN.md section 2). So a bucket
+          # full of artifacts from an older schema produces exactly the same
+          # empty list as a bucket with nothing in it, and from out here the
+          # two are indistinguishable. Treating empty as a pass is how a
+          # schema change ships green and serves an empty site.
           if [ "$count" -eq 0 ]; then
-            echo "::warning::Bucket has no releases yet; ratings assertion skipped"
-          else
-            # 3. Rows actually come back. This is the assertion that earns its
-            #    keep once there is data: /healthz and an empty /api/leagues
-            #    both pass while GetObject is broken.
-            league=$(echo "$leagues" | jq -r '.[0].league')
-            body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
-              "$URL/api/leagues/$league/ratings")
-            echo "$body" | jq -e '.ratings | length > 0' > /dev/null
-            echo "$body" | jq -r '"\(.league)/\(.model): \(.ratings | length) teams"'
+            echo "::error::/api/leagues is empty. Either nothing is published, or"
+            echo "::error::every artifact is unreadable and the API skipped it."
+            echo "::error::Run ./scripts/seed-artifacts.sh, which validates before"
+            echo "::error::it uploads. Service logs name any skipped release."
+            exit 1
           fi
+
+          # 3. Rows actually come back. This is the assertion that earns its
+          #    keep: /healthz passes while GetObject is broken.
+          league=$(echo "$leagues" | jq -r '.[0].league')
+          body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
+            "$URL/api/leagues/$league/ratings")
+          echo "$body" | jq -e '.ratings | length > 0' > /dev/null
+          echo "$body" | jq -r '"\(.league)/\(.model): \(.ratings | length) teams"'
 
           # 4. The SPA is served from the same origin, so a deep link must
           #    return HTML rather than a 404 (DESIGN.md section 4). Independent
