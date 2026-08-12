@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/predict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Predict */
+        get: operations["predict_api_predict_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -114,6 +131,31 @@ export interface components {
             metrics: components["schemas"]["Metrics"];
             /** Name */
             name: string;
+            /** Run Id */
+            run_id: string;
+        };
+        /** PredictResponse */
+        PredictResponse: {
+            /** Away */
+            away: string;
+            /** Away Rating */
+            away_rating: number;
+            /** Away Win Prob */
+            away_win_prob: number;
+            /** Home */
+            home: string;
+            /** Home Rating */
+            home_rating: number;
+            /** Home Win Prob */
+            home_win_prob: number;
+            /** League */
+            league: string;
+            /** Model */
+            model: string;
+            /** Neutral */
+            neutral: boolean;
+            /** Predicted Spread */
+            predicted_spread: number | null;
             /** Run Id */
             run_id: string;
         };
@@ -225,6 +267,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RatingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    predict_api_predict_get: {
+        parameters: {
+            query: {
+                /** @description e.g. mens */
+                league: string;
+                /** @description Home team, exactly as the ratings name it. */
+                home: string;
+                /** @description Away team. */
+                away: string;
+                /** @description Turns off home advantage. */
+                neutral?: boolean;
+                /** @description Defaults to the league's lowest-Brier model. */
+                model?: string | null;
+                /** @description What-if override for the model's home advantage. */
+                home_advantage?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictResponse"];
                 };
             };
             /** @description Validation Error */

@@ -130,6 +130,76 @@
         "title": "ModelSummary",
         "type": "object"
       },
+      "PredictResponse": {
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "string"
+          },
+          "away_rating": {
+            "title": "Away Rating",
+            "type": "number"
+          },
+          "away_win_prob": {
+            "title": "Away Win Prob",
+            "type": "number"
+          },
+          "home": {
+            "title": "Home",
+            "type": "string"
+          },
+          "home_rating": {
+            "title": "Home Rating",
+            "type": "number"
+          },
+          "home_win_prob": {
+            "title": "Home Win Prob",
+            "type": "number"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "neutral": {
+            "title": "Neutral",
+            "type": "boolean"
+          },
+          "predicted_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Spread"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "league",
+          "model",
+          "run_id",
+          "home",
+          "away",
+          "neutral",
+          "home_win_prob",
+          "away_win_prob",
+          "predicted_spread",
+          "home_rating",
+          "away_rating"
+        ],
+        "title": "PredictResponse",
+        "type": "object"
+      },
       "RatingsResponse": {
         "properties": {
           "created_at": {
@@ -371,6 +441,117 @@
           }
         },
         "summary": "Get Ratings"
+      }
+    },
+    "/api/predict": {
+      "get": {
+        "operationId": "predict_api_predict_get",
+        "parameters": [
+          {
+            "description": "e.g. mens",
+            "in": "query",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "description": "e.g. mens",
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Home team, exactly as the ratings name it.",
+            "in": "query",
+            "name": "home",
+            "required": true,
+            "schema": {
+              "description": "Home team, exactly as the ratings name it.",
+              "title": "Home",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Away team.",
+            "in": "query",
+            "name": "away",
+            "required": true,
+            "schema": {
+              "description": "Away team.",
+              "title": "Away",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Turns off home advantage.",
+            "in": "query",
+            "name": "neutral",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Turns off home advantage.",
+              "title": "Neutral",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Defaults to the league's lowest-Brier model.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the league's lowest-Brier model.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "What-if override for the model's home advantage.",
+            "in": "query",
+            "name": "home_advantage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What-if override for the model's home advantage.",
+              "title": "Home Advantage"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Predict"
       }
     },
     "/healthz": {
