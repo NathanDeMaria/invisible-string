@@ -11,6 +11,7 @@ from app.releases import (
     get_release_store,
     latest_releases,
     pick_default,
+    resolve_release,
 )
 from app.schema import Metrics, ModelRelease, TrainedThrough
 
@@ -114,11 +115,7 @@ def get_ratings(
     store: ReleaseStore = Depends(get_release_store),
 ) -> RatingsResponse:
     try:
-        release = (
-            store.get_latest(league, model)
-            if model
-            else pick_default(latest_releases(store, league))
-        )
+        release = resolve_release(store, league, model)
     except ReleaseNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ReleaseUnreadable as exc:

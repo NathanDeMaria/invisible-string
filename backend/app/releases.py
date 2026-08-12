@@ -145,6 +145,21 @@ def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:
     return sorted(releases, key=lambda r: (r.metrics.brier_score, r.run_id))
 
 
+def resolve_release(
+    store: ReleaseStore, league: str, model: str | None
+) -> ModelRelease:
+    """The release an endpoint should answer from.
+
+    Named model, or the league's default. One definition so `/ratings` and
+    `/predict` can never disagree about which run a caller is looking at --
+    a matchup computed from a different release than the table beside it
+    would be a very quiet kind of wrong.
+    """
+    if model:
+        return store.get_latest(league, model)
+    return pick_default(latest_releases(store, league))
+
+
 @lru_cache(maxsize=1)
 def _build_store(settings: Settings) -> ReleaseStore:
     """S3 when a bucket is configured, otherwise the local directory.
