@@ -38,7 +38,7 @@ export const leagues: LeagueSummary[] = [
   },
 ];
 
-const glicko: RatingsResponse = {
+export const glicko: RatingsResponse = {
   league: "mens",
   model: "glicko_tuned",
   run_id: "r1",
@@ -55,11 +55,20 @@ const glicko: RatingsResponse = {
   ],
 };
 
-// Elo has no rating deviation, so the RD column should disappear.
+// Elo has no rating deviation, so the RD column should disappear. Its MAEs are
+// set the other way round from glicko's -- better than the closing line rather
+// than worse -- so switching models exercises both directions of the
+// comparison in the header.
 const elo: RatingsResponse = {
   ...glicko,
   model: "elo",
   run_id: "r2",
+  metrics: {
+    ...metrics,
+    brier_score: 0.1954,
+    spread_game_margin_mae: 8.6,
+    market_margin_mae: 8.8,
+  },
   ratings: [
     { rank: 1, team: "Duke", rating: 1801.0, rd: null, wins: 24, losses: 5 },
     { rank: 2, team: "Houston", rating: 1799.5, rd: null, wins: 26, losses: 4 },

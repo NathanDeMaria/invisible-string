@@ -65,7 +65,9 @@ export function RatingsPage() {
           {ratings.data.model} &middot; through{" "}
           {ratings.data.trained_through.last_game_date?.slice(0, 10) ??
             `${ratings.data.trained_through.season_year} season`}{" "}
-          &middot; Brier {ratings.data.metrics.brier_score.toFixed(4)}
+          &middot; Brier {ratings.data.metrics.brier_score.toFixed(4)} &middot;
+          margin MAE {ratings.data.metrics.margin_mae.toFixed(1)}
+          <MarketComparison metrics={ratings.data.metrics} />
         </p>
       )}
 
@@ -80,4 +82,45 @@ export function RatingsPage() {
 
 function defaultName(models: { name: string; is_default: boolean }[]): string {
   return models.find((m) => m.is_default)?.name ?? models[0].name;
+}
+
+/**
+ * How the model's margin error compares to the closing line's, on the games
+ * that had one.
+ *
+ * `margin_mae` on its own says very little: it's measured over every game with
+ * a final score, which is a different and much larger population than the ~20%
+ * a book priced. The number worth showing is the *gap* between
+ * `spread_game_margin_mae` and `market_margin_mae`, which are the model's error
+ * and the market's over the same games.
+ *
+ * Both are null for a league with no odds coverage, so this renders nothing
+ * rather than a misleading zero.
+ */
+function MarketComparison({
+  metrics,
+}: {
+  metrics: {
+    spread_game_margin_mae?: number | null;
+    market_margin_mae?: number | null;
+  };
+}) {
+  const mine = metrics.spread_game_margin_mae;
+  const market = metrics.market_margin_mae;
+  if (mine == null || market == null) return null;
+
+  // Positive means the model is further from the truth than the market is.
+  const gap = mine - market;
+  // Below a tenth of a point the rounded numbers would read as a dead heat
+  // with a direction attached, which overstates what the comparison supports.
+  if (Math.abs(gap) < 0.05) {
+    return <> &middot; level with the closing line</>;
+  }
+  return (
+    <>
+      {" "}
+      &middot; {Math.abs(gap).toFixed(1)} pts {gap > 0 ? "worse" : "better"}{" "}
+      than the closing line
+    </>
+  );
 }
