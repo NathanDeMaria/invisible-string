@@ -40,6 +40,21 @@ export const leagues: LeagueSummary[] = [
       },
     ],
   },
+  // Listed, but the ratings handler below 404s for it -- which is the real
+  // shape of a league whose releases exist as prefixes but aren't servable,
+  // and what the "no ratings published" case renders from.
+  {
+    league: "womens",
+    models: [
+      {
+        name: "glicko_tuned",
+        is_default: true,
+        run_id: "r3",
+        created_at: "2026-08-08T09:02:10Z",
+        metrics: { ...metrics, brier_score: 0.1601 },
+      },
+    ],
+  },
 ];
 
 export const glicko: RatingsResponse = {

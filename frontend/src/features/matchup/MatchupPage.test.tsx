@@ -10,8 +10,8 @@ import { MatchupPage } from "./MatchupPage";
 import { favouriteLine } from "./spread";
 
 const MATCHUP_ROUTE = (query = "") => ({
-  route: `/matchup/mens${query}`,
-  path: "/matchup/:league",
+  route: `/mens/matchup${query}`,
+  path: "/:league/matchup",
 });
 
 /** Replaces the predict handler for one test. */
