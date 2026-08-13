@@ -9,8 +9,8 @@ import { server } from "../../test/server";
 import { RatingsPage } from "./RatingsPage";
 
 const RATINGS_ROUTE = (league: string) => ({
-  route: `/ratings/${league}`,
-  path: "/ratings/:league",
+  route: `/${league}/ratings`,
+  path: "/:league/ratings",
 });
 
 const rowsInBody = () =>
