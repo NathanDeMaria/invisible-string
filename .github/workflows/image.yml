@@ -146,8 +146,9 @@ jobs:
 
           # 4. The SPA is served from the same origin, so a deep link must
           #    return HTML rather than a 404 (DESIGN.md section 4). Independent
-          #    of whether any data exists.
-          curl -fsS "$URL/ratings/mens" | grep -q '<div id="root"' \
+          #    of whether any data exists -- the route is resolved in the
+          #    browser, so all this proves is that the fallback is wired up.
+          curl -fsS "$URL/mens/ratings" | grep -q '<div id="root"' \
             || { echo "::error::SPA fallback did not serve index.html"; exit 1; }
 
       - name: Summary
