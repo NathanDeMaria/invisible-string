@@ -101,6 +101,8 @@ nav.panels a.active {
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: end;
   gap: 0.5rem;
   margin: 1.25rem 0 0.75rem;
 }
@@ -113,10 +115,61 @@ nav.panels a.active {
   border-radius: 6px;
   background: var(--bg);
   color: var(--fg);
+  /* A flex item's default min-width is auto, which for a <select> is its
+     widest option -- "Default (glicko_tuned)" was pushing the whole page
+     73px past a 390px viewport and giving the document a horizontal
+     scrollbar. Zero lets it shrink; the flex-basis below sets the target. */
+  min-width: 0;
+  max-width: 100%;
 }
 
-.controls input {
-  flex: 1;
+.controls > input {
+  flex: 1 1 9rem;
+}
+
+.controls > select {
+  flex: 1 1 11rem;
+}
+
+/* Inside a label the flex main axis is vertical, so a flex-basis here would
+   be a *height* -- which is how the pickers briefly rendered 350px tall. The
+   label does the sizing; the control just fills it.
+
+   Not the checkbox: a width:100% checkbox stretches its own box and strands
+   the caption at the far end of the row. */
+.controls label:not(.toggle) > input,
+.controls label:not(.toggle) > select {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.controls label.toggle > input {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
+/* The matchup pickers are labelled, so they stack their caption above the
+   control and wrap as a pair when there isn't room for both. */
+.controls label {
+  display: flex;
+  flex: 1 1 8rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Except the checkbox, which reads as one line and shouldn't be split from
+   its caption. Kept off the flex-grow so it sits where it lands rather than
+   stretching across a row of its own. */
+.controls label.toggle {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
 }
 
 .meta,
@@ -128,20 +181,26 @@ nav.panels a.active {
   margin: 0 0 1rem;
 }
 
-table.ratings {
+/* The matchup result is the same kind of table, so it gets the same
+   treatment rather than a second set of rules that drift apart. */
+table.ratings,
+.matchup table {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
 
 .ratings th,
-.ratings td {
+.ratings td,
+.matchup th,
+.matchup td {
   text-align: left;
   padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--line);
 }
 
-.ratings th {
+.ratings thead th,
+.matchup thead th {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -149,8 +208,14 @@ table.ratings {
   font-weight: 500;
 }
 
-.ratings .num {
+/* Numbers are right-aligned and never wrap. W-L is the one that bites:
+   an en dash is a break opportunity, so "24-5" split across two lines at
+   mobile widths and made every row twice as tall. */
+.ratings .num,
+.matchup td:not(:first-child),
+.matchup th:not(:first-child) {
   text-align: right;
+  white-space: nowrap;
 }
 
 .ratings .rank {
@@ -160,4 +225,41 @@ table.ratings {
 
 .ratings tbody tr:hover {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+/* The line is the answer -- everything else on the matchup page is support. */
+.matchup .line {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0.5rem 0 1rem;
+}
+
+/* Narrow screens: buy the table horizontal room back from its padding, and
+   let a long team name wrap rather than widen the column. */
+@media (max-width: 30rem) {
+  .app {
+    padding: 1.25rem 0.75rem 3rem;
+  }
+
+  .ratings th,
+  .ratings td,
+  .matchup th,
+  .matchup td {
+    padding: 0.45rem 0.3rem;
+  }
+
+  .ratings .rank {
+    width: 1.75rem;
+  }
+
+  .matchup .line {
+    font-size: 1.3rem;
+  }
+
+  /* Its own row rather than squeezed against the right edge next to the
+     second picker. */
+  .controls label.toggle {
+    flex: 0 0 100%;
+  }
 }
