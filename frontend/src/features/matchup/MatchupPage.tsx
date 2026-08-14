@@ -75,7 +75,7 @@ export function MatchupPage() {
           </select>
         </label>
 
-        <label>
+        <label className="toggle">
           <input
             type="checkbox"
             checked={neutral}
