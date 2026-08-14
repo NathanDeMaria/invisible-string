@@ -4,23 +4,12 @@ import {
   Route,
   Routes,
   useLocation,
-  useParams,
 } from "react-router-dom";
 
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
 import { useGetLeaguesQuery } from "./services/api";
-
-/**
- * Keeps the old flat URLs working. `/ratings/mens` was linkable for a while --
- * the deploy smoke test still asks for it -- and a redirect is cheaper than
- * finding out later which bookmarks broke.
- */
-function LegacyRedirect({ panel }: { panel: "ratings" | "matchup" }) {
-  const { league = "mens" } = useParams();
-  return <Navigate to={`/${league}/${panel}`} replace />;
-}
 
 export function App() {
   const { data: leagues } = useGetLeaguesQuery();
@@ -46,18 +35,6 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<Navigate to="/mens/ratings" replace />} />
-
-          {/* Declared before the /:league branch so a stale link can't be read
-              as a league named "ratings". */}
-          <Route
-            path="/ratings/:league"
-            element={<LegacyRedirect panel="ratings" />}
-          />
-          <Route
-            path="/matchup/:league"
-            element={<LegacyRedirect panel="matchup" />}
-          />
-
           <Route path="/:league" element={<LeagueLayout />}>
             <Route index element={<Navigate to="ratings" replace />} />
             <Route path="ratings" element={<RatingsPage />} />
