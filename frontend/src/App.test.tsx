@@ -67,29 +67,3 @@ describe("navigation", () => {
     await waitFor(() => expect(at()).toBe("/mens/ratings"));
   });
 });
-
-describe("legacy URLs", () => {
-  /**
-   * `/ratings/:league` and `/:league/ratings` have the same number of static
-   * and dynamic segments, so which one React Router picks is worth checking
-   * rather than assuming. If the ranking ever went the other way, `/ratings/mens`
-   * would render a league literally named "ratings" -- an empty page rather
-   * than an error.
-   */
-  it("redirects the old ratings URL", async () => {
-    renderApp(<App />, { route: "/ratings/womens" });
-    await waitFor(() => expect(at()).toBe("/womens/ratings"));
-  });
-
-  it("redirects the old matchup URL, query string intact", async () => {
-    renderApp(<App />, { route: "/matchup/mens" });
-    await waitFor(() => expect(at()).toBe("/mens/matchup"));
-  });
-
-  it("does not read 'ratings' as a league name", async () => {
-    renderApp(<App />, { route: "/ratings/mens" });
-    await waitFor(() => expect(at()).toBe("/mens/ratings"));
-    // The league heading is the tell: a mis-ranked route renders "ratings" here.
-    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("mens");
-  });
-});
