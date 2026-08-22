@@ -11,10 +11,21 @@ export type ModelSummary = components["schemas"]["ModelSummary"];
 export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
 export type PredictResponse = components["schemas"]["PredictResponse"];
+export type JobsResponse = components["schemas"]["JobsResponse"];
+export type JobHealth = components["schemas"]["JobHealth"];
+export type JobRun = components["schemas"]["JobRun"];
+export type VolumeResponse = components["schemas"]["VolumeResponse"];
+export type OddsDay = components["schemas"]["OddsDay"];
+export type SeasonObject = components["schemas"]["SeasonObject"];
 
 export interface RatingsArgs {
   league: string;
   model?: string;
+}
+
+/** Days of history. The backend caps it at a week -- see DESIGN.md §12.3. */
+export interface WindowArgs {
+  days: number;
 }
 
 export interface PredictArgs {
@@ -44,6 +55,15 @@ export const api = createApi({
         params: model ? { model } : undefined,
       }),
     }),
+    // Job health and data volume are separate queries against separate
+    // endpoints because they read separate upstreams: Batch being slow
+    // shouldn't blank the volume tables, or the other way round.
+    getJobs: builder.query<JobsResponse, WindowArgs>({
+      query: ({ days }) => ({ url: "jobs", params: { days } }),
+    }),
+    getJobVolume: builder.query<VolumeResponse, WindowArgs>({
+      query: ({ days }) => ({ url: "jobs/volume", params: { days } }),
+    }),
     predict: builder.query<PredictResponse, PredictArgs>({
       query: ({ league, home, away, neutral, model }) => ({
         url: "predict",
@@ -61,4 +81,10 @@ export const api = createApi({
   }),
 });
 
-export const { useGetLeaguesQuery, useGetRatingsQuery, usePredictQuery } = api;
+export const {
+  useGetLeaguesQuery,
+  useGetRatingsQuery,
+  usePredictQuery,
+  useGetJobsQuery,
+  useGetJobVolumeQuery,
+} = api;

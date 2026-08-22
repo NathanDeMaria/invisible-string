@@ -1,0 +1,94 @@
+{
+  "odds": [
+    {
+      "league": "ncaabb",
+      "day": "2026-08-22",
+      "pulls": 12,
+      "bytes": 2412,
+      "latest_at": "2026-08-22T21:04:02Z",
+      "latest_records": 0
+    },
+    {
+      "league": "ncaabb",
+      "day": "2026-08-21",
+      "pulls": 13,
+      "bytes": 2613
+    },
+    {
+      "league": "ncaabb",
+      "day": "2026-08-20",
+      "pulls": 13,
+      "bytes": 2613
+    },
+    {
+      "league": "nfl",
+      "day": "2026-08-22",
+      "pulls": 12,
+      "bytes": 149204,
+      "latest_at": "2026-08-22T21:04:11Z",
+      "latest_records": 61
+    },
+    {
+      "league": "nfl",
+      "day": "2026-08-21",
+      "pulls": 13,
+      "bytes": 161880
+    },
+    {
+      "league": "nfl",
+      "day": "2026-08-20",
+      "pulls": 13,
+      "bytes": 160449
+    }
+  ],
+  "seasons": [
+    {
+      "league": "mens",
+      "year": 2026,
+      "artifact": "games",
+      "key": "seasons/2026/mens.pkl",
+      "bytes": 19402118,
+      "last_modified": "2026-08-21T13:11:02Z"
+    },
+    {
+      "league": "mens",
+      "year": 2026,
+      "artifact": "possessions",
+      "key": "seasons/2026/mens.csv",
+      "bytes": 84119002,
+      "last_modified": "2026-08-21T13:11:40Z"
+    },
+    {
+      "league": "mens",
+      "year": 2026,
+      "artifact": "box_scores",
+      "key": "seasons/2026/mens_box.csv",
+      "bytes": 12004551,
+      "last_modified": "2026-08-21T13:11:48Z"
+    },
+    {
+      "league": "nfl",
+      "year": 2026,
+      "artifact": "games",
+      "key": "seasons/2026/nfl.pkl",
+      "bytes": 402889,
+      "last_modified": "2026-08-22T13:04:12Z"
+    },
+    {
+      "league": "womens",
+      "year": 2026,
+      "artifact": "games",
+      "key": "seasons/2026/womens.pkl",
+      "bytes": 17881402,
+      "last_modified": "2026-08-22T13:10:55Z"
+    },
+    {
+      "league": "wnba",
+      "year": 2026,
+      "artifact": "games",
+      "key": "seasons/2026/wnba.pkl",
+      "bytes": 288140,
+      "last_modified": "2026-08-22T13:02:19Z"
+    }
+  ]
+}

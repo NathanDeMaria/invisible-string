@@ -1,9 +1,13 @@
 import { HttpResponse, http } from "msw";
 
 import type {
+  JobHealth,
+  JobRun,
+  JobsResponse,
   LeagueSummary,
   PredictResponse,
   RatingsResponse,
+  VolumeResponse,
 } from "../services/api";
 
 // Mirrors backend/tests/fixtures/models/mens/glicko_tuned. `margin_mae` is
@@ -129,6 +133,158 @@ export const predictionFor = ({
   };
 };
 
+// -- job health -------------------------------------------------------
+//
+// Mirrors backend/tests/fixtures/jobs, and like the backend's local source it
+// is relative to now: every duration on the page is an age, so fixed dates
+// would render as "247d ago" a year from now and stop testing anything.
+
+const hoursAgo = (hours: number) =>
+  new Date(Date.now() - hours * 3_600_000).toISOString();
+
+const jobRun = (
+  definition: string,
+  status: string,
+  hours: number,
+  extra: Partial<JobRun> = {},
+): JobRun => ({
+  job_id: `${definition}-${hours}`,
+  name: `${definition}-scheduled-run`,
+  definition,
+  status,
+  created_at: hoursAgo(hours),
+  started_at: hoursAgo(hours),
+  stopped_at: status === "RUNNING" ? null : hoursAgo(hours - 0.1),
+  status_reason: null,
+  exit_code: null,
+  duration_seconds: status === "RUNNING" ? null : 360,
+  ...extra,
+});
+
+const jobHealth = (
+  definition: string,
+  runs: JobRun[],
+  overrides: Partial<JobHealth> = {},
+): JobHealth => {
+  const succeeded = runs.filter((r) => r.status === "SUCCEEDED").length;
+  const failed = runs.filter((r) => r.status === "FAILED").length;
+  const terminal = succeeded + failed;
+  const [kind, league] = definition.startsWith("odds-")
+    ? ["odds", definition.slice("odds-".length)]
+    : ["games", definition.slice("daily-games-".length)];
+
+  return {
+    name: definition,
+    kind,
+    league,
+    runs: runs.length,
+    succeeded,
+    failed,
+    running: runs.length - terminal,
+    success_rate: terminal ? succeeded / terminal : null,
+    last_run: runs[0] ?? null,
+    last_success_at:
+      runs.find((r) => r.status === "SUCCEEDED")?.stopped_at ?? null,
+    recent: runs,
+    ...overrides,
+  };
+};
+
+/** Already in the order the API sorts them: broken now, broken earlier, green. */
+export const jobs: JobsResponse = {
+  window_days: 7,
+  since: hoursAgo(7 * 24),
+  truncated: false,
+  jobs: [
+    jobHealth("daily-games-mens", [
+      jobRun("daily-games-mens", "FAILED", 4, {
+        status_reason: "ESPN returned 503 for scoreboard/20260821",
+        exit_code: 1,
+      }),
+      jobRun("daily-games-mens", "SUCCEEDED", 28),
+      jobRun("daily-games-mens", "SUCCEEDED", 52),
+    ]),
+    jobHealth("daily-games-womens", [
+      jobRun("daily-games-womens", "SUCCEEDED", 4),
+      jobRun("daily-games-womens", "FAILED", 28, {
+        status_reason: "Essential container in task exited",
+        exit_code: 1,
+      }),
+      jobRun("daily-games-womens", "SUCCEEDED", 52),
+    ]),
+    // Still in flight, so it counts toward neither side of the rate.
+    jobHealth("odds-nfl", [
+      jobRun("odds-nfl", "RUNNING", 0.2),
+      jobRun("odds-nfl", "SUCCEEDED", 1),
+      jobRun("odds-nfl", "SUCCEEDED", 2),
+    ]),
+    // Nothing has finished in the window at all.
+    jobHealth("odds-ncaabb", [jobRun("odds-ncaabb", "RUNNING", 0.2)]),
+  ],
+};
+
+const day = (offset: number) =>
+  new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+
+export const volume: VolumeResponse = {
+  window_days: 7,
+  since: hoursAgo(7 * 24),
+  odds: [
+    // An offseason league: the job succeeds every hour and pulls nothing,
+    // which only the record count can tell you.
+    {
+      league: "ncaabb",
+      day: day(0),
+      pulls: 12,
+      bytes: 2412,
+      latest_at: hoursAgo(1),
+      latest_records: 0,
+    },
+    {
+      league: "ncaabb",
+      day: day(1),
+      pulls: 13,
+      bytes: 2613,
+      latest_at: hoursAgo(25),
+      latest_records: null,
+    },
+    {
+      league: "nfl",
+      day: day(0),
+      pulls: 12,
+      bytes: 149204,
+      latest_at: hoursAgo(1),
+      latest_records: 61,
+    },
+    {
+      league: "nfl",
+      day: day(1),
+      pulls: 13,
+      bytes: 161880,
+      latest_at: hoursAgo(25),
+      latest_records: null,
+    },
+  ],
+  seasons: [
+    {
+      league: "mens",
+      year: 2026,
+      artifact: "games",
+      key: "seasons/2026/mens.pkl",
+      bytes: 19402118,
+      last_modified: hoursAgo(28),
+    },
+    {
+      league: "nfl",
+      year: 2026,
+      artifact: "games",
+      key: "seasons/2026/nfl.pkl",
+      bytes: 402889,
+      last_modified: hoursAgo(4),
+    },
+  ],
+};
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
   http.get("/api/predict", ({ request }) => {
@@ -141,6 +297,26 @@ export const handlers = [
     return HttpResponse.json(
       predictionFor({ home, away, neutral: q.get("neutral") === "true" }),
     );
+  }),
+  http.get("/api/jobs", ({ request }) => {
+    const days = Number(new URL(request.url).searchParams.get("days") ?? 7);
+    // The window is a real filter, not decoration: a shorter one drops the
+    // older runs, which is what the picker is for.
+    const cutoff = Date.now() - days * 86_400_000;
+    return HttpResponse.json({
+      ...jobs,
+      window_days: days,
+      jobs: jobs.jobs.map((job) => ({
+        ...job,
+        recent: job.recent.filter(
+          (r) => new Date(r.created_at).getTime() >= cutoff,
+        ),
+      })),
+    });
+  }),
+  http.get("/api/jobs/volume", ({ request }) => {
+    const days = Number(new URL(request.url).searchParams.get("days") ?? 7);
+    return HttpResponse.json({ ...volume, window_days: days });
   }),
   http.get("/api/leagues/:league/ratings", ({ params, request }) => {
     if (params.league !== "mens") {

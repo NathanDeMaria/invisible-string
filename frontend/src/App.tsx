@@ -6,6 +6,7 @@ import {
   useLocation,
 } from "react-router-dom";
 
+import { JobsPage } from "./features/jobs/JobsPage";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
@@ -23,7 +24,14 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <h1>invisible string</h1>
+        <div className="masthead">
+          <h1>invisible string</h1>
+          {/* Not a league tab and not a panel: job health belongs to no
+              league, so putting it in either nav would say it does. */}
+          <NavLink to="/jobs" className="utility">
+            Job health
+          </NavLink>
+        </div>
         <nav aria-label="League">
           {(leagues ?? []).map((entry) => (
             <NavLink key={entry.league} to={`/${entry.league}/${panel}`}>
@@ -35,6 +43,9 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<Navigate to="/mens/ratings" replace />} />
+          {/* Above `/:league` by route ranking, not by order: a static
+              segment outranks a dynamic one, so /jobs is never a league. */}
+          <Route path="/jobs" element={<JobsPage />} />
           <Route path="/:league" element={<LeagueLayout />}>
             <Route index element={<Navigate to="ratings" replace />} />
             <Route path="ratings" element={<RatingsPage />} />

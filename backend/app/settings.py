@@ -24,6 +24,19 @@ class Settings(BaseSettings):
     # dev, where vite serves the app and proxies /api here.
     static_dir: Path = Path("./static")
 
+    # Job health (DESIGN.md section 12). Both of these are endgame's, not
+    # ours, and they're read live rather than through an artifact -- so
+    # leaving either unset falls back to the fixtures under `releases_root`,
+    # which is what local dev and tests run on. Set one without the other and
+    # you get the fallback too: half-configured should look like not
+    # configured, not like an outage.
+    batch_job_queue: str | None = None
+    endgame_bucket: str | None = None
+
+    # Batch runs land hourly at most, so a dashboard left open in a tab
+    # doesn't need to become a stream of ListJobs calls.
+    jobs_cache_ttl_seconds: float = 60.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

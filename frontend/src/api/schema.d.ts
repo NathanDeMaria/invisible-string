@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Jobs */
+        get: operations["get_jobs_api_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/volume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Volume */
+        get: operations["get_volume_api_jobs_volume_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/leagues": {
         parameters: {
             query?: never;
@@ -81,6 +115,83 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * JobHealth
+         * @description One job definition's runs over the window, rolled up.
+         */
+        JobHealth: {
+            /** Failed */
+            failed: number;
+            /** Kind */
+            kind: string;
+            last_run: components["schemas"]["JobRun"] | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** League */
+            league: string | null;
+            /** Name */
+            name: string;
+            /** Recent */
+            recent: components["schemas"]["JobRun"][];
+            /** Running */
+            running: number;
+            /** Runs */
+            runs: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Success Rate */
+            success_rate: number | null;
+        };
+        /**
+         * JobRun
+         * @description One Batch job run.
+         */
+        JobRun: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Definition */
+            definition: string;
+            /**
+             * Duration Seconds
+             * @description Wall time in the container, not counting time spent RUNNABLE.
+             *
+             *     Queue wait is a property of the queue rather than of the job, and
+             *     folding it in would make every job look slow whenever something big is
+             *     ahead of it.
+             */
+            readonly duration_seconds: number | null;
+            /** Exit Code */
+            exit_code?: number | null;
+            /** Job Id */
+            job_id: string;
+            /** Name */
+            name: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Status */
+            status: string;
+            /** Status Reason */
+            status_reason?: string | null;
+            /** Stopped At */
+            stopped_at?: string | null;
+        };
+        /** JobsResponse */
+        JobsResponse: {
+            /** Jobs */
+            jobs: components["schemas"]["JobHealth"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Truncated */
+            truncated: boolean;
+            /** Window Days */
+            window_days: number;
+        };
         /** LeagueSummary */
         LeagueSummary: {
             /** League */
@@ -134,6 +245,31 @@ export interface components {
             /** Run Id */
             run_id: string;
         };
+        /**
+         * OddsDay
+         * @description One league's odds pulls on one day.
+         *
+         *     `pulls` and `bytes` come from listing alone. `latest_records` is the only
+         *     true record count on the dashboard -- odds objects are small and immutable,
+         *     so the newest one per league is cheap to open and count (section 12.4).
+         */
+        OddsDay: {
+            /** Bytes */
+            bytes: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Latest At */
+            latest_at?: string | null;
+            /** Latest Records */
+            latest_records?: number | null;
+            /** League */
+            league: string;
+            /** Pulls */
+            pulls: number;
+        };
         /** PredictResponse */
         PredictResponse: {
             /** Away */
@@ -177,6 +313,33 @@ export interface components {
             run_id: string;
             trained_through: components["schemas"]["TrainedThrough"];
         };
+        /**
+         * SeasonObject
+         * @description A season artifact's size and freshness.
+         *
+         *     Deliberately not a game count: a season is one pickle rewritten in place,
+         *     and counting what's inside it means reading megabytes, which section 1
+         *     rules out in a request path. So this answers "did today's run write
+         *     something, and was it bigger than before" -- freshness, with bytes as a
+         *     proxy for volume that the UI shouldn't dress up as a count.
+         */
+        SeasonObject: {
+            /** Artifact */
+            artifact: string;
+            /** Bytes */
+            bytes: number;
+            /** Key */
+            key: string;
+            /**
+             * Last Modified
+             * Format: date-time
+             */
+            last_modified: string;
+            /** League */
+            league: string;
+            /** Year */
+            year: number;
+        };
         /** TeamRow */
         TeamRow: {
             /** Losses */
@@ -217,6 +380,20 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VolumeResponse */
+        VolumeResponse: {
+            /** Odds */
+            odds: components["schemas"]["OddsDay"][];
+            /** Seasons */
+            seasons: components["schemas"]["SeasonObject"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Window Days */
+            window_days: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -226,6 +403,70 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_jobs_api_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_volume_api_jobs_volume_get: {
+        parameters: {
+            query?: {
+                /** @description Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VolumeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_leagues_api_leagues_get: {
         parameters: {
             query?: never;
