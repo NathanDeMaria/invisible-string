@@ -883,6 +883,7 @@ this repo does, just something the release artifacts should be produced after.
 | 4 | `infra/`: OIDC roles first (bootstrapped by hand), then ECR, App Runner, DNS. `image.yml` + `terraform.yml`. Ship it. |
 | 5 | Refresh job + scheduler + admin endpoints. This is where the "live update" lands. |
 | 6 | Nice-to-haves: weekly full-replay guardrail, upcoming games with predictions attached. |
+| 7 | Batch job health dashboard (§12), reading endgame's jobs live. Independent of 5 and 6 — it groups by job definition, so the refresh job joins it on its own. |
 
 Phases 2–4 need nothing from phase 5, so the app is useful — just manually refreshed
 — from phase 4 on. Phase 1 depends on the §1a/§1b fixes landing, but only to produce
@@ -917,6 +918,11 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    each. The App Runner instance role only ever touches this repo's bucket, which is
    a nice tightening: the web tier has no path to raw data at all.
 
+   **Amended by §12.2.** The job health dashboard reads endgame's Batch queue and
+   lists its bucket from the web tier, so "no path to raw data at all" is no longer
+   true. What survives is the useful half: list-only on `seasons/*`, so the app can
+   see that a season object was written without being able to read one.
+
 3. **History covers all seasons (2010–present).** ~115k rows, a couple of MB; full
    replay rewrites the whole file. Chart defaults to the current season with a range
    picker back through 2010 — all-time as a default view is unreadable at 360 teams.
@@ -935,3 +941,128 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
   you're the only one merging.
 - Whether `optimize.py`'s league-as-`NcaabbGender` should become a registry (§9.10),
   which is what would let the site pick up nfl/ncaafb for free.
+
+---
+
+## 12. Batch job health
+
+The releases this app serves are only as fresh as the scrape data underneath them,
+and that data comes from jobs in a different repo that nothing here has ever looked
+at. Today the only signal that a scrape stopped working is an SNS email, which tells
+you about the failure in front of you and nothing about the shape of the week.
+
+### What the jobs are
+
+`EndGame/jobs/main.tf` defines eleven scheduled Batch jobs, all on the same queue,
+all from the same image:
+
+| Job definition | Command | Schedule (CT) | Writes |
+|---|---|---|---|
+| `daily-games-{mens,womens}` | `box_scores <gender> <year>` | daily | `seasons/{year}/{gender}.pkl`, `.csv` (possessions), `_box.csv` |
+| `daily-games-{nfl,ncaafb,nhl,wnba}` | `games <league> <year>` | daily | `seasons/{year}/{league}.pkl` |
+| `odds-{ncaabb,nfl,ncaafb,nhl,wnba}` | `odds <league>` | hourly, 10:00–22:00 | `odds/{league}/{date}/{HH-MM}.json` |
+
+Note the two halves of ncaabb are keyed differently: games are per *gender*
+(`mens`/`womens`), odds are per *league* (`ncaabb`). The dashboard groups by job, so
+it doesn't have to reconcile them, but anything that later joins the two does.
+
+Both entrypoints already count what they pulled — `"Saved %d games for %s %d"`,
+`"Saved %d odds for %s on %s at %s"` — and throw it at CloudWatch logs, where it is
+effectively unqueryable. §12.4 is about getting that number back.
+
+### 12.1 Two sources, two endpoints
+
+**Outcomes come from Batch.** `batch:ListJobs` against the queue with an
+`AFTER_CREATED_AT` filter returns every run in the window. Using a filter means
+`jobStatus` is ignored, so one paginated call covers all statuses rather than one per
+status. Each summary carries `jobDefinition`, which is what the runs get grouped by —
+so the refresh job (§5a) appears on this dashboard for free the day it lands, with no
+change here.
+
+**Volume comes from S3 object metadata.** A delimited list of
+`odds/{league}/{day}/` gives one object per pull: count and total bytes per day,
+without reading anything. Seasons are one rewritten object per league per year, so
+they contribute size and last-modified.
+
+Split across `GET /api/jobs` and `GET /api/jobs/volume` rather than one response,
+because the two fail independently — Batch throttling shouldn't blank the volume
+tables — and the page renders whichever half answered.
+
+```
+GET /api/jobs?days=7
+  -> {window_days, since, truncated,
+      jobs: [{name, kind, league, runs, succeeded, failed, running,
+              success_rate, last_run, last_success_at, recent: [...]}]}
+
+GET /api/jobs/volume?days=7
+  -> {window_days, since,
+      odds: [{league, day, pulls, bytes, latest_at, latest_records}],
+      seasons: [{league, year, artifact, key, bytes, last_modified}]}
+```
+
+Public read, like everything outside `/api/admin/*` (§3). Job names and failure
+reasons are the most operational thing the site exposes; if that ever feels like too
+much, this is one `Depends` away from being admin-only.
+
+### 12.2 What this costs at the boundary
+
+§11.2 claimed the web tier has no path to raw scrape data, and treated that as a
+benefit of the two-bucket split. **This section spends it.** Reading live means the
+App Runner instance role gains, in endgame's account:
+
+- `batch:ListJobs` + `batch:DescribeJobs` on the queue,
+- `s3:ListBucket` on endgame's bucket, scoped to `seasons/*` and `odds/*`,
+- `s3:GetObject` on `odds/*` only, for the record count in §12.4.
+
+`seasons/*` deliberately stays list-only: the pickles are the raw data the split was
+drawn around, and nothing on this dashboard needs their contents. That keeps most of
+the original property — the web tier still can't read a season — while giving up the
+part that says it can't see the bucket at all.
+
+The alternative that keeps the boundary intact is a collector job writing a health
+artifact into *this* repo's bucket, which the API would read exactly like a
+`ModelRelease`. It costs a job and a schedule, and it's the shape to move to if this
+dashboard ever wants history beyond §12.3's ceiling.
+
+### 12.3 The retention ceiling
+
+AWS Batch keeps completed job records for about a week. So "success rate" here means
+*over the last few days*, and `?days=` is capped accordingly — asking for 30 would
+silently answer with 7 days of data and call it a month, which is worse than not
+offering it. Anything longer-lived needs runs persisted as they finish: widen
+endgame's existing `FAILED` EventBridge rule to all terminal states and land them
+somewhere durable, or the collector-artifact shape above.
+
+The window is also why `success_rate` is `null`, not `0.0`, when no run has reached a
+terminal state in it. A job that hasn't run yet today and a job that failed every
+attempt must not render as the same number.
+
+### 12.4 What "amount of data pulled" can honestly mean
+
+Odds are the easy half: one immutable object per pull, so per-day counts come from
+listing, and the newest object per league is small enough to fetch and count entries
+in — that's `latest_records`, the only true record count on the page.
+
+Games are the hard half. A season is a single pickle rewritten in place; counting
+games in it means reading megabytes and unpickling them, which §1 rules out for
+anything in a request path. So the seasons table reports size and last-modified, and
+what it actually answers is "did today's run write something, and was it bigger than
+before" — freshness, not a count. Bytes are a proxy and the UI should not pretend
+otherwise.
+
+The honest fix isn't in this repo: the count already exists in the job, one line
+before it exits. Having `games` and `odds` write a tiny sidecar
+(`seasons/{year}/{league}.stats.json`, a few fields) would make the games column a
+real number and cost one `PutObject` per run. Worth proposing to endgame, out of
+scope here.
+
+### 12.5 Where it lives in the UI
+
+A top-level `/jobs` route, outside the league layout — the league tabs in §4 nest
+*panels under a league*, and job health belongs to no league. Same reason it's a
+separate header link rather than a third panel.
+
+One table of jobs (success rate, last run, last failure reason), and the volume
+tables beneath it. The failing jobs are the entire point of the page, so they sort
+first and stay first: a green wall you scroll to find the red row in is a status page
+nobody reads twice.

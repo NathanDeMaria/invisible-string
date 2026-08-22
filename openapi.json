@@ -14,6 +14,228 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "JobHealth": {
+        "description": "One job definition's runs over the window, rolled up.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "league": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "League"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/JobRun"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "runs": {
+            "title": "Runs",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Rate"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "league",
+          "runs",
+          "succeeded",
+          "failed",
+          "running",
+          "success_rate",
+          "last_run",
+          "last_success_at",
+          "recent"
+        ],
+        "title": "JobHealth",
+        "type": "object"
+      },
+      "JobRun": {
+        "description": "One Batch job run.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "definition": {
+            "title": "Definition",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wall time in the container, not counting time spent RUNNABLE.\n\nQueue wait is a property of the queue rather than of the job, and\nfolding it in would make every job look slow whenever something big is\nahead of it.",
+            "readOnly": true,
+            "title": "Duration Seconds"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          }
+        },
+        "required": [
+          "job_id",
+          "name",
+          "definition",
+          "status",
+          "created_at",
+          "duration_seconds"
+        ],
+        "title": "JobRun",
+        "type": "object"
+      },
+      "JobsResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobHealth"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_days",
+          "since",
+          "truncated",
+          "jobs"
+        ],
+        "title": "JobsResponse",
+        "type": "object"
+      },
       "LeagueSummary": {
         "properties": {
           "league": {
@@ -128,6 +350,59 @@
           "metrics"
         ],
         "title": "ModelSummary",
+        "type": "object"
+      },
+      "OddsDay": {
+        "description": "One league's odds pulls on one day.\n\n`pulls` and `bytes` come from listing alone. `latest_records` is the only\ntrue record count on the dashboard -- odds objects are small and immutable,\nso the newest one per league is cheap to open and count (section 12.4).",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "latest_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest At"
+          },
+          "latest_records": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Records"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "pulls": {
+            "title": "Pulls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "league",
+          "day",
+          "pulls",
+          "bytes"
+        ],
+        "title": "OddsDay",
         "type": "object"
       },
       "PredictResponse": {
@@ -245,6 +520,46 @@
         "title": "RatingsResponse",
         "type": "object"
       },
+      "SeasonObject": {
+        "description": "A season artifact's size and freshness.\n\nDeliberately not a game count: a season is one pickle rewritten in place,\nand counting what's inside it means reading megabytes, which section 1\nrules out in a request path. So this answers \"did today's run write\nsomething, and was it bigger than before\" -- freshness, with bytes as a\nproxy for volume that the UI shouldn't dress up as a count.",
+        "properties": {
+          "artifact": {
+            "title": "Artifact",
+            "type": "string"
+          },
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "last_modified": {
+            "format": "date-time",
+            "title": "Last Modified",
+            "type": "string"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "league",
+          "year",
+          "artifact",
+          "key",
+          "bytes",
+          "last_modified"
+        ],
+        "title": "SeasonObject",
+        "type": "object"
+      },
       "TeamRow": {
         "properties": {
           "losses": {
@@ -355,6 +670,41 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VolumeResponse": {
+        "properties": {
+          "odds": {
+            "items": {
+              "$ref": "#/components/schemas/OddsDay"
+            },
+            "title": "Odds",
+            "type": "array"
+          },
+          "seasons": {
+            "items": {
+              "$ref": "#/components/schemas/SeasonObject"
+            },
+            "title": "Seasons",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_days",
+          "since",
+          "odds",
+          "seasons"
+        ],
+        "title": "VolumeResponse",
+        "type": "object"
       }
     }
   },
@@ -364,6 +714,94 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/jobs": {
+      "get": {
+        "operationId": "get_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "description": "Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "description": "Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week.",
+              "maximum": 7,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Jobs"
+      }
+    },
+    "/api/jobs/volume": {
+      "get": {
+        "operationId": "get_volume_api_jobs_volume_get",
+        "parameters": [
+          {
+            "description": "Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "description": "Days of history. Capped at 7 because AWS Batch keeps completed job records for about a week.",
+              "maximum": 7,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Volume"
+      }
+    },
     "/api/leagues": {
       "get": {
         "operationId": "list_leagues_api_leagues_get",

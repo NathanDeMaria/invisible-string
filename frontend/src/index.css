@@ -4,6 +4,9 @@
   --muted: #6b6862;
   --line: #e4e0d9;
   --accent: #7b3f2e;
+  /* Only the job dashboard uses this, and only for the rows you're meant to
+     look at first. Everything else stays in the two neutrals plus accent. */
+  --fail: #a3301c;
   color-scheme: light dark;
 }
 
@@ -14,6 +17,7 @@
     --muted: #96919f;
     --line: #2e2c36;
     --accent: #d99a6c;
+    --fail: #ef8b76;
   }
 }
 
@@ -235,6 +239,102 @@ table.ratings,
   margin: 0.5rem 0 1rem;
 }
 
+/* Job health ---------------------------------------------------------
+
+   Its own page rather than a panel, because it belongs to no league --
+   so the link to it sits beside the title instead of in either nav. */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+a.utility {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+a.utility:hover,
+a.utility.active {
+  color: var(--fg);
+}
+
+.jobs-page > h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 1.5rem 0 0.6rem;
+}
+
+/* One picker on this page, so it sizes to its caption rather than stretching
+   the full row the way the matchup page's pair fill theirs. */
+.jobs-page .controls label {
+  flex: 0 0 8rem;
+}
+
+.jobs-page h3 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 2rem 0 0.5rem;
+}
+
+/* Every cell here is two lines: the number, and what it's out of. Stacking
+   them keeps three columns on a phone, where five would have wrapped into
+   something unreadable. */
+.jobs .job-name,
+.jobs .rate {
+  display: block;
+}
+
+.jobs .reason,
+.jobs .when,
+.jobs .of {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* A container's failure reason can be a paragraph of stack trace. Let it
+   wrap anywhere rather than widen the column past the viewport. */
+.jobs .reason {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.pill.failed {
+  color: var(--fail);
+  border-color: var(--fail);
+}
+
+.pill.running {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The broken rows are the reason anyone opens this page, so they're marked
+   in the row itself and not only in the status word. */
+.jobs tr.failing td:first-child {
+  box-shadow: inset 2px 0 0 var(--fail);
+  padding-left: 0.5rem;
+}
+
 /* Narrow screens: buy the table horizontal room back from its padding, and
    let a long team name wrap rather than widen the column. */
 @media (max-width: 30rem) {
@@ -255,6 +355,11 @@ table.ratings,
 
   .matchup .line {
     font-size: 1.3rem;
+  }
+
+  .masthead {
+    flex-wrap: wrap;
+    gap: 0.25rem;
   }
 
   /* Its own row rather than squeezed against the right edge next to the
