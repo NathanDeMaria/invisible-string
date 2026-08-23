@@ -76,11 +76,31 @@ describe("JobsPage", () => {
     expect(await screen.findByText("61 odds")).toBeInTheDocument();
   });
 
-  it("sizes season files without calling them counts", async () => {
+  it("counts games pulled, and says today separately", async () => {
     renderApp(<JobsPage />, { route: "/jobs" });
 
-    expect(await screen.findByText("18.5 MB")).toBeInTheDocument();
-    expect(screen.getByText(/Sizes, not game counts/)).toBeInTheDocument();
+    expect(await screen.findByText("31")).toBeInTheDocument();
+    expect(screen.getByText("4 today")).toBeInTheDocument();
+    // The size stays beside the count -- it's the freshness signal the
+    // counts can't give for the CSVs.
+    expect(screen.getByText("18.5 MB")).toBeInTheDocument();
+  });
+
+  it("leaves the count off rows that aren't games", async () => {
+    renderApp(<JobsPage />, { route: "/jobs" });
+
+    // Possessions are rows, not games. A number here would be read as one.
+    const possessions = (await screen.findAllByRole("row")).find((row) =>
+      row.textContent?.includes("possessions"),
+    );
+    expect(possessions?.textContent).toContain("—");
+    expect(possessions?.textContent).toContain("80.2 MB");
+  });
+
+  it("explains that the counts are completed games only", async () => {
+    renderApp(<JobsPage />, { route: "/jobs" });
+
+    expect(await screen.findByText(/only completed ones/)).toBeInTheDocument();
   });
 
   it("keeps the volume tables when Batch is unreadable", async () => {

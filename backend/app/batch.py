@@ -7,27 +7,33 @@ two things that live in different places:
   time. Using a filter makes Batch ignore `jobStatus`, so one paginated call
   covers every status instead of one call per status.
 - **Did it bring back data?** Object metadata under endgame's `odds/` and
-  `seasons/` prefixes. Listing answers most of it without reading anything;
-  only the newest odds object per league is opened, because it's small and it's
-  the one number on the page that's a real record count.
+  `seasons/` prefixes, plus the two kinds of object worth opening: the newest
+  odds pull per league, and each league's current season file, which is
+  unpickled and counted by game date. Season files are re-read only when their
+  ETag moves -- once a day, when the job rewrites one -- so leaving the page
+  open costs listings, not megabytes.
 
 Everything is behind a TTL cache keyed by window size. The jobs move hourly at
 most, and a dashboard someone leaves open must not turn into a steady stream of
 ListJobs calls.
 
 The IAM this needs is spelled out in section 12.2, along with what granting it
-costs -- `seasons/*` is list-only on purpose, so the web tier still can't read
-raw scrape data.
+costs. Counting games spends the last of the two-bucket boundary: reading a
+season means `s3:GetObject` on `seasons/*`, so the web tier can now read raw
+scrape data. That was a deliberate call, not an oversight.
 """
 
 import json
 import logging
+import pickle
 import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -91,6 +97,10 @@ class AwsJobsSource:
         self._lock = threading.Lock()
         self._runs: dict[int, tuple[RunWindow, float]] = {}
         self._volume: dict[int, tuple[Volume, float]] = {}
+        # Keyed by object key, holding the ETag it was counted at. One entry
+        # per season file, replaced when the job rewrites it, so this can't
+        # grow with time the way an ETag-keyed cache would.
+        self._season_games: dict[str, tuple[str, "_GameCounts"]] = {}
 
     # -- runs ------------------------------------------------------------
 
@@ -153,7 +163,7 @@ class AwsJobsSource:
             volume = Volume(
                 since=since,
                 odds=self._odds_volume(days),
-                seasons=self._season_volume(),
+                seasons=self._season_volume(days),
             )
         self._store(self._volume, days, volume)
         return volume
@@ -217,14 +227,16 @@ class AwsJobsSource:
             return None
         return len(parsed) if isinstance(parsed, list) else None
 
-    def _season_volume(self) -> list[SeasonObject]:
-        """Size and freshness of the current season's artifacts.
+    def _season_volume(self, days: int) -> list[SeasonObject]:
+        """Size, freshness and game counts for the current season's artifacts.
 
         The two most recent years, not one: at a season boundary the new year's
         prefix exists before every league has written into it, and blanking the
         table for a week in August isn't worth the tidier query.
         """
         years = sorted(self._child_prefixes("seasons/"), reverse=True)[:2]
+        today = datetime.now(JOB_TZ).date()
+        window_start = today - timedelta(days=days - 1)
 
         seasons: list[SeasonObject] = []
         for year in years:
@@ -233,6 +245,14 @@ class AwsJobsSource:
                 if parsed is None:
                     continue
                 league, artifact = parsed
+                # Only the games pickle holds games. The CSVs beside it are
+                # possessions and box-score rows, and a count there would read
+                # as a number of games.
+                counts = (
+                    self._game_counts(obj["Key"], str(obj.get("ETag", "")))
+                    if artifact == "games"
+                    else None
+                )
                 seasons.append(
                     SeasonObject(
                         league=league,
@@ -241,11 +261,83 @@ class AwsJobsSource:
                         key=obj["Key"],
                         bytes=int(obj["Size"]),
                         last_modified=obj["LastModified"],
+                        games=counts.total if counts else None,
+                        games_today=(
+                            counts.completed_between(today, today) if counts else None
+                        ),
+                        games_in_window=(
+                            counts.completed_between(window_start, today)
+                            if counts
+                            else None
+                        ),
                     )
                 )
 
         seasons.sort(key=lambda s: (-s.year, s.league, s.artifact))
         return seasons
+
+    def _game_counts(self, key: str, etag: str) -> "_GameCounts | None":
+        """Games in one season file, counted per day and cached by ETag.
+
+        A season object is rewritten once a day, so its ETag is the exact
+        signal for "worth reading again". Between rewrites this is free, which
+        is what makes counting affordable in a request path at all -- the
+        objection in section 1 is to reading these on every request, not to
+        reading one.
+
+        Counting per *day* rather than per window means the picker can move
+        without re-reading anything.
+        """
+        cached = self._season_games.get(key)
+        if cached is not None and cached[0] == etag:
+            return cached[1]
+
+        counts = self._count_games(key)
+        if counts is not None:
+            with self._lock:
+                self._season_games[key] = (etag, counts)
+        return counts
+
+    def _count_games(self, key: str) -> "_GameCounts | None":
+        """Read one season pickle and count what's in it.
+
+        Best-effort, and deliberately not fatal: a season that can't be read
+        leaves its row showing size and freshness, which is what this table
+        was before it could count. That also means the counts appear on their
+        own when `s3:GetObject` on `seasons/*` lands, rather than the whole
+        volume endpoint failing until it does.
+        """
+        try:
+            raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        except (ClientError, BotoCoreError) as exc:
+            log.warning("could not read s3://%s/%s: %s", self._bucket, key, exc)
+            return None
+
+        try:
+            loaded = pickle.loads(raw)
+        except Exception as exc:  # noqa: BLE001 - see below
+            # Unpickling someone else's object graph can fail in essentially
+            # any way: a moved class, a renamed field, a truncated body. All of
+            # them mean the same thing here -- no counts for this file -- and
+            # none of them should take the dashboard down with them.
+            log.warning("could not unpickle s3://%s/%s: %s", self._bucket, key, exc)
+            return None
+
+        # `save_to_s3` writes a list of seasons; tolerate a bare one.
+        seasons = loaded if isinstance(loaded, list) else [loaded]
+
+        total = 0
+        completed: Counter[date] = Counter()
+        for season in seasons:
+            for week in getattr(season, "weeks", []):
+                for game in week.games:
+                    total += 1
+                    # Scheduled-but-unplayed games are in the file too, and
+                    # they'd make an empty scrape look like a full one.
+                    if game.completed:
+                        completed[_game_day(game.date)] += 1
+
+        return _GameCounts(total=total, completed_by_day=dict(completed))
 
     # -- s3 helpers ------------------------------------------------------
 
@@ -294,6 +386,29 @@ def _upstream(name: str) -> Iterator[None]:
     except (ClientError, BotoCoreError) as exc:
         log.warning("%s read failed: %s", name, exc)
         raise JobsUnavailable(f"could not read {name}: {exc}") from exc
+
+
+@dataclass(frozen=True)
+class _GameCounts:
+    """Everything in a season file, plus completed games by day."""
+
+    total: int
+    completed_by_day: Mapping[date, int]
+
+    def completed_between(self, start: date, end: date) -> int:
+        return sum(n for day, n in self.completed_by_day.items() if start <= day <= end)
+
+
+def _game_day(moment: datetime) -> date:
+    """The day a game belongs to, in the zone the jobs think in.
+
+    endgame's game dates arrive naive from ESPN. A naive one is taken at face
+    value rather than assumed to be UTC: converting it would walk evening games
+    into the next day, which is exactly the boundary "games today" turns on.
+    """
+    if moment.tzinfo is None:
+        return moment.date()
+    return moment.astimezone(JOB_TZ).date()
 
 
 def _parse_run(summary: dict[str, Any]) -> JobRun:

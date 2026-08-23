@@ -127,13 +127,17 @@ class OddsDay(BaseModel):
 
 
 class SeasonObject(BaseModel):
-    """A season artifact's size and freshness.
+    """A season artifact: how big, how fresh, and how many games are in it.
 
-    Deliberately not a game count: a season is one pickle rewritten in place,
-    and counting what's inside it means reading megabytes, which section 1
-    rules out in a request path. So this answers "did today's run write
-    something, and was it bigger than before" -- freshness, with bytes as a
-    proxy for volume that the UI shouldn't dress up as a count.
+    The counts are only on the `.pkl` games artifact -- the possessions and
+    box-score CSVs beside it are rows, not games, and get `None` rather than a
+    number that would read as one.
+
+    `games` is everything in the file, including games that haven't been played
+    yet: a season file carries the whole schedule. `games_today` and
+    `games_in_window` count only *completed* games, because the question they
+    answer is "did last night's results land", and a fixture list can answer
+    that yes while the scrape brought back nothing (section 12.4).
     """
 
     league: str
@@ -142,6 +146,9 @@ class SeasonObject(BaseModel):
     key: str
     bytes: int
     last_modified: datetime
+    games: int | None = None
+    games_today: int | None = None
+    games_in_window: int | None = None
 
 
 class RunWindow(BaseModel):

@@ -918,10 +918,11 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    each. The App Runner instance role only ever touches this repo's bucket, which is
    a nice tightening: the web tier has no path to raw data at all.
 
-   **Amended by §12.2.** The job health dashboard reads endgame's Batch queue and
-   lists its bucket from the web tier, so "no path to raw data at all" is no longer
-   true. What survives is the useful half: list-only on `seasons/*`, so the app can
-   see that a season object was written without being able to read one.
+   **Amended by §12.2.** The job health dashboard reads endgame's Batch queue, lists
+   its bucket, and reads season files to count games, so "no path to raw data at
+   all" is no longer true at all. What the split still buys is what it always bought
+   underneath that: independent versioning, lifecycle and retention on the artifact
+   bucket, and one clear owner for each.
 
 3. **History covers all seasons (2010–present).** ~115k rows, a couple of MB; full
    replay rewrites the whole file. Chart defaults to the current season with a range
@@ -979,10 +980,13 @@ status. Each summary carries `jobDefinition`, which is what the runs get grouped
 so the refresh job (§5a) appears on this dashboard for free the day it lands, with no
 change here.
 
-**Volume comes from S3 object metadata.** A delimited list of
-`odds/{league}/{day}/` gives one object per pull: count and total bytes per day,
-without reading anything. Seasons are one rewritten object per league per year, so
-they contribute size and last-modified.
+**Volume comes from S3 object metadata, plus two objects worth opening.** A
+delimited list of `odds/{league}/{day}/` gives one object per pull: count and total
+bytes per day, without reading anything. On top of that, the newest odds pull per
+league is opened and counted, and each league's current season file is unpickled and
+counted by game date (§12.4). Season files are re-read only when their ETag moves —
+once a day, when the job rewrites one — so a page left open costs listings, not
+megabytes.
 
 Split across `GET /api/jobs` and `GET /api/jobs/volume` rather than one response,
 because the two fail independently — Batch throttling shouldn't blank the volume
@@ -1012,12 +1016,26 @@ App Runner instance role gains, in endgame's account:
 
 - `batch:ListJobs` + `batch:DescribeJobs` on the queue,
 - `s3:ListBucket` on endgame's bucket, scoped to `seasons/*` and `odds/*`,
-- `s3:GetObject` on `odds/*` only, for the record count in §12.4.
+- `s3:GetObject` on `odds/*` and `seasons/*`.
 
-`seasons/*` deliberately stays list-only: the pickles are the raw data the split was
-drawn around, and nothing on this dashboard needs their contents. That keeps most of
-the original property — the web tier still can't read a season — while giving up the
-part that says it can't see the bucket at all.
+**That is the whole boundary, spent.** An earlier draft of this section kept
+`seasons/*` list-only and made a virtue of it; counting games (§12.4) needs the
+pickles themselves, so the web tier can now read raw scrape data. Worth being plain
+about rather than leaving §11.2 to imply otherwise: the two-bucket split still buys
+independent lifecycle, versioning and retention on the artifact bucket, and it no
+longer buys the web tier having no path to endgame's data.
+
+Two smaller consequences of reading those objects:
+
+- **Unpickling is arbitrary-code execution by design.** The objects are written by
+  endgame's own jobs into a bucket with public access blocked, and cassandra already
+  unpickles the same ones in the refresh job — so this adds no trust that wasn't
+  already extended. It does mean the bucket's write path is now part of the web
+  tier's threat model.
+- **The classes have to be importable.** `endgame` is already in this image,
+  transitively via cassandra (`cassandra` → `endgame-aws` → `endgame`, both pinned
+  by rev). A cassandra bump that drops it would turn the counts into `None` rather
+  than break the page, which is the right failure but a quiet one.
 
 The alternative that keeps the boundary intact is a collector job writing a health
 artifact into *this* repo's bucket, which the API would read exactly like a
@@ -1043,18 +1061,34 @@ Odds are the easy half: one immutable object per pull, so per-day counts come fr
 listing, and the newest object per league is small enough to fetch and count entries
 in — that's `latest_records`, the only true record count on the page.
 
-Games are the hard half. A season is a single pickle rewritten in place; counting
-games in it means reading megabytes and unpickling them, which §1 rules out for
-anything in a request path. So the seasons table reports size and last-modified, and
-what it actually answers is "did today's run write something, and was it bigger than
-before" — freshness, not a count. Bytes are a proxy and the UI should not pretend
-otherwise.
+Games are the harder half, and the table counts them anyway. A season is a single
+pickle rewritten in place, so the count comes from reading the file: `pickle.loads`,
+walk `season.weeks[].games`, and tally by date.
 
-The honest fix isn't in this repo: the count already exists in the job, one line
-before it exits. Having `games` and `odds` write a tiny sidecar
-(`seasons/{year}/{league}.stats.json`, a few fields) would make the games column a
-real number and cost one `PutObject` per run. Worth proposing to endgame, out of
-scope here.
+What makes that affordable in a request path is the ETag. §1's objection is to
+reading these on *every* request — `read_all_seasons` pulling 16 years — not to
+reading one. A season object changes once a day, when its job rewrites it, and its
+ETag says so exactly; between rewrites the count is free. The tally is kept per day
+rather than per window, so moving the window picker re-reads nothing.
+
+Three things the counting is deliberate about:
+
+- **Completed games only, for the recency numbers.** A season file carries the whole
+  schedule, so a fixture list alone would make an empty scrape look like a full one.
+  `games` is everything in the file; `games_today` and `games_in_window` are the ones
+  with a final score.
+- **The day is the one the jobs think in.** Game dates arrive naive from ESPN and are
+  taken at face value; converting a naive datetime would walk evening games into the
+  next day, which is exactly the boundary "games today" turns on.
+- **A file that can't be read keeps its row.** A denied `GetObject`, a moved class, a
+  truncated body — all of them mean no count for that file, and the row falls back to
+  size and last-modified. The counts therefore appear on their own when the §12.2
+  grant lands, rather than the volume endpoint failing until it does.
+
+Sidecar stats written by the jobs themselves (`seasons/{year}/{league}.stats.json`,
+one `PutObject` per run) would still be cheaper and wouldn't need the read grant at
+all — the count already exists in the job, one line before it exits. That's the shape
+to propose upstream if the read ever becomes uncomfortable.
 
 ### 12.5 Where it lives in the UI
 
