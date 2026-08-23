@@ -58,7 +58,7 @@ export function DataVolume({ odds, seasons, days }: Props) {
         </table>
       )}
 
-      <h3>Season files</h3>
+      <h3>Games pulled</h3>
       {seasons.length === 0 ? (
         <p className="empty">No season objects.</p>
       ) : (
@@ -66,6 +66,9 @@ export function DataVolume({ odds, seasons, days }: Props) {
           <thead>
             <tr>
               <th scope="col">Season</th>
+              <th scope="col" className="num">
+                Games / {days}d
+              </th>
               <th scope="col" className="num">
                 Size
               </th>
@@ -83,6 +86,21 @@ export function DataVolume({ odds, seasons, days }: Props) {
                   </span>
                   <span className="reason quiet">{season.artifact}</span>
                 </td>
+                <td className="num">
+                  {/* Null for the CSVs beside each season, and for a file
+                      that couldn't be read -- both of which still have a
+                      size and a timestamp worth showing. */}
+                  {season.games_in_window == null ? (
+                    <span className="rate">&mdash;</span>
+                  ) : (
+                    <>
+                      <span className="rate">{season.games_in_window}</span>
+                      <span className="of">
+                        {season.games_today ?? 0} today
+                      </span>
+                    </>
+                  )}
+                </td>
                 <td className="num">{size(season.bytes)}</td>
                 <td className="num">{ago(season.last_modified)}</td>
               </tr>
@@ -91,9 +109,11 @@ export function DataVolume({ odds, seasons, days }: Props) {
         </table>
       )}
       <p className="meta">
-        Sizes, not game counts. A season is one object rewritten in place, so
-        counting what&rsquo;s inside it means reading megabytes &mdash; what
-        this column answers is whether today&rsquo;s run wrote something.
+        Games are counted by date out of the season file, and only completed
+        ones: the file also carries the rest of the schedule, so an empty scrape
+        would otherwise look like a full one. The CSVs beside each season are
+        possession and box-score rows rather than games, so they show size
+        alone.
       </p>
     </>
   );

@@ -8,11 +8,15 @@ a single `AFTER_CREATED_AT`-filtered pass over the queue (DESIGN.md section
 12.1). What no test here can check is that AWS agrees that filter exists; the
 first real deploy is what confirms that.
 
-S3 is moto, since listing semantics -- delimiters, common prefixes, `Size` --
-are exactly what the volume code is made of.
+S3 is moto, since listing semantics -- delimiters, common prefixes, `Size`,
+ETags -- are exactly what the volume code is made of. The season pickles are
+real ones, built from endgame's own `Season`/`Week`/`Game`: the counting code
+unpickles a foreign object graph, and a stub of it would only prove that the
+stub matched itself.
 """
 
 import json
+import pickle
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -20,6 +24,8 @@ from typing import Any
 import boto3
 import pytest
 from botocore.exceptions import ClientError
+from endgame.ncaabb.ncaabb import Season
+from endgame.types import Game, Week
 from moto import mock_aws
 
 from app.batch import JOB_TZ, MAX_RUN_PAGES, AwsJobsSource
@@ -54,6 +60,24 @@ def summary(
     }
 
 
+def game(day: datetime, *, completed: bool = True, gid: str = "g") -> Game:
+    return Game(
+        home="Duke",
+        home_score=70 if completed else 0,
+        away="UNC",
+        away_score=68 if completed else 0,
+        neutral_site=False,
+        completed=completed,
+        date=day,
+        game_id=gid,
+    )
+
+
+def season_pickle(games: list[Game], year: int = 2026) -> bytes:
+    """What `save_to_s3` writes: a pickled *list* of seasons."""
+    return pickle.dumps([Season([Week(games, 1)], year)])
+
+
 class StubBatch:
     """Hands back canned ListJobs pages and records what it was asked."""
 
@@ -75,6 +99,44 @@ class BrokenBatch:
 
     def list_jobs(self, **kwargs: Any) -> dict[str, Any]:
         raise ClientError({"Error": {"Code": self._code}}, "ListJobs")
+
+
+class CountingS3:
+    """Passes everything through to moto, counting reads by key prefix.
+
+    An ETag cache that silently isn't caching looks identical from the
+    outside, so the calls are what's asserted rather than the values.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.gets: list[str] = []
+
+    def gets_under(self, prefix: str) -> int:
+        return sum(1 for key in self.gets if key.startswith(prefix))
+
+    def get_object(self, **kwargs: Any) -> Any:
+        self.gets.append(kwargs["Key"])
+        return self._inner.get_object(**kwargs)
+
+    def get_paginator(self, name: str) -> Any:
+        return self._inner.get_paginator(name)
+
+
+class DeniesGetsUnder:
+    """Reads everything except one prefix, the way a missing grant would."""
+
+    def __init__(self, inner: Any, prefix: str) -> None:
+        self._inner = inner
+        self._prefix = prefix
+
+    def get_object(self, **kwargs: Any) -> Any:
+        if kwargs["Key"].startswith(self._prefix):
+            raise ClientError({"Error": {"Code": "AccessDenied"}}, "GetObject")
+        return self._inner.get_object(**kwargs)
+
+    def get_paginator(self, name: str) -> Any:
+        return self._inner.get_paginator(name)
 
 
 @pytest.fixture
@@ -103,12 +165,28 @@ def s3() -> Iterator[Any]:
             json.dumps([{"g": i} for i in range(5)]).encode(),
         )
 
-        put("seasons/2026/nfl.pkl", b"x" * 400)
-        put("seasons/2026/mens.pkl", b"x" * 900)
+        # Naive datetimes, which is how endgame's game dates arrive.
+        midnight = datetime.combine(today, datetime.min.time())
+        put(
+            "seasons/2026/mens.pkl",
+            season_pickle(
+                [
+                    game(midnight.replace(hour=19), gid="today-1"),
+                    game(midnight.replace(hour=21), gid="today-2"),
+                    game(midnight - timedelta(days=3), gid="earlier"),
+                    game(midnight - timedelta(days=30), gid="old"),
+                    # Tonight's game, not played yet. It is in the file, and
+                    # counting it would make an empty scrape look full.
+                    game(midnight.replace(hour=23), completed=False, gid="upcoming"),
+                ]
+            ),
+        )
+        put("seasons/2026/nfl.pkl", season_pickle([game(midnight, gid="nfl-today")]))
+        # Not pickles, and not games: these must not get a count.
         put("seasons/2026/mens.csv", b"x" * 1200)
         put("seasons/2026/mens_box.csv", b"x" * 300)
-        put("seasons/2025/nfl.pkl", b"x" * 380)
-        put("seasons/2024/nfl.pkl", b"x" * 360)
+        put("seasons/2025/nfl.pkl", season_pickle([], year=2025))
+        put("seasons/2024/nfl.pkl", season_pickle([], year=2024))
         yield client
 
 
@@ -249,12 +327,101 @@ class TestVolume:
 
         assert set(mens) == {"games", "possessions", "box_scores"}
         assert mens["box_scores"].key == "seasons/2026/mens_box.csv"
-        assert mens["games"].bytes == 900
+        assert mens["games"].bytes > 0
         assert mens["games"].last_modified.tzinfo is not None
 
     def test_keeps_two_season_years_so_a_rollover_isnt_blank(self, s3: Any) -> None:
         volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
         assert {s.year for s in volume.seasons} == {2026, 2025}
+
+    def test_counts_games_in_the_season_file(self, s3: Any) -> None:
+        volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
+        mens = next(
+            s for s in volume.seasons if s.league == "mens" and s.artifact == "games"
+        )
+
+        # Everything in the file, tonight's unplayed game included: a season
+        # file carries the whole schedule.
+        assert mens.games == 5
+        # Completed only, which is what "did last night's results land" means.
+        assert mens.games_today == 2
+        assert mens.games_in_window == 3
+
+    def test_the_window_moves_the_recent_count(self, s3: Any) -> None:
+        jobs = source(s3, StubBatch({"jobSummaryList": []}), ttl_seconds=0.0)
+        week = next(
+            s for s in jobs.volume(7).seasons if s.key == "seasons/2026/mens.pkl"
+        )
+        day = next(
+            s for s in jobs.volume(1).seasons if s.key == "seasons/2026/mens.pkl"
+        )
+
+        # The game three days back drops out; the two from today stay.
+        assert (week.games_in_window, day.games_in_window) == (3, 2)
+
+    def test_rows_that_arent_games_dont_get_a_count(self, s3: Any) -> None:
+        volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
+        csvs = [s for s in volume.seasons if s.artifact != "games"]
+
+        assert csvs
+        # Possessions and box-score rows are not games, and a number here
+        # would be read as one.
+        assert all(s.games is None for s in csvs)
+        assert all(s.bytes > 0 for s in csvs)
+
+    def test_reads_a_season_again_only_when_it_changes(self, s3: Any) -> None:
+        counting = CountingS3(s3)
+        jobs = source(counting, StubBatch({"jobSummaryList": []}), ttl_seconds=0.0)
+
+        jobs.volume(7)
+        after_first = counting.gets_under("seasons/")
+        assert after_first > 0
+
+        jobs.volume(7)
+        # Same ETags, so the pickles aren't re-read -- which is what makes
+        # counting affordable on a page someone leaves open.
+        assert counting.gets_under("seasons/") == after_first
+        # The odds side is unconditional, so it did keep working.
+        assert counting.gets_under("odds/") > 0
+
+        today = datetime.now(JOB_TZ).date()
+        midnight = datetime.combine(today, datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle([game(midnight, gid="only-one")]),
+        )
+
+        recounted = next(
+            s for s in jobs.volume(7).seasons if s.key == "seasons/2026/mens.pkl"
+        )
+        assert counting.gets_under("seasons/") > after_first
+        assert recounted.games == 1
+
+    def test_an_unreadable_season_keeps_its_row(self, s3: Any) -> None:
+        # Written by something other than the games job, or by a version of it
+        # whose classes have moved. The row is still worth showing.
+        s3.put_object(Bucket=BUCKET, Key="seasons/2026/wnba.pkl", Body=b"not a pickle")
+        volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
+
+        wnba = next(s for s in volume.seasons if s.league == "wnba")
+        assert wnba.games is None
+        assert wnba.bytes > 0
+        # And the leagues that *could* be read still counted.
+        assert next(s for s in volume.seasons if s.league == "nfl").games == 1
+
+    def test_counts_wait_for_the_grant_without_taking_the_page_down(
+        self, s3: Any
+    ) -> None:
+        # The IAM in section 12.2 lands after this ships, so until it does
+        # every GetObject on seasons/ is denied. That must degrade to the
+        # table this was before it could count, not to a 502.
+        denied = DeniesGetsUnder(s3, "seasons/")
+        volume = source(denied, StubBatch({"jobSummaryList": []})).volume(7)
+
+        assert all(s.games is None for s in volume.seasons)
+        assert all(s.bytes > 0 for s in volume.seasons)
+        assert any(o.latest_records is not None for o in volume.odds)
 
     def test_a_denied_listing_is_not_an_empty_dashboard(self) -> None:
         class BrokenS3:

@@ -521,7 +521,7 @@
         "type": "object"
       },
       "SeasonObject": {
-        "description": "A season artifact's size and freshness.\n\nDeliberately not a game count: a season is one pickle rewritten in place,\nand counting what's inside it means reading megabytes, which section 1\nrules out in a request path. So this answers \"did today's run write\nsomething, and was it bigger than before\" -- freshness, with bytes as a\nproxy for volume that the UI shouldn't dress up as a count.",
+        "description": "A season artifact: how big, how fresh, and how many games are in it.\n\nThe counts are only on the `.pkl` games artifact -- the possessions and\nbox-score CSVs beside it are rows, not games, and get `None` rather than a\nnumber that would read as one.\n\n`games` is everything in the file, including games that haven't been played\nyet: a season file carries the whole schedule. `games_today` and\n`games_in_window` count only *completed* games, because the question they\nanswer is \"did last night's results land\", and a fixture list can answer\nthat yes while the scrape brought back nothing (section 12.4).",
         "properties": {
           "artifact": {
             "title": "Artifact",
@@ -530,6 +530,39 @@
           "bytes": {
             "title": "Bytes",
             "type": "integer"
+          },
+          "games": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Games"
+          },
+          "games_in_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Games In Window"
+          },
+          "games_today": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Games Today"
           },
           "key": {
             "title": "Key",

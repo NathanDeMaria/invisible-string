@@ -266,6 +266,8 @@ export const volume: VolumeResponse = {
     },
   ],
   seasons: [
+    // Basketball in August: the whole schedule is on file and none of it has
+    // been played, which is the case a size-only column called healthy.
     {
       league: "mens",
       year: 2026,
@@ -273,6 +275,21 @@ export const volume: VolumeResponse = {
       key: "seasons/2026/mens.pkl",
       bytes: 19402118,
       last_modified: hoursAgo(28),
+      games: 5412,
+      games_today: 0,
+      games_in_window: 0,
+    },
+    // Rows, not games, so no count -- only a size.
+    {
+      league: "mens",
+      year: 2026,
+      artifact: "possessions",
+      key: "seasons/2026/mens.csv",
+      bytes: 84119002,
+      last_modified: hoursAgo(28),
+      games: null,
+      games_today: null,
+      games_in_window: null,
     },
     {
       league: "nfl",
@@ -281,6 +298,9 @@ export const volume: VolumeResponse = {
       key: "seasons/2026/nfl.pkl",
       bytes: 402889,
       last_modified: hoursAgo(4),
+      games: 334,
+      games_today: 4,
+      games_in_window: 31,
     },
   ],
 };
