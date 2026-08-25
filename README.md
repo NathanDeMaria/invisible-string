@@ -91,14 +91,16 @@ fails a build instead of becoming `undefined` in the browser.
 | `INVISIBLE_STRING_RELEASES_CACHE_TTL_SECONDS` | `60` | How long a release is served from memory before S3 is re-checked |
 | `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/latest.json`. Used only when no bucket is set. |
 | `INVISIBLE_STRING_STATIC_DIR` | `./static` | Built SPA. Skipped when absent, which is the local-dev case. |
-| `INVISIBLE_STRING_BATCH_JOB_QUEUE` | unset | endgame's Batch queue, for the job health dashboard. |
+| `INVISIBLE_STRING_BATCH_JOB_QUEUE` | unset | endgame's Batch queue (name or ARN), for the job health dashboard. |
 | `INVISIBLE_STRING_ENDGAME_BUCKET` | unset | endgame's bucket. Listed for odds volume, and season files are read to count games. |
 | `INVISIBLE_STRING_JOBS_CACHE_TTL_SECONDS` | `60` | How long job health is served from memory before Batch and S3 are re-read. |
 
 The last three are the job health dashboard (DESIGN.md §12), and they're read
-live rather than through an artifact. Both of the first two have to be set for
-it to talk to AWS — set neither, which is the local-dev case, and it reads
-`tests/fixtures/jobs/*.json` instead, re-based so the newest run lands now.
+live rather than through an artifact. In a deploy, terraform sets the first two
+from the Batch stack's state — there is nothing to fill in. Both have to be set
+for the app to talk to AWS; set neither, which is the local-dev case, and it
+reads `tests/fixtures/jobs/*.json` instead, re-based so the newest run lands
+now.
 
 Releases are cached in-process for the TTL, then revalidated with a conditional
 GET — S3 answers `304` when nothing changed, which is the usual case. So a new

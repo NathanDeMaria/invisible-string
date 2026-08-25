@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # which is what local dev and tests run on. Set one without the other and
     # you get the fallback too: half-configured should look like not
     # configured, not like an outage.
+    #
+    # `batch_job_queue` takes a queue name or its full ARN -- ListJobs accepts
+    # either, and terraform passes the ARN, since that's what it reads out of
+    # the Batch stack's state.
     batch_job_queue: str | None = None
     endgame_bucket: str | None = None
 
