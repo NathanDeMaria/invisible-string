@@ -54,9 +54,7 @@ export function JobsPage() {
         <p className="meta" data-testid="jobs-meta">
           {count(jobs.data.jobs.length, "job")} &middot; last{" "}
           {count(jobs.data.window_days, "day")} &middot;{" "}
-          {failing.length === 0
-            ? "all green"
-            : `${count(failing.length, "job")} failing`}
+          {verdict(jobs.data.jobs.length, failing.length)}
           {/* A truncated window makes every rate below it a sample rather
               than a total, which is worth saying where the rates are. */}
           {jobs.data.truncated && " · partial window"}
@@ -93,4 +91,18 @@ export function JobsPage() {
       )}
     </section>
   );
+}
+
+/**
+ * The end of the summary line.
+ *
+ * "all green" is only ever true of jobs we heard about. An empty list means the
+ * page knows nothing -- which is exactly what an unconfigured service looks
+ * like -- and calling that green is the same mistake as reporting 0% success
+ * for a job that hasn't finished a run.
+ */
+function verdict(jobs: number, failing: number): string {
+  if (jobs === 0) return "nothing reported";
+  if (failing === 0) return "all green";
+  return `${count(failing, "job")} failing`;
 }

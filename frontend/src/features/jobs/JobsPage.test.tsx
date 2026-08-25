@@ -55,6 +55,27 @@ describe("JobsPage", () => {
     expect(meta).toHaveTextContent("1 job failing");
   });
 
+  it("doesn't call an empty dashboard green", async () => {
+    // What an unconfigured service serves: a 200 with nothing in it. Silence
+    // and health have to read differently, which is the whole point of the
+    // page.
+    server.use(
+      http.get("/api/jobs", () =>
+        HttpResponse.json({
+          window_days: 7,
+          since: new Date().toISOString(),
+          truncated: false,
+          jobs: [],
+        }),
+      ),
+    );
+    renderApp(<JobsPage />, { route: "/jobs" });
+
+    const meta = await screen.findByTestId("jobs-meta");
+    expect(meta).toHaveTextContent("nothing reported");
+    expect(meta).not.toHaveTextContent("all green");
+  });
+
   it("asks for a different window when you pick one", async () => {
     const user = userEvent.setup();
     renderApp(<JobsPage />, { route: "/jobs" });
