@@ -1014,9 +1014,14 @@ much, this is one `Depends` away from being admin-only.
 benefit of the two-bucket split. **This section spends it.** Reading live means the
 App Runner instance role gains, in endgame's account:
 
-- `batch:ListJobs` + `batch:DescribeJobs` on the queue,
+- `batch:ListJobs` on the queue (`DescribeJobs` only when §5b's admin refresh
+  endpoint exists — the dashboard never calls it),
 - `s3:ListBucket` on endgame's bucket, scoped to `seasons/*` and `odds/*`,
 - `s3:GetObject` on `odds/*` and `seasons/*`.
+
+The queue ARN and the bucket name come from the Batch stack's terraform state,
+which is where `EndGame/jobs` reads the same two values from — that stack owns
+them, so a rename there fails our plan instead of emptying the dashboard.
 
 **That is the whole boundary, spent.** An earlier draft of this section kept
 `seasons/*` list-only and made a virtue of it; counting games (§12.4) needs the

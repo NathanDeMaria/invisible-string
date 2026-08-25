@@ -39,9 +39,11 @@ resource "aws_iam_role" "apprunner_instance" {
   assume_role_policy = data.aws_iam_policy_document.apprunner_instance_assume.json
 }
 
-# Read-only, and only this bucket. The web tier has no path to EndGame's raw
-# scrape data at all -- one of the reasons the artifacts live in their own
-# bucket (DESIGN.md section 11.2).
+# Read-only, and only this bucket. Note that this is no longer the *whole* of
+# what the web tier can read: the job health dashboard adds read access to
+# EndGame's bucket below (DESIGN.md section 12.2, amending 11.2). What the
+# two-bucket split still buys is independent versioning, lifecycle and
+# retention here, and one clear owner for each bucket.
 data "aws_iam_policy_document" "apprunner_artifacts_read" {
   statement {
     effect    = "Allow"
@@ -67,6 +69,94 @@ resource "aws_iam_policy" "apprunner_artifacts_read" {
 resource "aws_iam_role_policy_attachment" "apprunner_artifacts_read" {
   role       = aws_iam_role.apprunner_instance.name
   policy_arn = aws_iam_policy.apprunner_artifacts_read.arn
+}
+
+# ------------------------------------------------------------------------------
+# Job health: reading EndGame's Batch queue and bucket (DESIGN.md section 12).
+#
+# Both names come from the Batch stack's state, which is where EndGame/jobs
+# reads the same two values from. That stack owns the queue and the bucket, so
+# it is the source of truth for both: nothing here has to be kept in sync by
+# hand, and a rename over there fails this plan rather than an 8am job or, in
+# our case, a dashboard that quietly goes empty.
+#
+# The coupling is worth naming. Every plan of this stack now reads that state
+# object, so if it moves, this stack stops planning until the key below
+# changes. A data source read takes no lock and needs only s3:GetObject, which
+# ReadOnlyAccess already gives the plan role -- the same reasoning EndGame's
+# oidc.tf spells out for its own copy of this read.
+# ------------------------------------------------------------------------------
+
+data "terraform_remote_state" "batch" {
+  backend = "s3"
+
+  # Hardcoded rather than reusing var.state_bucket: that variable is where
+  # *this* stack keeps its state, and the two being the same bucket is a
+  # coincidence worth not encoding. Mirrors EndGame/jobs.
+  config = {
+    bucket = "nathan-terraform"
+    key    = "batch-state"
+    region = "us-east-2"
+  }
+}
+
+locals {
+  # `batch:ListJobs` takes a queue name or a full ARN, and so does the app's
+  # INVISIBLE_STRING_BATCH_JOB_QUEUE -- so the ARN goes to both, and no name
+  # has to be split back out of it.
+  endgame_job_queue_arn = data.terraform_remote_state.batch.outputs.job_queue_arn
+  endgame_bucket        = data.terraform_remote_state.batch.outputs.bucket
+}
+
+data "aws_iam_policy_document" "apprunner_job_health" {
+  # ListJobs is the only Batch call the app makes: one AFTER_CREATED_AT-
+  # filtered pass over the queue covers every status. DescribeJobs belongs to
+  # the admin refresh endpoint (section 5b), which doesn't exist yet, so it
+  # isn't granted yet either.
+  statement {
+    effect    = "Allow"
+    actions   = ["batch:ListJobs"]
+    resources = [local.endgame_job_queue_arn]
+  }
+
+  # Listing is most of the volume half: odds pulls per league per day, and
+  # which season objects exist. The prefix condition is what keeps this from
+  # being "read EndGame's bucket" in general.
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}"]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["seasons/*", "odds/*"]
+    }
+  }
+
+  # The two objects the app opens: the newest odds pull per league, for a real
+  # record count, and each league's season file, to count games by date
+  # (section 12.4). This is the grant that spends the last of the boundary in
+  # 11.2 -- with it, the web tier can read raw scrape data.
+  statement {
+    effect  = "Allow"
+    actions = ["s3:GetObject"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/odds/*",
+      "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/seasons/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "apprunner_job_health" {
+  name        = "${var.resource_name_prefix}-apprunner-job-health"
+  description = "Read EndGame's Batch queue and scrape data for the job health dashboard"
+  policy      = data.aws_iam_policy_document.apprunner_job_health.json
+}
+
+resource "aws_iam_role_policy_attachment" "apprunner_job_health" {
+  role       = aws_iam_role.apprunner_instance.name
+  policy_arn = aws_iam_policy.apprunner_job_health.arn
 }
 
 # ------------------------------------------------------------------------------
@@ -134,9 +224,14 @@ resource "aws_apprunner_service" "app" {
       image_configuration {
         port = "8000"
 
+        # Changing these replaces the service's configuration and rolls a new
+        # revision, so applying this is itself the deploy for the job health
+        # dashboard -- no image push needed.
         runtime_environment_variables = {
           INVISIBLE_STRING_RELEASES_BUCKET = aws_s3_bucket.artifacts.bucket
           INVISIBLE_STRING_STATIC_DIR      = "/srv/static"
+          INVISIBLE_STRING_BATCH_JOB_QUEUE = local.endgame_job_queue_arn
+          INVISIBLE_STRING_ENDGAME_BUCKET  = local.endgame_bucket
         }
       }
     }

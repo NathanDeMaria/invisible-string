@@ -8,6 +8,13 @@ Contents so far: the CI authentication (GitHub Actions OIDC provider and two
 roles), the model-artifact bucket, the ECR repository and the App Runner
 service. The Batch refresh job lands on top of those.
 
+One cross-stack read: the job health dashboard (DESIGN.md §12) needs EndGame's
+job queue and data bucket, and takes both from the Batch stack's state at
+`s3://nathan-terraform/batch-state` rather than from variables here. That stack
+owns them, EndGame/jobs reads the same two outputs the same way, and a rename
+over there fails this plan instead of silently emptying the dashboard. The cost
+is that every plan of this stack now depends on that state object existing.
+
 ```sh
 make init
 make plan
