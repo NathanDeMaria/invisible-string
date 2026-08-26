@@ -1014,7 +1014,7 @@ much, this is one `Depends` away from being admin-only.
 benefit of the two-bucket split. **This section spends it.** Reading live means the
 App Runner instance role gains, in endgame's account:
 
-- `batch:ListJobs` on the queue (`DescribeJobs` only when §5b's admin refresh
+- `batch:ListJobs` on `*` (`DescribeJobs` only when §5b's admin refresh
   endpoint exists — the dashboard never calls it),
 - `s3:ListBucket` on endgame's bucket, scoped to `seasons/*` and `odds/*`,
 - `s3:GetObject` on `odds/*` and `seasons/*`.
@@ -1022,6 +1022,22 @@ App Runner instance role gains, in endgame's account:
 The queue ARN and the bucket name come from the Batch stack's terraform state,
 which is where `EndGame/jobs` reads the same two values from — that stack owns
 them, so a rename there fails our plan instead of emptying the dashboard.
+
+**`batch:ListJobs` on `*`, and why it can't be the queue.** An earlier version
+of this list said "on the queue", and the terraform said so too. It doesn't
+work: `ListJobs` is one of the Batch actions the IAM reference gives no
+resource type, so a statement scoped to a job-queue ARN matches nothing and
+denies every call. The failure is a quiet one from here — the two endpoints of
+§12.1 fail independently by design, so the dashboard renders its volume tables
+and reports the Batch half unreadable, which reads like an outage in endgame
+rather than a policy that can't be satisfied. Worth knowing the next time half
+this page goes missing.
+
+So the grant is account-wide job summaries. What still scopes it is
+`INVISIBLE_STRING_BATCH_JOB_QUEUE`: the app names one queue and never
+enumerates. That's config, not IAM, and config is the weaker of the two — but
+IAM has nowhere to hold this one, and job summaries (definition, status,
+timestamps) are the same class of thing this page already publishes.
 
 **That is the whole boundary, spent.** An earlier draft of this section kept
 `seasons/*` list-only and made a virtue of it; counting games (§12.4) needs the
