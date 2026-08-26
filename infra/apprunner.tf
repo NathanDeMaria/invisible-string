@@ -113,10 +113,22 @@ data "aws_iam_policy_document" "apprunner_job_health" {
   # filtered pass over the queue covers every status. DescribeJobs belongs to
   # the admin refresh endpoint (section 5b), which doesn't exist yet, so it
   # isn't granted yet either.
+  #
+  # `*` rather than the queue ARN, and not by choice: `batch:ListJobs` is one
+  # of the Batch actions with no resource type in the IAM reference, so it only
+  # ever matches `*`. Scoped to the queue it is an implicit deny on every call
+  # -- which is how this was written the first time, and it cost a dashboard
+  # that said the Batch queue was unreadable while the S3 half below (which
+  # *does* take resource-level permissions) rendered fine.
+  #
+  # What the widening grants is job summaries on every queue in the account.
+  # The app still only ever asks about INVISIBLE_STRING_BATCH_JOB_QUEUE, so the
+  # scoping is real, it just lives in the app's config rather than in IAM,
+  # because IAM has nowhere to put it.
   statement {
     effect    = "Allow"
     actions   = ["batch:ListJobs"]
-    resources = [local.endgame_job_queue_arn]
+    resources = ["*"]
   }
 
   # Listing is most of the volume half: odds pulls per league per day, and
