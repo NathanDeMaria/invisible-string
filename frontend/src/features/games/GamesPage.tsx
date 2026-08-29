@@ -86,9 +86,12 @@ export function GamesPage() {
       </div>
 
       {games.isError ? (
+        // Any failed request, not only the 502 the API raises for an
+        // unreadable bucket -- so this says what happened rather than
+        // guessing why, which sent the first debugging session after the
+        // wrong upstream.
         <p className="error">
-          Games are unavailable &mdash; the API couldn&rsquo;t read the season
-          files.
+          Games are unavailable &mdash; the API didn&rsquo;t answer.
         </p>
       ) : games.isLoading ? (
         <p className="loading">Loading&hellip;</p>

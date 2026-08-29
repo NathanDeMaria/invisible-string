@@ -20,7 +20,13 @@ from endgame.ncaabb.ncaabb import Season
 from endgame.types import Game, Week
 from moto import mock_aws
 
-from app.games import GAME_TZ, GamesUnavailable
+from app.games import (
+    GAME_TZ,
+    MAX_DAYS_AHEAD,
+    MAX_DAYS_BACK,
+    GamesUnavailable,
+    window_bounds,
+)
 from app.seasons import AwsGamesSource
 
 BUCKET = "endgame-data"
@@ -310,3 +316,132 @@ class TestCaching:
         source = AwsGamesSource(bucket=BUCKET, s3_client=counting)
         source.window(0, 0)
         assert counting.gets_under(f"odds/nfl/{today}/") == 2
+
+
+class TestOnlyReadsTheWindow:
+    """The bug that took the endpoint down in production.
+
+    A season file is the whole schedule, and no request this API accepts can
+    reach past a week either side of today. Building a row for every game in
+    the file spent hundreds of megabytes on a 0.5 GB service to answer about
+    fifteen days of it -- and the cache held them, for every league and both
+    seasons, so the first request killed the container every time.
+
+    `app.batch` walks these same objects without trouble because it keeps a
+    count per day and drops the graph. These assert this one keeps as little.
+    """
+
+    def test_a_game_outside_the_horizon_is_never_materialized(self, s3: Any) -> None:
+        today = datetime.now(GAME_TZ).date()
+        midnight = datetime.combine(today, datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle(
+                [
+                    game(midnight, gid="today"),
+                    game(midnight - timedelta(days=200), gid="november"),
+                    game(midnight + timedelta(days=100), gid="march"),
+                ]
+            ),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        horizon = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+        season = source._read_season("seasons/2026/mens.pkl", "mens", horizon)
+
+        assert season is not None
+        # Not "filtered out of the response" -- never built at all, which is
+        # the difference between 3 MB and 300 MB on a full season.
+        kept = {row.game_id for rows in season.by_day.values() for row in rows}
+        assert kept == {"today"}
+
+    def test_the_cache_is_bounded_by_the_window_cap(self, s3: Any) -> None:
+        today = datetime.now(GAME_TZ).date()
+        midnight = datetime.combine(today, datetime.min.time())
+        # A season's worth of games, one an hour across a year.
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle(
+                [
+                    game(
+                        midnight - timedelta(days=180) + timedelta(hours=i), gid=str(i)
+                    )
+                    for i in range(0, 24 * 360, 6)
+                ]
+            ),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+
+        _, season = source._seasons["seasons/2026/mens.pkl"]
+        span = MAX_DAYS_BACK + MAX_DAYS_AHEAD + 1
+        assert len(season.by_day) <= span
+
+    def test_a_widened_horizon_is_re_read(self, s3: Any) -> None:
+        """The horizon moves at midnight, and the ETag doesn't.
+
+        A cache entry that still matches on ETag can stop covering the days
+        being asked about, which would quietly serve an empty day.
+        """
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        today = datetime.now(GAME_TZ).date()
+        narrow = (today, today)
+        source._season_games("seasons/2026/mens.pkl", "mens", "etag", narrow)
+
+        wide = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+        season = source._season_games("seasons/2026/mens.pkl", "mens", "etag", wide)
+
+        assert season is not None
+        assert season.covers(wide)
+        assert "yesterday" in {
+            row.game_id for rows in season.by_day.values() for row in rows
+        }
+
+
+class TestOneBadGame:
+    """A `Game` this build can't read costs that game, not the page.
+
+    The walk used to sit outside every guard, so one field changing type
+    upstream would escape as a 500 from an endpoint whose whole design is to
+    degrade instead.
+    """
+
+    def test_a_game_that_wont_convert_is_skipped(self, s3: Any) -> None:
+        today = datetime.now(GAME_TZ).date()
+        midnight = datetime.combine(today, datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle(
+                [
+                    game(midnight, gid="fine"),
+                    # What a field changing type upstream looks like from
+                    # here. The checker is right that this is ill-typed --
+                    # that is the point, and the bucket holds what it holds.
+                    game(midnight, gid="fine")._replace(game_id=90210),  # ty: ignore[invalid-argument-type]
+                ]
+            ),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        assert "fine" in ids(source)
+
+    def test_a_season_that_wont_walk_costs_only_its_league(self, s3: Any) -> None:
+        today = datetime.now(GAME_TZ).date()
+        midnight = datetime.combine(today, datetime.min.time())
+        # A week whose games aren't iterable: the shape is wrong rather than
+        # the bytes, which unpickles fine and then explodes.
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=pickle.dumps(
+                [Season([Week(None, 1)], 2026)]  # ty: ignore[invalid-argument-type]
+            ),
+        )
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/nfl.pkl",
+            Body=season_pickle([game(midnight, gid="nfl-today")]),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        assert ids(source) == {"nfl-today"}
