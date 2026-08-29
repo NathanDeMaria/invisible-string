@@ -62,6 +62,20 @@ describe("navigation", () => {
     await waitFor(() => expect(at()).toBe("/mens/ratings"));
   });
 
+  it("keeps games out of the league nav", async () => {
+    const user = userEvent.setup();
+    renderApp(<App />, { route: "/mens/ratings" });
+    await screen.findByRole("link", { name: "mens" });
+
+    // A night's games span every league, so the link belongs beside the title
+    // rather than in either nav -- the same place job health sits.
+    const leagueNav = screen.getByRole("navigation", { name: "League" });
+    expect(within(leagueNav).queryByRole("link", { name: "Games" })).toBeNull();
+
+    await user.click(screen.getByRole("link", { name: "Games" }));
+    await waitFor(() => expect(at()).toBe("/games"));
+  });
+
   it("sends the bare root somewhere useful", async () => {
     renderApp(<App />, { route: "/" });
     await waitFor(() => expect(at()).toBe("/mens/ratings"));

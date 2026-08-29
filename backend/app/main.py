@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.games import router as games_router
 from app.api.jobs import router as jobs_router
 from app.api.predict import router as predict_router
 from app.api.ratings import router as ratings_router
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(ratings_router)
     app.include_router(predict_router)
     app.include_router(jobs_router)
+    app.include_router(games_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

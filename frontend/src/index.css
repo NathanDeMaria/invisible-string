@@ -250,6 +250,11 @@ table.ratings,
   gap: 1rem;
 }
 
+.utilities {
+  display: flex;
+  gap: 0.9rem;
+}
+
 a.utility {
   color: var(--muted);
   text-decoration: none;
@@ -335,6 +340,59 @@ a.utility.active {
   padding-left: 0.5rem;
 }
 
+/* Games ---------------------------------------------------------------
+
+   Shares the jobs page's two-line cells: every column here is a number plus
+   what it's of, and stacking them keeps four columns on a phone. */
+.games-page > h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 1.5rem 0 0.6rem;
+}
+
+.games-page h3 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 1.75rem 0 0.5rem;
+}
+
+.games .job-name,
+.games .rate {
+  display: block;
+}
+
+.games .when,
+.games .of {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* A matchup is two team names and can be long; the numbers beside it never
+   wrap, so this is the column that has to give. */
+.games td:first-child {
+  white-space: normal;
+}
+
+.games .quiet {
+  color: var(--muted);
+}
+
+/* A prediction the model has already seen the answer to. Small, and carries
+   its explanation in the title and in the note under the table -- a marker
+   nobody can decode is worse than no marker. */
+.hindsight {
+  margin-left: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: help;
+}
+
 /* Narrow screens: buy the table horizontal room back from its padding, and
    let a long team name wrap rather than widen the column. */
 @media (max-width: 30rem) {
@@ -360,6 +418,13 @@ a.utility.active {
   .masthead {
     flex-wrap: wrap;
     gap: 0.25rem;
+  }
+
+  /* Four columns is the most this table can hold on a phone, so the day
+     headings and the matchup column give up the padding first. */
+  .games th,
+  .games td {
+    padding: 0.45rem 0.25rem;
   }
 
   /* Its own row rather than squeezed against the right edge next to the

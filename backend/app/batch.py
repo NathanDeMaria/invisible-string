@@ -35,11 +35,15 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+# `GAME_TZ` is the zone endgame stamps odds keys in (`_parse_date` in its cli),
+# so the day prefixes listed below have to be built in it: UTC would ask for
+# tomorrow's prefix all evening and miss the last pulls of today's. It lives in
+# app.games, which draws the same day boundary for "what's on tonight".
+from app.games import GAME_TZ, game_day
 from app.jobs import (
     JobRun,
     JobsUnavailable,
@@ -51,12 +55,6 @@ from app.jobs import (
 )
 
 log = logging.getLogger(__name__)
-
-# endgame stamps odds keys with the Chicago date (`_parse_date` in its cli),
-# so the day prefixes we list have to be built in the same zone. Using UTC
-# would ask for tomorrow's prefix all evening and miss the last pulls of
-# today's.
-JOB_TZ = ZoneInfo("America/Chicago")
 
 # `{definition}-scheduled-run` is how EventBridge names a scheduled submission.
 # Only used as a fallback when a job summary somehow arrives without its
@@ -176,7 +174,7 @@ class AwsJobsSource:
         alternative -- one list of `odds/{league}/` -- walks every day of the
         season to answer about seven of them.
         """
-        today = datetime.now(JOB_TZ).date()
+        today = datetime.now(GAME_TZ).date()
         days_back = [today - timedelta(days=offset) for offset in range(days)]
 
         volume: list[OddsDay] = []
@@ -235,7 +233,7 @@ class AwsJobsSource:
         table for a week in August isn't worth the tidier query.
         """
         years = sorted(self._child_prefixes("seasons/"), reverse=True)[:2]
-        today = datetime.now(JOB_TZ).date()
+        today = datetime.now(GAME_TZ).date()
         window_start = today - timedelta(days=days - 1)
 
         seasons: list[SeasonObject] = []
@@ -335,7 +333,7 @@ class AwsJobsSource:
                     # Scheduled-but-unplayed games are in the file too, and
                     # they'd make an empty scrape look like a full one.
                     if game.completed:
-                        completed[_game_day(game.date)] += 1
+                        completed[game_day(game.date)] += 1
 
         return _GameCounts(total=total, completed_by_day=dict(completed))
 
@@ -397,18 +395,6 @@ class _GameCounts:
 
     def completed_between(self, start: date, end: date) -> int:
         return sum(n for day, n in self.completed_by_day.items() if start <= day <= end)
-
-
-def _game_day(moment: datetime) -> date:
-    """The day a game belongs to, in the zone the jobs think in.
-
-    endgame's game dates arrive naive from ESPN. A naive one is taken at face
-    value rather than assumed to be UTC: converting it would walk evening games
-    into the next day, which is exactly the boundary "games today" turns on.
-    """
-    if moment.tzinfo is None:
-        return moment.date()
-    return moment.astimezone(JOB_TZ).date()
 
 
 def _parse_run(summary: dict[str, Any]) -> JobRun:

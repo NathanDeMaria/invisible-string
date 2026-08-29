@@ -1,6 +1,8 @@
 import { HttpResponse, http } from "msw";
 
 import type {
+  GameRow,
+  GamesResponse,
   JobHealth,
   JobRun,
   JobsResponse,
@@ -305,6 +307,93 @@ export const volume: VolumeResponse = {
   ],
 };
 
+// -- games ------------------------------------------------------------
+//
+// Mirrors backend/tests/fixtures/games, and relative to now for the same
+// reason the job fixtures are: the page groups by day against a "today" it
+// derives from the window, so fixed dates would stop landing in it.
+
+const isoDay = (offset: number): string => {
+  const at = new Date(Date.now() + offset * 86_400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+};
+
+const gameRow = (
+  offset: number,
+  overrides: Partial<GameRow> & Pick<GameRow, "game_id" | "home" | "away">,
+): GameRow => ({
+  league: "mens",
+  day: isoDay(offset),
+  start: new Date(Date.now() + offset * 86_400_000).toISOString(),
+  neutral: false,
+  completed: false,
+  home_score: null,
+  away_score: null,
+  market_spread: null,
+  prediction: null,
+  ...overrides,
+});
+
+const predicted = (
+  spread: number,
+  homeWinProb: number,
+  inSample = false,
+): GameRow["prediction"] => ({
+  model: "glicko_tuned",
+  run_id: "r1",
+  home_win_prob: homeWinProb,
+  predicted_spread: spread,
+  in_sample: inSample,
+});
+
+export const games: GamesResponse = {
+  days_back: 2,
+  days_ahead: 1,
+  since: isoDay(-2),
+  until: isoDay(1),
+  games: [
+    // Two days back, finished. The model has already trained on it, which is
+    // what the dagger in the table is for.
+    gameRow(-2, {
+      game_id: "g-2",
+      home: "Duke",
+      away: "North Carolina",
+      completed: true,
+      home_score: 78,
+      away_score: 71,
+      market_spread: -4.5,
+      prediction: predicted(-5.3, 0.69, true),
+    }),
+    // Yesterday, and a league with no published model: score and line only.
+    gameRow(-1, {
+      league: "nfl",
+      game_id: "g-1",
+      home: "Chicago Bears",
+      away: "Green Bay Packers",
+      completed: true,
+      home_score: 17,
+      away_score: 24,
+      market_spread: 6.5,
+    }),
+    // Tonight.
+    gameRow(0, {
+      game_id: "g0",
+      home: "Houston",
+      away: "Duke",
+      market_spread: -2.5,
+      prediction: predicted(-3.7, 0.633),
+    }),
+    // Tomorrow, with no line on the board yet.
+    gameRow(1, {
+      game_id: "g1",
+      home: "Kansas",
+      away: "Houston",
+      prediction: predicted(2.1, 0.44),
+    }),
+  ],
+};
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
   http.get("/api/predict", ({ request }) => {
@@ -332,6 +421,18 @@ export const handlers = [
           (r) => new Date(r.created_at).getTime() >= cutoff,
         ),
       })),
+    });
+  }),
+  http.get("/api/games", ({ request }) => {
+    const back = Number(new URL(request.url).searchParams.get("back") ?? 2);
+    // The window is a real filter, not decoration: a shorter one drops the
+    // older days, which is what the picker is for.
+    const since = isoDay(-back);
+    return HttpResponse.json({
+      ...games,
+      days_back: back,
+      since,
+      games: games.games.filter((game) => game.day >= since),
     });
   }),
   http.get("/api/jobs/volume", ({ request }) => {
