@@ -1193,8 +1193,35 @@ Two caches, for the two things that move at different speeds.
 **Seasons are cached on their ETag**, exactly like §12.4's counts and for the
 same reason: the object is rewritten once a day, and between rewrites reading
 the window is free. Games are held grouped by day, so moving the window picker
-re-reads nothing. This is what makes the page affordable at all — `mens.pkl` is
-~19 MB, and there are two seasons' prefixes and a handful of leagues.
+re-reads nothing.
+
+**Only the games within a week either side of today are ever built.** This is
+the part that matters, and getting it wrong is what took the endpoint down on
+the first deploy. A season file is the whole schedule; converting each of its
+games into a response model costs roughly fifteen times the pickle's own size
+in memory (measured: a 3.6 MB file of 55,000 games becomes 53 MB of models), and
+the cache held all of them, for every league and both seasons' prefixes, on a
+service with 0.5 GB. The first request to `/api/games` killed the container, and
+it did so every time.
+
+The horizon is the window cap — no request this API accepts can reach further —
+so the picker is still free, and a day is filtered out from the raw `Game`
+*before* a model is built. That turns a full season file into about fifteen days
+of rows. The horizon moves at midnight and the ETag doesn't, so a cache entry
+also records the span it was read for and is re-read when it stops covering the
+question.
+
+Worth naming the asymmetry, because it is why the job dashboard never showed the
+problem: §12.4 walks these same objects and keeps a count per day, discarding the
+graph. It retains almost nothing, so it stayed healthy on the same instance while
+this endpoint could not answer once.
+
+**Failures degrade at three levels, not one.** An unreadable body costs that
+league its games; a season whose *shape* is wrong — which is what a `Game`
+gaining or losing a field upstream looks like from here — costs that league its
+games; and a single game that won't convert costs that game. The walk originally
+sat outside every guard, so one changed field would have escaped as a 500 from
+an endpoint whose whole design is to degrade instead.
 
 **Odds are cached on a TTL** (`INVISIBLE_STRING_GAMES_CACHE_TTL_SECONDS`,
 5 minutes), because they have no equivalent signal and they're small.

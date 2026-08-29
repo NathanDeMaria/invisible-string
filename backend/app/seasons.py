@@ -35,11 +35,14 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.games import (
+    MAX_DAYS_AHEAD,
+    MAX_DAYS_BACK,
     GamesUnavailable,
     GameWindow,
     ScheduledGame,
     as_aware,
     each_day,
+    game_day,
     window_bounds,
 )
 
@@ -104,6 +107,7 @@ class AwsGamesSource:
 
     def _games(self, since: date, until: date) -> list[ScheduledGame]:
         years = sorted(_child_prefixes(self._s3, self._bucket, "seasons/"))
+        horizon = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
         days = each_day(since, until)
 
         games: list[ScheduledGame] = []
@@ -113,7 +117,7 @@ class AwsGamesSource:
                 if match is None:
                     continue
                 season = self._season_games(
-                    obj["Key"], match.group("league"), str(obj.get("ETag", ""))
+                    obj["Key"], match.group("league"), str(obj.get("ETag", "")), horizon
                 )
                 if season is None:
                     continue
@@ -121,24 +125,40 @@ class AwsGamesSource:
                     games.extend(season.by_day.get(day, ()))
         return games
 
-    def _season_games(self, key: str, league: str, etag: str) -> "_SeasonGames | None":
+    def _season_games(
+        self, key: str, league: str, etag: str, horizon: tuple[date, date]
+    ) -> "_SeasonGames | None":
         cached = self._seasons.get(key)
-        if cached is not None and cached[0] == etag:
+        # The horizon moves at midnight, so a cache entry whose ETag still
+        # matches can stop covering the days being asked for. Re-reading then
+        # is one GET a day, which is the same order as the rewrite itself.
+        if cached is not None and cached[0] == etag and cached[1].covers(horizon):
             return cached[1]
 
-        season = self._read_season(key, league)
+        season = self._read_season(key, league, horizon)
         if season is not None:
             with self._lock:
                 self._seasons[key] = (etag, season)
         return season
 
-    def _read_season(self, key: str, league: str) -> "_SeasonGames | None":
-        """One season file, unpickled and grouped by day.
+    def _read_season(
+        self, key: str, league: str, horizon: tuple[date, date]
+    ) -> "_SeasonGames | None":
+        """The games near today out of one season file, grouped by day.
 
-        Best-effort for the reason `app.batch._count_games` is: a season that
-        can't be read costs that league its games, not the whole page. A
-        moved class after a cassandra bump, a truncated body, a `GetObject`
-        that hasn't been granted yet -- all of them mean the same thing here.
+        **Only the games in `horizon`.** A season file is the whole schedule,
+        and no request this API accepts can reach past a week either side of
+        today -- so building a row for every game in the file spends hundreds
+        of megabytes to answer about fifteen days of it. That is what took the
+        endpoint down: a season pickle costs ~15x its own size once its games
+        are pydantic models, the cache held every one of them for every league
+        and both seasons, and the service has 0.5 GB. `app.batch` walks these
+        same objects without trouble because it keeps a count per day and
+        throws the graph away; this now keeps about as little.
+
+        Best-effort at three levels, for the reason `app.batch._count_games`
+        is: a season that can't be read costs that league its games, and a
+        game that can't be read costs that game -- neither takes the page.
         """
         try:
             raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
@@ -155,23 +175,19 @@ class AwsGamesSource:
         # `save_to_s3` writes a list of seasons; tolerate a bare one.
         seasons = loaded if isinstance(loaded, list) else [loaded]
 
-        # Pooled by game id, because the same game can be fetched twice -- a
-        # cross-division matchup comes back under both divisions -- and the
-        # copies aren't guaranteed to agree. The completed copy wins: one of
-        # them may predate the final whistle.
-        pooled: dict[str, ScheduledGame] = {}
-        for season in seasons:
-            for week in getattr(season, "weeks", []):
-                for game in week.games:
-                    row = _to_row(game, league)
-                    seen = pooled.get(row.game_id)
-                    if seen is None or (row.completed and not seen.completed):
-                        pooled[row.game_id] = row
+        try:
+            pooled = _pool_games(seasons, league, horizon)
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            # Not the same failure as an unreadable body: the file parsed and
+            # its shape is wrong, which is what a Game gaining or losing a
+            # field upstream looks like from here.
+            log.warning("could not walk s3://%s/%s: %s", self._bucket, key, exc)
+            return None
 
         by_day: dict[date, list[ScheduledGame]] = {}
         for row in pooled.values():
             by_day.setdefault(row.day, []).append(row)
-        return _SeasonGames(by_day=by_day)
+        return _SeasonGames(by_day=by_day, since=horizon[0], until=horizon[1])
 
     # -- odds ------------------------------------------------------------
 
@@ -227,9 +243,56 @@ class AwsGamesSource:
 
 @dataclass(frozen=True)
 class _SeasonGames:
-    """One season file's games, grouped by the day they belong to."""
+    """One season file's games near today, grouped by the day they belong to.
+
+    `since`/`until` are the horizon the file was read for, not a property of
+    the file: everything outside it was skipped rather than kept, so a cache
+    entry can only answer for the span it was built over.
+    """
 
     by_day: Mapping[date, list[ScheduledGame]]
+    since: date
+    until: date
+
+    def covers(self, horizon: tuple[date, date]) -> bool:
+        return self.since <= horizon[0] and horizon[1] <= self.until
+
+
+def _pool_games(
+    seasons: Any, league: str, horizon: tuple[date, date]
+) -> dict[str, ScheduledGame]:
+    """The games of `seasons` that fall inside `horizon`, pooled by game id.
+
+    Pooled because the same game can be fetched twice -- a cross-division
+    matchup comes back under both divisions -- and the copies aren't
+    guaranteed to agree. The completed copy wins: one of them may predate the
+    final whistle.
+
+    The day is computed from the raw `Game` and checked *before* a row is
+    built, which is the whole point: the conversion is what costs memory, and
+    all but a few days of a season file is thrown away.
+    """
+    since, until = horizon
+    pooled: dict[str, ScheduledGame] = {}
+    skipped = 0
+
+    for season in seasons:
+        for week in getattr(season, "weeks", []):
+            for game in week.games:
+                if not since <= game_day(game.date) <= until:
+                    continue
+                try:
+                    row = _to_row(game, league)
+                except Exception:  # noqa: BLE001 - a foreign, evolving Game
+                    skipped += 1
+                    continue
+                seen = pooled.get(row.game_id)
+                if seen is None or (row.completed and not seen.completed):
+                    pooled[row.game_id] = row
+
+    if skipped:
+        log.warning("skipped %d unreadable %s games in the window", skipped, league)
+    return pooled
 
 
 def _to_row(game: Any, league: str) -> ScheduledGame:
