@@ -1,0 +1,136 @@
+{
+  "games": [
+    {
+      "league": "mens",
+      "game_id": "401710101",
+      "start": "2026-08-20T20:00:00-05:00",
+      "home": "Duke",
+      "away": "North Carolina",
+      "neutral": false,
+      "completed": true,
+      "home_score": 78,
+      "away_score": 71,
+      "market_spread": -4.5
+    },
+    {
+      "league": "mens",
+      "game_id": "401710102",
+      "start": "2026-08-20T18:30:00-05:00",
+      "home": "Kansas",
+      "away": "Houston",
+      "neutral": false,
+      "completed": true,
+      "home_score": 64,
+      "away_score": 70,
+      "market_spread": 2.5
+    },
+    {
+      "league": "womens",
+      "game_id": "401810101",
+      "start": "2026-08-20T19:00:00-05:00",
+      "home": "UConn",
+      "away": "South Carolina",
+      "neutral": true,
+      "completed": true,
+      "home_score": 68,
+      "away_score": 72,
+      "market_spread": null
+    },
+    {
+      "league": "mens",
+      "game_id": "401710103",
+      "start": "2026-08-21T21:00:00-05:00",
+      "home": "Houston",
+      "away": "Duke",
+      "neutral": false,
+      "completed": true,
+      "home_score": 61,
+      "away_score": 59,
+      "market_spread": -1.5
+    },
+    {
+      "league": "nfl",
+      "game_id": "401910101",
+      "start": "2026-08-21T12:00:00-05:00",
+      "home": "Chicago Bears",
+      "away": "Green Bay Packers",
+      "neutral": false,
+      "completed": true,
+      "home_score": 17,
+      "away_score": 24,
+      "market_spread": 6.5
+    },
+    {
+      "league": "mens",
+      "game_id": "401710104",
+      "start": "2026-08-22T13:00:00-05:00",
+      "home": "North Carolina",
+      "away": "Kansas",
+      "neutral": false,
+      "completed": true,
+      "home_score": 81,
+      "away_score": 77,
+      "market_spread": -3.5
+    },
+    {
+      "league": "mens",
+      "game_id": "401710105",
+      "start": "2026-08-22T21:00:00-05:00",
+      "home": "Duke",
+      "away": "Houston",
+      "neutral": false,
+      "completed": false,
+      "home_score": null,
+      "away_score": null,
+      "market_spread": -2.5
+    },
+    {
+      "league": "mens",
+      "game_id": "401710106",
+      "start": "2026-08-22T19:30:00-05:00",
+      "home": "Kansas",
+      "away": "Vermont",
+      "neutral": false,
+      "completed": false,
+      "home_score": null,
+      "away_score": null,
+      "market_spread": -18.5
+    },
+    {
+      "league": "womens",
+      "game_id": "401810102",
+      "start": "2026-08-22T18:00:00-05:00",
+      "home": "South Carolina",
+      "away": "UConn",
+      "neutral": false,
+      "completed": false,
+      "home_score": null,
+      "away_score": null,
+      "market_spread": -6.5
+    },
+    {
+      "league": "mens",
+      "game_id": "401710107",
+      "start": "2026-08-23T20:00:00-05:00",
+      "home": "Houston",
+      "away": "North Carolina",
+      "neutral": false,
+      "completed": false,
+      "home_score": null,
+      "away_score": null,
+      "market_spread": -7.5
+    },
+    {
+      "league": "nfl",
+      "game_id": "401910102",
+      "start": "2026-08-23T15:25:00-05:00",
+      "home": "Green Bay Packers",
+      "away": "Chicago Bears",
+      "neutral": false,
+      "completed": false,
+      "home_score": null,
+      "away_score": null,
+      "market_spread": null
+    }
+  ]
+}

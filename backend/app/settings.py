@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # doesn't need to become a stream of ListJobs calls.
     jobs_cache_ttl_seconds: float = 60.0
 
+    # The games page (DESIGN.md section 13) reads the same bucket, and needs
+    # only that one -- there's no Batch half to be half-configured. Longer than
+    # the jobs TTL because nothing underneath it moves faster: scores are
+    # rewritten once a day with the season file, and the odds pulls are hourly.
+    # Season files are re-read on their ETag rather than on this, so what the
+    # TTL actually paces is the odds listing.
+    games_cache_ttl_seconds: float = 300.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.games import GamesSource, LocalGamesSource, get_games_source
 from app.jobs import JobsSource, LocalJobsSource, get_jobs_source
 from app.main import create_app
 from app.releases import LocalReleaseStore, ReleaseStore, get_release_store
@@ -21,8 +22,16 @@ def jobs_source() -> JobsSource:
 
 
 @pytest.fixture
-def client(store: ReleaseStore, jobs_source: JobsSource) -> TestClient:
+def games_source() -> GamesSource:
+    return LocalGamesSource(FIXTURES)
+
+
+@pytest.fixture
+def client(
+    store: ReleaseStore, jobs_source: JobsSource, games_source: GamesSource
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_release_store] = lambda: store
     app.dependency_overrides[get_jobs_source] = lambda: jobs_source
+    app.dependency_overrides[get_games_source] = lambda: games_source
     return TestClient(app)

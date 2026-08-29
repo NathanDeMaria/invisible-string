@@ -17,6 +17,9 @@ export type JobRun = components["schemas"]["JobRun"];
 export type VolumeResponse = components["schemas"]["VolumeResponse"];
 export type OddsDay = components["schemas"]["OddsDay"];
 export type SeasonObject = components["schemas"]["SeasonObject"];
+export type GamesResponse = components["schemas"]["GamesResponse"];
+export type GameRow = components["schemas"]["GameRow"];
+export type GamePrediction = components["schemas"]["GamePrediction"];
 
 export interface RatingsArgs {
   league: string;
@@ -26,6 +29,15 @@ export interface RatingsArgs {
 /** Days of history. The backend caps it at a week -- see DESIGN.md §12.3. */
 export interface WindowArgs {
   days: number;
+}
+
+/**
+ * The window the games page asks for, in days either side of today.
+ * `ahead: 0` is the rest of today; the backend caps both at a week.
+ */
+export interface GamesArgs {
+  back: number;
+  ahead: number;
 }
 
 export interface PredictArgs {
@@ -64,6 +76,12 @@ export const api = createApi({
     getJobVolume: builder.query<VolumeResponse, WindowArgs>({
       query: ({ days }) => ({ url: "jobs/volume", params: { days } }),
     }),
+    // One query for the whole window across every league: the games come from
+    // one place (endgame's bucket) and the page filters by league in the
+    // browser, so switching leagues is instant and hits nothing.
+    getGames: builder.query<GamesResponse, GamesArgs>({
+      query: ({ back, ahead }) => ({ url: "games", params: { back, ahead } }),
+    }),
     predict: builder.query<PredictResponse, PredictArgs>({
       query: ({ league, home, away, neutral, model }) => ({
         url: "predict",
@@ -87,4 +105,5 @@ export const {
   usePredictQuery,
   useGetJobsQuery,
   useGetJobVolumeQuery,
+  useGetGamesQuery,
 } = api;

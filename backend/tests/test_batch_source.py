@@ -28,7 +28,8 @@ from endgame.ncaabb.ncaabb import Season
 from endgame.types import Game, Week
 from moto import mock_aws
 
-from app.batch import JOB_TZ, MAX_RUN_PAGES, AwsJobsSource
+from app.batch import MAX_RUN_PAGES, AwsJobsSource
+from app.games import GAME_TZ
 from app.jobs import JobsUnavailable
 
 BUCKET = "endgame-data"
@@ -147,7 +148,7 @@ def s3() -> Iterator[Any]:
             Bucket=BUCKET,
             CreateBucketConfiguration={"LocationConstraint": "us-east-2"},
         )
-        today = datetime.now(JOB_TZ).date()
+        today = datetime.now(GAME_TZ).date()
         yesterday = today - timedelta(days=1)
 
         def put(key: str, body: bytes) -> None:
@@ -294,7 +295,7 @@ class TestRuns:
 class TestVolume:
     def test_counts_pulls_and_bytes_per_league_day(self, s3: Any) -> None:
         volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
-        today = datetime.now(JOB_TZ).date()
+        today = datetime.now(GAME_TZ).date()
 
         nfl_today = next(o for o in volume.odds if o.league == "nfl" and o.day == today)
         assert nfl_today.pulls == 1
@@ -315,11 +316,11 @@ class TestVolume:
         # endgame stamps odds keys with the Chicago date, so a UTC-built prefix
         # would ask for tomorrow's all evening and miss today's last pulls.
         volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
-        assert max(o.day for o in volume.odds) == datetime.now(JOB_TZ).date()
+        assert max(o.day for o in volume.odds) == datetime.now(GAME_TZ).date()
 
     def test_a_short_window_drops_older_days(self, s3: Any) -> None:
         volume = source(s3, StubBatch({"jobSummaryList": []})).volume(1)
-        assert {o.day for o in volume.odds} == {datetime.now(JOB_TZ).date()}
+        assert {o.day for o in volume.odds} == {datetime.now(GAME_TZ).date()}
 
     def test_names_season_artifacts_by_suffix(self, s3: Any) -> None:
         volume = source(s3, StubBatch({"jobSummaryList": []})).volume(7)
@@ -384,7 +385,7 @@ class TestVolume:
         # The odds side is unconditional, so it did keep working.
         assert counting.gets_under("odds/") > 0
 
-        today = datetime.now(JOB_TZ).date()
+        today = datetime.now(GAME_TZ).date()
         midnight = datetime.combine(today, datetime.min.time())
         s3.put_object(
             Bucket=BUCKET,

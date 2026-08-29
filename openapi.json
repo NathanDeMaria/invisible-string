@@ -1,6 +1,182 @@
 {
   "components": {
     "schemas": {
+      "GamePrediction": {
+        "description": "What one league's default release says about one game.",
+        "properties": {
+          "home_win_prob": {
+            "title": "Home Win Prob",
+            "type": "number"
+          },
+          "in_sample": {
+            "title": "In Sample",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "predicted_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Spread"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "run_id",
+          "home_win_prob",
+          "predicted_spread",
+          "in_sample"
+        ],
+        "title": "GamePrediction",
+        "type": "object"
+      },
+      "GameRow": {
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "string"
+          },
+          "away_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Score"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "home": {
+            "title": "Home",
+            "type": "string"
+          },
+          "home_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Score"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "market_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Spread"
+          },
+          "neutral": {
+            "title": "Neutral",
+            "type": "boolean"
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GamePrediction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "league",
+          "game_id",
+          "start",
+          "day",
+          "home",
+          "away",
+          "neutral",
+          "completed",
+          "home_score",
+          "away_score",
+          "market_spread",
+          "prediction"
+        ],
+        "title": "GameRow",
+        "type": "object"
+      },
+      "GamesResponse": {
+        "properties": {
+          "days_ahead": {
+            "title": "Days Ahead",
+            "type": "integer"
+          },
+          "days_back": {
+            "title": "Days Back",
+            "type": "integer"
+          },
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/GameRow"
+            },
+            "title": "Games",
+            "type": "array"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "days_back",
+          "days_ahead",
+          "since",
+          "until",
+          "games"
+        ],
+        "title": "GamesResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -747,6 +923,64 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/games": {
+      "get": {
+        "operationId": "get_games_api_games_get",
+        "parameters": [
+          {
+            "description": "Days of finished games to include, counted in US Central time.",
+            "in": "query",
+            "name": "back",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "description": "Days of finished games to include, counted in US Central time.",
+              "maximum": 7,
+              "minimum": 0,
+              "title": "Back",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Days of upcoming games beyond today. 0 is the rest of today.",
+            "in": "query",
+            "name": "ahead",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Days of upcoming games beyond today. 0 is the rest of today.",
+              "maximum": 7,
+              "minimum": 0,
+              "title": "Ahead",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GamesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Games"
+      }
+    },
     "/api/jobs": {
       "get": {
         "operationId": "get_jobs_api_jobs_get",

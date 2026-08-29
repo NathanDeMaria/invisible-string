@@ -1,8 +1,9 @@
 # invisible-string
 
 A webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
-results: current ratings per league, and win probability / predicted spread for
-a hypothetical matchup. See [DESIGN.md](./DESIGN.md).
+results: current ratings per league, win probability / predicted spread for a
+hypothetical matchup, and the games around today with the best model's number
+beside the book's. See [DESIGN.md](./DESIGN.md).
 
 ```
 infra/      terraform: CI OIDC roles now; App Runner, ECR, Batch to come

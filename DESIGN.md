@@ -1,8 +1,9 @@
 # invisible-string
 
 A small webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
-results: current ratings per league, and win probability / predicted spread for a
-hypothetical matchup.
+results: current ratings per league, win probability / predicted spread for a
+hypothetical matchup, and the games around today with the best model's number
+beside the book's.
 
 ```
 infra/      terraform: ECR, App Runner service, Batch refresh job, IAM
@@ -266,6 +267,12 @@ GET  /api/predict?league=&model=&home=&away=&neutral=false&home_advantage=
        -> {home, away, neutral, home_win_prob, away_win_prob,
            predicted_spread, home_rating, away_rating, run_id, model}
 
+GET  /api/games?back=2&ahead=1                                         # §13
+       -> {days_back, days_ahead, since, until,
+           games: [{league, game_id, start, day, home, away, neutral,
+                    completed, home_score, away_score, market_spread,
+                    prediction: {...} | null}]}
+
 POST /api/admin/releases            (auth)  # push a run from a laptop
 POST /api/admin/refresh             (auth)  -> {job_id}
 GET  /api/admin/refresh/{job_id}    (auth)  -> {status, ...}
@@ -362,6 +369,10 @@ Three routes:
   to the current season with a range picker back through 2010. Time on the x-axis,
   not week number (§6). Reachable from the ratings table with teams preselected, and
   team-keyed in the query string so a comparison is shareable.
+- **`/games`** — every league's games from a couple of days back through tomorrow,
+  grouped by day, each row carrying the default model's spread and win probability,
+  the book's line in the same convention, and the final score. Top-level rather than
+  a league panel, since a night's games span every league (§13.4).
 - **`/matchup`** — two team comboboxes fed from the ratings response already in the
   RTK Query cache (no extra endpoint), a neutral-site toggle, and a result card:
   win probability for each side plus the spread rendered in familiar form
@@ -1121,3 +1132,127 @@ One table of jobs (success rate, last run, last failure reason), and the volume
 tables beneath it. The failing jobs are the entire point of the page, so they sort
 first and stay first: a green wall you scroll to find the red row in is a status page
 nobody reads twice.
+
+---
+
+## 13. Games: recent and upcoming
+
+The two pages that existed answered questions you have to already care about the
+model to ask — "how good is this team?" and "what if these two played?". The one
+a reader has first is **what's on tonight, and was the model right about last
+night?** This is that page: every league's games from a couple of days back
+through tomorrow, each with the best model's number, the book's number, and the
+score once there is one.
+
+It needs no new upstream and no new IAM. Everything it reads is in endgame's
+bucket under the two prefixes §12.2 already spent the boundary on.
+
+### 13.1 Where each column comes from
+
+| Column | Source |
+|---|---|
+| matchup, tip-off, score | `seasons/{year}/{league}.pkl` — the same objects §12.4 counts |
+| line | `odds/{league}/{day}/{HH-MM}.json` — the same objects §12.4 counts pulls of |
+| model spread, win probability | the league's default `ModelRelease`, via `predict_matchup` |
+
+```
+GET /api/games?back=2&ahead=1
+  -> {days_back, days_ahead, since, until,
+      games: [{league, game_id, start, day, home, away, neutral, completed,
+               home_score, away_score, market_spread,
+               prediction: {model, run_id, home_win_prob,
+                            predicted_spread, in_sample} | null}]}
+```
+
+One endpoint for every league, and no `league=` filter: the whole window is one
+read of the same objects however you slice it, so the page filters in the
+browser and switching leagues costs nothing.
+
+**The line joins by game id, not by league.** §12 noted that the two halves of
+ncaabb are keyed differently — games per gender (`mens`/`womens`), odds per
+league (`ncaabb`) — and declined to invent a join. None is needed here: odds
+objects are keyed by ESPN's `competition_id`, which is exactly `Game.game_id`,
+so a `mens.pkl` game finds its line in an `odds/ncaabb/` pull by id alone.
+
+**Both spreads are quoted from the home side.** `predicted_spread` already is
+(§3), and cassandra's own betting metrics read the book's the same way — a home
+cover is `spread + team1_mov > 0`. Putting them in one row is the whole point of
+the page, and it only works because the sign convention is shared. The UI says
+so out loud under the tables, because two signed numbers in adjacent columns are
+unreadable without it.
+
+**Scores are dropped until the game is completed.** A season file carries the
+whole schedule and stores 0-0 for a game that hasn't happened. Passing that
+through would render tonight's slate as a wall of scoreless finals — the same
+trap §12.4 avoids by counting only completed games.
+
+### 13.2 What this costs to read
+
+Two caches, for the two things that move at different speeds.
+
+**Seasons are cached on their ETag**, exactly like §12.4's counts and for the
+same reason: the object is rewritten once a day, and between rewrites reading
+the window is free. Games are held grouped by day, so moving the window picker
+re-reads nothing. This is what makes the page affordable at all — `mens.pkl` is
+~19 MB, and there are two seasons' prefixes and a handful of leagues.
+
+**Odds are cached on a TTL** (`INVISIBLE_STRING_GAMES_CACHE_TTL_SECONDS`,
+5 minutes), because they have no equivalent signal and they're small.
+
+**Two pulls a day per league, not thirteen.** The last pull of a day carries the
+most settled line. The first is the fallback for a game the board had already
+taken down by the last one — which, on a day that's been played, is most of
+them, and those are precisely the games this page most wants a line for.
+Reading every hourly pull across the window would be ~200 objects to move a
+number by half a point. Days are walked oldest-first and later pulls win, so
+tomorrow's games get their line from today's board.
+
+Neither cache is keyed the way the *window* is, so `?back=` is nearly free to
+change. The window itself is capped at a week either side — not a retention
+ceiling like §12.3's, since a season file holds everything, but a cost cap. A
+month of games is a different page.
+
+### 13.3 The prediction is the current release, which has usually seen the result
+
+Releases are rebuilt nightly (§5a). So by the time last night's score is on this
+page, last night's result is already folded into the ratings that "predicted"
+it. That number is still the honest answer to "what does the model say about
+this matchup" — but it is not a forecast, and a page that showed it beside a
+final score without saying so would be quietly claiming a hit rate it never
+earned.
+
+`in_sample` is that flag. It's true when the game's id is in
+`trained_through.processed_game_ids` — the refresh job's own idempotency marker,
+so an exact answer where it applies — or, falling back for a game outside the
+current season, when the kickoff is at or before `trained_through.last_game_date`.
+The UI marks those rows with a dagger and explains it under the table.
+
+Predicting *out of sample* is a real feature and a bigger one: it needs the
+release as of the morning of the game, which means keeping per-day releases
+around and picking one per game. §6's rating history is the same storage
+problem. Worth doing, and not what this page is.
+
+**A league without a model still gets its rows.** endgame scrapes leagues
+nothing has published a `ModelRelease` for, and a missing, stale, or ratingless
+release costs that league its prediction column and nothing else. Same for a
+team the release has never rated: `/api/predict` makes that a 404, because a
+matchup with no answer is the whole request, but here the score and the line are
+still worth the row. Only the *games* half failing is a 502 — that's the half
+with nothing to show.
+
+### 13.4 Where it lives in the UI
+
+A top-level `/games` route beside `/jobs`, for the reason §12.5 gives: the
+league tabs nest *panels under a league*, and a night's games span every league
+at once. The league picker on the page is a filter over what's loaded, not a
+route.
+
+Days are grouped, and ordered **today, tomorrow, then backwards**. Not
+chronological in either direction: chronological buries tonight's games under
+two days of box scores, and reverse-chronological puts tomorrow above them.
+
+Both the day grouping and the tip-off times are stated in US Central — the zone
+endgame's jobs think in, and the one the window is cut in. The alternative,
+grouping in Central and printing times in the reader's own zone, produces a page
+that argues with itself: a 9pm game filed under "Today" and labelled 2:00 AM.
+One zone, named once above the tables, is the version that can't.
