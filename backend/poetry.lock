@@ -801,6 +801,26 @@ files = [
 botocore = ["botocore"]
 
 [[package]]
+name = "call-it-what-you-want"
+version = "0.1.0"
+description = "Translate between names and ID schemes for sports teams/athletes/etc."
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = []
+develop = false
+
+[package.extras]
+cli = ["fire (>=0.7.0)"]
+sync = ["aiohttp (>=3.8)", "endgame-aws"]
+
+[package.source]
+type = "git"
+url = "https://github.com/NathanDeMaria/call-it-what-you-want.git"
+reference = "15f23685a42466d3273a18430c19d2b5daee2586"
+resolved_reference = "15f23685a42466d3273a18430c19d2b5daee2586"
+
+[[package]]
 name = "cassandra"
 version = "0.1.0"
 description = ""
@@ -812,6 +832,7 @@ develop = false
 
 [package.dependencies]
 aiofiles = "^25.1.0"
+call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "15f23685a42466d3273a18430c19d2b5daee2586"}
 endgame_aws = {git = "https://github.com/NathanDeMaria/EndGame.git", rev = "0c21854d76a0b5ddb8f71842cb4ddb1ecc2f0408", subdirectory = "py-endgame-aws"}
 numpy = "^2.4.0"
 pandas = "^2.3.3"
@@ -820,8 +841,8 @@ pydantic = "^2.12.5"
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "d4f57604ad536bda6f5e37b6efddca40c7af5e90"
-resolved_reference = "d4f57604ad536bda6f5e37b6efddca40c7af5e90"
+reference = "785f888d230dae7f94865174adc097e5bb15cda1"
+resolved_reference = "785f888d230dae7f94865174adc097e5bb15cda1"
 
 [[package]]
 name = "certifi"
@@ -3454,4 +3475,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "4ac24df5aa7d645e20f6af247b5ca83da118d6d0d708731ff14b6b94c84037ea"
+content-hash = "1012ad796cb5db416618f5d6d46725a7e6f78ba4b35c309d62291ff742679a7d"
