@@ -1072,7 +1072,9 @@ Two smaller consequences of reading those objects:
 The alternative that keeps the boundary intact is a collector job writing a health
 artifact into *this* repo's bucket, which the API would read exactly like a
 `ModelRelease`. It costs a job and a schedule, and it's the shape to move to if this
-dashboard ever wants history beyond §12.3's ceiling.
+dashboard ever wants history beyond §12.3's ceiling. §14.7 is that shape applied to
+game data, and §14 proper is what replaces it once "as of this date" is a question
+anyone needs answered.
 
 ### 12.3 The retention ceiling
 
@@ -1084,7 +1086,8 @@ endgame's existing `FAILED` EventBridge rule to all terminal states and land the
 somewhere durable, or the collector-artifact shape above.
 
 The window is also why `success_rate` is `null`, not `0.0`, when no run has reached a
-terminal state in it. A job that hasn't run yet today and a job that failed every
+terminal state in it. (§14.4 gets the durable half of this for free, for game data
+at least: an ingest that records its own runs is a run history that outlives Batch.) A job that hasn't run yet today and a job that failed every
 attempt must not render as the same number.
 
 ### 12.4 What "amount of data pulled" can honestly mean
@@ -1211,8 +1214,9 @@ of rows. The horizon moves at midnight and the ETag doesn't, so a cache entry
 also records the span it was read for and is re-read when it stops covering the
 question.
 
-Worth naming the asymmetry, because it is why the job dashboard never showed the
-problem: §12.4 walks these same objects and keeps a count per day, discarding the
+§14 is the version of this that doesn't need a horizon at all — a query over rows
+has no equivalent of "the whole file is in memory now". Worth naming the asymmetry
+here anyway, because it is why the job dashboard never showed the problem: §12.4 walks these same objects and keeps a count per day, discarding the
 graph. It retains almost nothing, so it stayed healthy on the same instance while
 this endpoint could not answer once.
 
@@ -1257,7 +1261,8 @@ The UI marks those rows with a dagger and explains it under the table.
 Predicting *out of sample* is a real feature and a bigger one: it needs the
 release as of the morning of the game, which means keeping per-day releases
 around and picking one per game. §6's rating history is the same storage
-problem. Worth doing, and not what this page is.
+problem, and §14 is where both of them get somewhere to live — they are the two
+features that make a query engine worth its cost.
 
 **A league without a model still gets its rows.** endgame scrapes leagues
 nothing has published a `ModelRelease` for, and a missing, stale, or ratingless
@@ -1283,3 +1288,195 @@ endgame's jobs think in, and the one the window is cut in. The alternative,
 grouping in Central and printing times in the reader's own zone, produces a page
 that argues with itself: a 9pm game filed under "Today" and labelled 2:00 AM.
 One zone, named once above the tables, is the version that can't.
+
+---
+
+## 14. Games out of a database, not pickles
+
+Not built. This is the design to build against when the pickles stop paying for
+themselves, and a record of which parts of the obvious version are wrong.
+
+Every consumer of game data in this repo reads `seasons/{year}/{league}.pkl` and
+walks somebody else's object graph. That has now cost something concrete: §13.2's
+outage, where converting a season file into response models spent ~15× the file's
+own size and killed a 0.5 GB service on its first request. The fix — only build
+the fifteen days anyone can ask for — is the right fix for that bug and does
+nothing about the shape underneath it.
+
+Three things the pickles cannot do, in rough order of when they'll bite:
+
+- **The line is an approximation.** §13.2 opens two odds objects per league-day
+  because reading all thirteen would be ~200 objects a request. So "the spread"
+  is *a* line near the game rather than the last one before tip-off, and line
+  movement — which is most of what a stored odds history is *for* — isn't
+  available at all.
+- **Nothing can be asked across time.** §6's rating history and §13.3's
+  out-of-sample predictions are the same unanswerable question in two costumes:
+  both need "as of this date", and a file whose only index is its key can't
+  serve it.
+- **The version coupling is load-bearing and silent.** §12.2 flagged that
+  unpickling needs endgame's classes importable, and that a cassandra bump
+  dropping them "would turn the counts into `None` rather than break the page —
+  the right failure but a quiet one". Two places in this app now depend on that,
+  and cassandra's `read_all_seasons` is a third.
+
+### 14.1 Where the transform runs
+
+Whatever parses a pickle needs endgame's classes pinned, so the design goal is
+to **minimize the number of places that unpickle** — today two here plus
+cassandra; ideally one, and ideally zero.
+
+| Option | Unpicklers left | Notes |
+|---|---|---|
+| a. endgame's job emits rows beside the pickle | 0 | It has the parsed `Season` in memory one line before it exits — the same argument §12.4 makes for stats sidecars |
+| b. An ingester in *this* account, S3-triggered | 1 | Runs from the image this repo already builds, so the pins are correct by construction |
+| c. A Lambda in endgame's account | 1 | (a)'s coupling without (a)'s advantage |
+
+**Any event-driven version requires a change in endgame's account** — bucket
+EventBridge notifications, or an SNS topic with a cross-account policy. That's
+worth knowing before choosing: if endgame is being touched regardless, spend it
+on (a), which retires the problem instead of relocating it. (b) is the version
+buildable entirely from this side, and the one to start with.
+
+### 14.2 The app is not the writer
+
+The obvious wiring is S3 event → Lambda → `POST /api/admin/games` → the app
+writes the DB. Rejected, and worth writing down why, because the reasoning isn't
+obvious until it's spelled out: **the Lambda has to parse the pickle to build
+that payload**, so it already holds the domain types. The app hop therefore does
+not buy "one definition of a Game" — that's already been shipped to the
+ingester — and it costs four things:
+
+- a data-ingest write path on a service that is public-read by design (§3),
+- chunking, idempotency and retry, because a season file is 5k–290k games and
+  that is not one request,
+- bulk writes competing with page loads on 0.25 vCPU, and ingest that fails
+  whenever the app is mid-deploy,
+- a read-write DB credential in the web tier.
+
+That last one is the real prize being given away. With the ingester writing
+directly, **the app's database user is read-only**, which is a much stronger
+statement than any amount of care in a handler. One definition of the schema
+comes from migrations living in this repo, which both sides read — not from an
+HTTP boundary between them.
+
+The one case that flips this: a DB reachable only inside a VPC, with an ingester
+outside it. §14.5 removes that reason rather than accommodating it.
+
+### 14.3 Schema
+
+```sql
+create table game (
+  game_id     text primary key,          -- ESPN competition id; already the join key
+  league      text not null,             -- as the season key names it: mens, nfl, ...
+  season_year int  not null,
+  starts_at   timestamptz not null,
+  -- One definition of the boundary the whole app cuts days on (§13.4), and it
+  -- cannot drift from starts_at the way a written column could.
+  game_day    date generated always as
+                ((starts_at at time zone 'America/Chicago')::date) stored,
+  home text not null, away text not null,
+  neutral bool not null,
+  completed bool not null,
+  home_score int, away_score int,        -- null until completed, exactly as §13.1
+  source_key text not null,              -- seasons/2026/mens.pkl
+  source_etag text not null,
+  last_seen_at timestamptz not null
+);
+create index on game (game_day, league);
+create index on game (league, season_year);
+
+create table odds_quote (
+  game_id text not null references game (game_id),
+  pulled_at timestamptz not null,        -- from the object key: odds/{league}/{day}/{HH-MM}
+  spread numeric(5,1),                   -- home side, negative = home favoured (§13.1)
+  primary key (game_id, pulled_at)
+);
+```
+
+**Keeping every pull is the correctness win, not the speed one.** "The line"
+stops being whichever of two objects happened to carry the game and becomes the
+last quote before `starts_at` — the closing line, properly defined — as one
+lateral join. Line movement, opening-vs-closing, and the honest version of
+§13.1's market comparison all fall out of a table that was going to be written
+anyway. Volume is trivial: ~5 leagues × ~13 pulls × ~50 games × 365 is single-digit
+millions of rows a year.
+
+The sign convention does **not** change at this boundary. Both spreads stay
+quoted from the home side, for §13.1's reason, and the negation stays where it
+is — one place, at the API edge.
+
+### 14.4 Ingest semantics
+
+The daily job rewrites the whole season file, so every event re-presents the
+whole season. Three rules, each of which an upsert-only pipeline gets wrong:
+
+- **Scores are mutable.** They get corrected upstream — that's why
+  `trained_through.processed_game_ids` exists rather than a timestamp (§2). So
+  there is no "don't touch a completed game" rule; a correction must land.
+- **Games disappear.** Cancelled, postponed, or re-keyed. Upsert alone leaves a
+  ghost on the schedule forever, so ingest is a *replace* scoped to
+  `(league, season_year)`: stage the file's rows, upsert them, then delete rows
+  in that scope whose `last_seen_at` is older than this run. Scoping the delete
+  matters — a partial file must never be able to empty another league.
+- **Events arrive out of order.** Guard on `source_etag` plus `last_seen_at` so
+  a retried older event can't overwrite a newer read.
+
+Backfill is the same code path handed every key instead of the changed one.
+It is not a separate program, and if it is, one of the two will rot.
+
+An `ingest_run` table falls out for free — one row per file per run, with counts
+and outcome. That is also the durable job history §12.3 says needs "runs
+persisted as they finish", which lifts the seven-day Batch retention ceiling for
+game data without the collector job that section proposes.
+
+### 14.5 The infra fork: App Runner and the VPC
+
+This is the decision that actually sets the cost, and it is not the database
+bill. **Attaching a VPC connector routes all of the service's outbound traffic
+through the VPC.** Today this app reaches S3 and Batch over the public internet,
+so a connector means an S3 gateway endpoint (free) plus an interface endpoint
+for Batch or a NAT gateway (~$32/mo) — for a service whose whole appeal (§7) was
+not having any of that.
+
+In preference order:
+
+1. **Aurora Serverless v2 behind the RDS Data API.** HTTP and IAM-authed, so no
+   VPC connector and no endpoints; scales down between the daily writes, which
+   is what this workload looks like. It also removes §14.2's one exception.
+2. **RDS Postgres + a VPC connector.** Fine, and more familiar. Price the
+   endpoints in, and remember the connector affects S3 and Batch too.
+3. **DynamoDB.** No VPC, cheapest ops — and the wrong shape. "Latest quote per
+   game before tip-off" is a window function here and a mess there, and every
+   §14 query is relational.
+
+### 14.6 Cutover
+
+The seam already exists. `GamesSource` is a Protocol precisely so the source can
+be swapped (§13), so this is a `DbGamesSource` beside `LocalGamesSource` and
+`AwsGamesSource`, chosen by settings the way the release store and jobs source
+already are — and the fixture-backed local source keeps working untouched, so
+tests and `make run` still need neither AWS nor a database.
+
+Order: backfill, then dual-read and diff a window against `AwsGamesSource` for a
+week, then flip. Keep the S3 source until the diff has been empty for a while;
+it is the thing that says the ingester is right, and deleting it early throws
+away the only oracle.
+
+`/api/jobs/volume` follows: its game counts become a `group by` over `game`
+rather than a season file unpickled per request, which is the last reader in
+this app to let go of the pickles.
+
+### 14.7 The cheaper stop-short
+
+If none of the above earns its keep yet, a derived artifact does most of the
+work for none of the infrastructure: the ingester writes `games/{day}.json` into
+*this* repo's bucket, and the app reads a handful of small objects with no
+unpickling and no memory cliff. That is §12.2's collector shape, and it has a
+side effect worth naming — the web tier stops reading endgame's raw scrape data
+entirely, which gives back the boundary §11.2 claimed and §12.2 spent.
+
+What it doesn't give: "as of this date". §6's rating history and §13.3's
+out-of-sample predictions are the two features that make a query engine
+unavoidable, and both are storage problems wearing feature costumes. Build §14
+when one of them is next, not before.
