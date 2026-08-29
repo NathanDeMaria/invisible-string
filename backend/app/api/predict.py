@@ -96,6 +96,38 @@ def predict(
             status_code=502,
             detail=f"this build has no predictor class {release.predictor_class!r}",
         ) from exc
+    except Exception as exc:  # noqa: BLE001 - see below
+        # `from_ratings` ends in `cls(league, **release.params)`, and `params`
+        # is free-form by design, so a release tuned against a newer cassandra
+        # arrives with a knob this build's constructor has never heard of and
+        # raises a bare TypeError -- not one of the two errors above.
+        #
+        # Same class of problem as an unknown predictor class, and the same
+        # answer: the artifact is there, we read it, and it is the *upstream*
+        # data this build can't use. Nothing the caller can change and nothing
+        # a retry fixes.
+        #
+        # Note what is deliberately NOT done here: dropping the parameters the
+        # constructor won't take. That would answer with a number computed by
+        # a differently-tuned model while looking exactly like a good one --
+        # the same confident lie `_check_teams` refuses for an unknown team.
+        log.warning(
+            "serving 502 for %s: %s could not be rebuilt "
+            "(predictor_class=%s, params=%s)",
+            league,
+            release.model,
+            release.predictor_class,
+            sorted(release.params),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"{release.model} could not be rebuilt from its release: "
+                f"{release.predictor_class} does not accept the parameters it "
+                "carries"
+            ),
+        ) from exc
 
     _check_teams(release, home, away)
 

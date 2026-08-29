@@ -7,8 +7,10 @@ dates, which is what keeps them from expiring a week after they were written.
 """
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -272,3 +274,123 @@ def _game(client: TestClient, game_id: str) -> dict:
     return next(
         g for g in client.get("/api/games").json()["games"] if g["game_id"] == game_id
     )
+
+
+class TestARelaseThisBuildCantRebuild:
+    """The bug that 500'd the live page.
+
+    A release's `params` are free-form by design, so one tuned against a newer
+    cassandra arrives carrying a knob this build's constructor has never heard
+    of -- production's was `season_regression` on `GlickoPredictor` -- and
+    `from_ratings` raises a bare `TypeError` out of `cls(league, **params)`.
+    `_build` caught three specific errors and not that one, so one league's
+    drifted artifact took down every league's games with it.
+    """
+
+    def test_the_window_survives(self, store: ReleaseStore, caplog) -> None:
+        source = StubGames(
+            game(game_id="mens-1", home="Duke", away="Houston"),
+            game(league="nfl", game_id="nfl-1", home="Bears", away="Packers"),
+        )
+        with caplog.at_level(logging.WARNING):
+            response = client_for(source, Drifted(store)).get("/api/games")
+
+        assert response.status_code == 200
+        body = response.json()
+        # Every row survives, including the league that never had a model.
+        assert [g["game_id"] for g in body["games"]] == ["mens-1", "nfl-1"]
+        assert all(g["prediction"] is None for g in body["games"])
+
+    def test_it_names_the_class_and_the_params(
+        self, store: ReleaseStore, caplog
+    ) -> None:
+        """The log line is the fix for the next one of these.
+
+        Placing this took a round trip through production logs precisely
+        because nothing said which league, which class, or which knobs.
+        """
+        with caplog.at_level(logging.WARNING):
+            client_for(StubGames(game(game_id="g")), Drifted(store)).get("/api/games")
+
+        assert "mens" in caplog.text
+        assert "GlickoPredictor" in caplog.text
+        assert "season_regression" in caplog.text
+
+    def test_predict_answers_502_rather_than_500(self, store: ReleaseStore) -> None:
+        """/api/predict has had this hole since it shipped.
+
+        It never surfaced because the matchup page only asks about the league
+        you are looking at; /api/games builds a predictor for every league at
+        once, which is what found it. 502 for the reason an unknown predictor
+        class is one: the artifact is there and it is the upstream data this
+        build can't use.
+        """
+        app = create_app()
+        app.dependency_overrides[get_release_store] = lambda: Drifted(store)
+        response = TestClient(app).get(
+            "/api/predict", params={"league": "mens", "home": "Duke", "away": "Houston"}
+        )
+
+        assert response.status_code == 502
+        assert "GlickoPredictor" in response.json()["detail"]
+
+
+class Drifted:
+    """A store whose releases carry a param this build's constructor rejects.
+
+    Wraps the real fixtures rather than hand-rolling a release, so the failure
+    is cassandra's own `TypeError` out of `cls(league, **params)` -- the same
+    call, raising the same way, as the one in production.
+    """
+
+    def __init__(self, inner: ReleaseStore) -> None:
+        self._inner = inner
+
+    def list_leagues(self) -> list[str]:
+        return self._inner.list_leagues()
+
+    def list_models(self, league: str) -> list[str]:
+        return self._inner.list_models(league)
+
+    def get_latest(self, league: str, model: str):
+        release = self._inner.get_latest(league, model)
+        return release.model_copy(
+            update={"params": {**release.params, "season_regression": 0.25}}
+        )
+
+
+class TestAPredictorThatThrowsMidWindow:
+    """Rebuilding can succeed and predicting still fail.
+
+    Rarer than the above, and guarded the same way: cassandra's code over a
+    release this build didn't write has no useful list of exception types.
+    """
+
+    def test_one_bad_matchup_costs_one_row(self, store: ReleaseStore, caplog) -> None:
+        source = StubGames(game(game_id="g", home="Duke", away="Houston"))
+        with (
+            patch(
+                "app.api.games.predict_matchup",
+                side_effect=RuntimeError("ratings moved under the predictor"),
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            response = client_for(source, store).get("/api/games")
+
+        assert response.status_code == 200
+        assert response.json()["games"][0]["prediction"] is None
+        assert "predictor failed for mens" in caplog.text
+
+    def test_it_logs_once_per_league(self, store: ReleaseStore, caplog) -> None:
+        source = StubGames(
+            *(game(game_id=f"g{i}", home="Duke", away="Houston") for i in range(5))
+        )
+        with (
+            patch("app.api.games.predict_matchup", side_effect=RuntimeError("boom")),
+            caplog.at_level(logging.WARNING),
+        ):
+            client_for(source, store).get("/api/games")
+
+        # A busy night is hundreds of games; one traceback each is a log
+        # nobody reads.
+        assert caplog.text.count("predictor failed for mens") == 1

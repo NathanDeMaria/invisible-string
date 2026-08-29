@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from cassandra.predictor import RatingsUnsupported
 
 from app.schema import ModelRelease
 
@@ -152,3 +153,25 @@ def _margin_at(raw: dict[str, object], win_prob: float) -> float:
     predictor = ModelRelease.model_validate(raw).margin_predictor()
     assert predictor is not None
     return float(predictor.predict_margins(np.array([win_prob]))[0])
+
+
+@pytest.mark.parametrize("path", FIXTURE_FILES, ids=_ids(FIXTURE_FILES))
+def test_the_pinned_classes_can_rebuild_it(path: Path) -> None:
+    """The check `test_validates` cannot make, and the one production needed.
+
+    `params` is `dict[str, float | str]` -- free-form on purpose, so the
+    schema has nothing to say about its keys. A release tuned against a newer
+    cassandra therefore validates perfectly and then raises a bare `TypeError`
+    out of `cls(league, **params)` the first time anything rebuilds it, which
+    is what a live `season_regression` knob did to `/api/games`.
+
+    So this is the fixture-side half of section 8's "did bumping the pin break
+    the artifact format?": `test_validates` answers it for the schema, and this
+    answers it for the constructor. `scripts/seed-artifacts.sh` runs the same
+    check before it uploads, so the two ends agree.
+    """
+    release = ModelRelease.model_validate(json.loads(path.read_text()))
+    try:
+        release.rating_predictor()
+    except RatingsUnsupported:
+        pytest.skip(f"{release.model} does not rate teams")

@@ -793,6 +793,37 @@ bumps the rev to cassandra's `main`, runs the schema contract test, and opens a 
 is a small amount of YAML that turns "the artifact schema changed under me" from a
 production surprise into a red check.
 
+**Drift doesn't only happen in the schema, and the schema test can't see the other
+half.** `ModelRelease.params` is `dict[str, float | str]` — free-form on purpose,
+because the tuned knobs differ per predictor and the artifact shouldn't need a new
+field for each one. The cost is that a release tuned against a *newer* cassandra
+validates perfectly and is unusable: `rating_predictor()` ends in
+`cls(league, **params)`, so an unrecognized knob comes back as a bare `TypeError`
+from inside cassandra.
+
+That is not hypothetical either. A published release carrying `season_regression`
+met a pinned `GlickoPredictor` that had never heard of it, and because
+`/api/games` (§13) rebuilds a predictor for *every* league in the window rather
+than the one league a caller asked about, one drifted artifact 500'd the whole
+page — while `/api/predict`, which had the identical hole, looked fine for
+months because the matchup page only ever asks about the league you are on.
+
+Three things changed, and the split between them is the point:
+
+- **Both endpoints degrade instead of raising.** `/api/games` drops that league's
+  predictions and keeps every row; `/api/predict` answers 502, because there the
+  matchup *is* the request. Neither drops the offending parameters and answers
+  anyway — that would serve a number from a differently-tuned model while looking
+  exactly like a good one, the same confident lie §3's unknown-team guard refuses.
+- **The log names the league, the model, the predictor class and the param keys.**
+  Placing this cost a round trip through production logs purely because nothing
+  said which of those four it was.
+- **Rebuilding is now part of the gate, at both ends.** `test_schema_contract.py`
+  rebuilds every golden fixture, and `scripts/seed-artifacts.sh` rebuilds every
+  release before it uploads — which is the gate this artifact walked through,
+  since it validated the schema and nothing else. "Schema-valid" and "this build
+  can use it" are different claims, and only the second one keeps the site up.
+
 ---
 
 ## 9. Changes needed in cassandra
