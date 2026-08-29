@@ -824,6 +824,26 @@ Three things changed, and the split between them is the point:
   since it validated the schema and nothing else. "Schema-valid" and "this build
   can use it" are different claims, and only the second one keeps the site up.
 
+The pin was then bumped past it, `d4f5760` → `785f888`, which is what makes the
+predictions render again rather than merely fail politely. Three things that made
+that a small change rather than a frightening one, and all three are worth
+re-checking on the next bump:
+
+- `cassandra/serving/` is byte-identical across the whole range, so `ModelRelease`
+  itself never moved. The risk was confined to predictor constructors.
+- The same release predicts the same numbers either side of the bump — 0.633 and
+  −3.7 for the mens fixture — so nothing already being served changes.
+  `season_regression` applies to between-season replay, and serving never
+  regresses anything. `anchors` can't reach a release at all: it is a `Mapping`,
+  and `params` is `dict[str, float | str]`.
+- `sklearn` is still absent from the image. That is the §2 invariant, and a pin
+  bump is exactly how it would quietly break.
+
+A guard that degrades and a pin that works are not alternatives. The first is what
+keeps the *next* drift from taking a page down; the second is what makes this
+one's numbers appear. Shipping only the pin would leave the site one `optimize.py`
+run away from the same outage.
+
 ---
 
 ## 9. Changes needed in cassandra

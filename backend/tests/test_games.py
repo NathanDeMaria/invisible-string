@@ -285,6 +285,13 @@ class TestARelaseThisBuildCantRebuild:
     `from_ratings` raises a bare `TypeError` out of `cls(league, **params)`.
     `_build` caught three specific errors and not that one, so one league's
     drifted artifact took down every league's games with it.
+
+    The knob below is deliberately synthetic rather than `season_regression`:
+    bumping the pin to a cassandra that *accepts* that parameter turned these
+    green, which is the right outcome for production and the wrong one for a
+    regression test. What is being tested is "a parameter this build's
+    constructor won't take", and only a name no cassandra will ever add keeps
+    testing it.
     """
 
     def test_the_window_survives(self, store: ReleaseStore, caplog) -> None:
@@ -314,7 +321,7 @@ class TestARelaseThisBuildCantRebuild:
 
         assert "mens" in caplog.text
         assert "GlickoPredictor" in caplog.text
-        assert "season_regression" in caplog.text
+        assert "a_knob_from_the_future" in caplog.text
 
     def test_predict_answers_502_rather_than_500(self, store: ReleaseStore) -> None:
         """/api/predict has had this hole since it shipped.
@@ -341,6 +348,8 @@ class Drifted:
     Wraps the real fixtures rather than hand-rolling a release, so the failure
     is cassandra's own `TypeError` out of `cls(league, **params)` -- the same
     call, raising the same way, as the one in production.
+
+    The parameter is synthetic on purpose; see the test class above.
     """
 
     def __init__(self, inner: ReleaseStore) -> None:
@@ -355,7 +364,7 @@ class Drifted:
     def get_latest(self, league: str, model: str):
         release = self._inner.get_latest(league, model)
         return release.model_copy(
-            update={"params": {**release.params, "season_regression": 0.25}}
+            update={"params": {**release.params, "a_knob_from_the_future": 0.25}}
         )
 
 
