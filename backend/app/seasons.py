@@ -275,6 +275,7 @@ def _pool_games(
     since, until = horizon
     pooled: dict[str, ScheduledGame] = {}
     skipped = 0
+    first_failure: Exception | None = None
 
     for season in seasons:
         for week in getattr(season, "weeks", []):
@@ -283,15 +284,28 @@ def _pool_games(
                     continue
                 try:
                     row = _to_row(game, league)
-                except Exception:  # noqa: BLE001 - a foreign, evolving Game
+                except Exception as exc:  # noqa: BLE001 - a foreign, evolving Game
                     skipped += 1
+                    # The count on its own says a game was dropped without
+                    # saying what about it we couldn't read, which is the
+                    # half that would let anyone fix it. One example is
+                    # enough -- they fail the same way -- and it goes out
+                    # with a traceback.
+                    if first_failure is None:
+                        first_failure = exc
                     continue
                 seen = pooled.get(row.game_id)
                 if seen is None or (row.completed and not seen.completed):
                     pooled[row.game_id] = row
 
     if skipped:
-        log.warning("skipped %d unreadable %s games in the window", skipped, league)
+        log.warning(
+            "skipped %d unreadable %s games in the window; first was: %r",
+            skipped,
+            league,
+            first_failure,
+            exc_info=first_failure,
+        )
     return pooled
 
 

@@ -80,6 +80,8 @@ echo "==> validating ${#files[@]} release(s) against cassandra's ModelRelease"
   cd "$repo_root/backend"
   poetry run python -c '
 import json, sys
+from cassandra.predictor import RatingsUnsupported
+
 from app.schema import ModelRelease
 
 bad = 0
@@ -98,6 +100,24 @@ for path in sys.argv[1:]:
     except ValueError as exc:
         bad += 1
         print(f"    FAIL {path}: not JSON-safe ({exc})", file=sys.stderr)
+        continue
+    # Schema-valid is not the same as usable, and this is the gap that gate
+    # had. `params` is free-form by design, so a release tuned against a
+    # newer cassandra validates perfectly here and then raises TypeError out
+    # of `cls(league, **params)` the first time the API rebuilds it. That is
+    # exactly how a `season_regression` knob reached the bucket and turned
+    # /api/games into a 500 for every league at once. Rebuilding it is the
+    # only check that proves the pinned classes can actually use the file.
+    try:
+        release.rating_predictor()
+    except RatingsUnsupported:
+        # A model that does not rate teams is a legitimate release; it just
+        # cannot answer a matchup. Not a reason to refuse the upload.
+        pass
+    except Exception as exc:
+        bad += 1
+        print(f"    FAIL {path}: {release.predictor_class} cannot be rebuilt "
+              f"from its params ({exc})", file=sys.stderr)
         continue
     teams = len(release.ratings)
     fit = release.margin_calibration.kind if release.margin_calibration else "none"

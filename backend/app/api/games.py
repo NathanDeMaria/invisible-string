@@ -182,6 +182,9 @@ class _Models:
     def __init__(self, store: ReleaseStore) -> None:
         self._store = store
         self._by_league: dict[str, _LeagueModel | None] = {}
+        # Leagues whose predictor has already thrown, so a window full of
+        # their games logs one traceback rather than one per row.
+        self._logged: set[str] = set()
 
     def predict(self, game: ScheduledGame) -> GamePrediction | None:
         model = self._for(game.league)
@@ -199,21 +202,45 @@ class _Models:
         if game.away not in model.release.ratings:
             return None
 
-        prob = predict_matchup(
-            model.predictor,
-            home=game.home,
-            away=game.away,
-            neutral_site=game.neutral,
-            date=game.start,
-        ).team1_win_prob
+        try:
+            prob = predict_matchup(
+                model.predictor,
+                home=game.home,
+                away=game.away,
+                neutral_site=game.neutral,
+                date=game.start,
+            ).team1_win_prob
 
-        return GamePrediction(
-            model=model.release.model,
-            run_id=model.release.run_id,
-            home_win_prob=prob,
-            predicted_spread=_spread(model.margin, prob),
-            in_sample=_in_sample(model, game),
-        )
+            return GamePrediction(
+                model=model.release.model,
+                run_id=model.release.run_id,
+                home_win_prob=prob,
+                predicted_spread=_spread(model.margin, prob),
+                in_sample=_in_sample(model, game),
+            )
+        except Exception:  # noqa: BLE001 - see below
+            # A predictor that raises on a matchup its own ratings cover is a
+            # bug somewhere upstream, and there is no list of exception types
+            # to enumerate: it is cassandra's code, over a release this build
+            # didn't write. What matters is that it costs this row its
+            # prediction and nothing else -- the rule every other failure on
+            # this page already follows, and the one an unguarded call here
+            # broke by turning one bad matchup into a 500 for the whole
+            # window.
+            #
+            # Logged once per league, with the traceback, because the count
+            # alone is what made the first outage here so slow to place.
+            if game.league not in self._logged:
+                self._logged.add(game.league)
+                log.warning(
+                    "predictor failed for %s (%s at %s); dropping predictions "
+                    "for this league's games",
+                    game.league,
+                    game.away,
+                    game.home,
+                    exc_info=True,
+                )
+            return None
 
     def _for(self, league: str) -> _LeagueModel | None:
         if league not in self._by_league:
@@ -223,13 +250,15 @@ class _Models:
     def _build(self, league: str) -> _LeagueModel | None:
         try:
             release = resolve_release(self._store, league, None)
-            predictor = release.rating_predictor()
         except (ReleaseNotFound, ReleaseUnreadable) as exc:
             # A league endgame scrapes that nothing has published a model for
             # yet is the normal case here, not an error -- this page lists
             # every league's games, and the releases are a separate pipeline.
             log.info("no prediction for %s: %s", league, exc)
             return None
+
+        try:
+            predictor = release.rating_predictor()
         except RatingsUnsupported:
             log.info(
                 "no prediction for %s: its default model doesn't rate teams", league
@@ -240,6 +269,29 @@ class _Models:
             # shape as a stale artifact, and the same degradation: that
             # league's rows lose their prediction, the page keeps its games.
             log.warning("no prediction for %s: %s", league, exc)
+            return None
+        except Exception:  # noqa: BLE001 - see below
+            # Every `from_ratings` ends in `cls(league, **release.params)`,
+            # and `params` is whatever the artifact happens to carry -- so a
+            # release written against a different constructor signature comes
+            # back as a bare TypeError from inside cassandra rather than as
+            # one of the three errors above. There is no useful list to
+            # enumerate, because the failure is "this build's classes and
+            # that bucket's data disagree", which is open-ended by nature.
+            #
+            # This is what 500'd the whole window on the first deploy: one
+            # league's release couldn't be rebuilt, and every other league's
+            # games went down with it. The message names the class and the
+            # param keys, because that pair is the answer.
+            log.warning(
+                "no prediction for %s: %s could not be rebuilt from its "
+                "release (predictor_class=%s, params=%s)",
+                league,
+                release.model,
+                release.predictor_class,
+                sorted(release.params),
+                exc_info=True,
+            )
             return None
 
         return _LeagueModel(
