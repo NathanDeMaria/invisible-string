@@ -1,5 +1,5 @@
 import type { GameRow } from "../../services/api";
-import { probability, score, spread, tipoff } from "./format";
+import { probability, score, spread, statusLabel, tipoff } from "./format";
 
 interface Props {
   games: GameRow[];
@@ -7,7 +7,7 @@ interface Props {
 
 /**
  * One day's games: what's on, what the model says, what the market says, and
- * how it finished.
+ * how it finished -- or, for a game with no result, what became of it.
  *
  * The two spread columns sit next to each other on purpose. Both are quoted
  * from the home team's side (DESIGN.md §13), so the gap between them is
@@ -79,7 +79,14 @@ export function GameTable({ games }: Props) {
                   <span className="of">{winner(game)}</span>
                 </>
               ) : (
-                <span className="rate quiet">&mdash;</span>
+                // No score, and the useful part is *why* not. Most of these
+                // are simply games that haven't been played, which the
+                // tip-off beside them already says -- so those keep the dash,
+                // and the ones a reader would otherwise wait on all evening
+                // say what happened to them.
+                <span className="rate quiet state">
+                  {statusLabel(game.status) ?? <>&mdash;</>}
+                </span>
               )}
             </td>
           </tr>

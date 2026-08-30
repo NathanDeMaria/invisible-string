@@ -20,6 +20,12 @@ upstream, not something this can paper over -- so `home_score` is None until
 `completed`, rather than the 0 the season file carries, and the page says so
 out loud.
 
+**Every league's file now carries its fixtures, not just its results.** The
+unplayed half of the window used to be empty because the jobs dropped anything
+ESPN hadn't finished; they keep it now, which is what makes "what's on tonight"
+answerable at all. It also means most rows in the window have no score, so
+`status` rides along to say why -- see `ScheduledGame`.
+
 **The line is per game, not per league.** Odds objects are keyed by ESPN's
 competition id, which is exactly `Game.game_id`, so joining them needs no
 mapping between the two ways ncaabb is keyed (games are `mens`/`womens`, odds
@@ -81,6 +87,21 @@ class ScheduledGame(BaseModel):
     rendering it would turn tonight's schedule into a wall of scoreless
     finals.
 
+    `status` is ESPN's own `status.type.name`, passed through verbatim:
+    STATUS_FINAL, STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_POSTPONED,
+    STATUS_CANCELED. It is the second half of `completed`, which only says
+    result / not-a-result -- and once a season file carries the games ESPN
+    hasn't finished, that isn't enough to render a row: a game with no score is
+    on tonight, is being played, was called off, or was moved, and those read
+    nothing alike.
+
+    Verbatim rather than mapped onto an enum of our own, for the reason
+    endgame declines to enumerate it upstream: it is a value ESPN sends, not a
+    parameter anyone sends it, so a status nobody has seen before should reach
+    the page as an odd string rather than as a category error. `""` is a game
+    saved before endgame carried the field, which is every game in the bucket
+    written before the flip -- all of them final.
+
     `market_spread` follows the same convention as `/api/predict`'s
     `predicted_spread`: quoted from the home team's side, so negative means the
     home team is favoured. That's the sign cassandra's own betting metrics
@@ -95,6 +116,7 @@ class ScheduledGame(BaseModel):
     away: str
     neutral: bool
     completed: bool
+    status: str = ""
     home_score: int | None = None
     away_score: int | None = None
     market_spread: float | None = None

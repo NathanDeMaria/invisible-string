@@ -25,7 +25,6 @@ scrape data. That was a deliberate call, not an oversight.
 
 import json
 import logging
-import pickle
 import re
 import threading
 import time
@@ -43,6 +42,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 # so the day prefixes listed below have to be built in it: UTC would ask for
 # tomorrow's prefix all evening and miss the last pulls of today's. It lives in
 # app.games, which draws the same day boundary for "what's on tonight".
+from app.endgame_pickle import load_seasons
 from app.games import GAME_TZ, game_day
 from app.jobs import (
     JobRun,
@@ -312,17 +312,18 @@ class AwsJobsSource:
             return None
 
         try:
-            loaded = pickle.loads(raw)
+            seasons = load_seasons(raw)
         except Exception as exc:  # noqa: BLE001 - see below
             # Unpickling someone else's object graph can fail in essentially
             # any way: a moved class, a renamed field, a truncated body. All of
             # them mean the same thing here -- no counts for this file -- and
             # none of them should take the dashboard down with them.
+            #
+            # `load_seasons` is what keeps a *field appended upstream* out of
+            # that list. It used to belong on it, and it is the one failure
+            # here that arrives on every league at once (app.endgame_pickle).
             log.warning("could not unpickle s3://%s/%s: %s", self._bucket, key, exc)
             return None
-
-        # `save_to_s3` writes a list of seasons; tolerate a bare one.
-        seasons = loaded if isinstance(loaded, list) else [loaded]
 
         total = 0
         completed: Counter[date] = Counter()

@@ -1213,7 +1213,7 @@ bucket under the two prefixes §12.2 already spent the boundary on.
 GET /api/games?back=2&ahead=1
   -> {days_back, days_ahead, since, until,
       games: [{league, game_id, start, day, home, away, neutral, completed,
-               home_score, away_score, market_spread,
+               status, home_score, away_score, market_spread,
                prediction: {model, run_id, home_win_prob,
                             predicted_spread, in_sample} | null}]}
 ```
@@ -1238,7 +1238,34 @@ unreadable without it.
 **Scores are dropped until the game is completed.** A season file carries the
 whole schedule and stores 0-0 for a game that hasn't happened. Passing that
 through would render tonight's slate as a wall of scoreless finals — the same
-trap §12.4 avoids by counting only completed games.
+trap §12.4 avoids by counting only completed games. A game *in progress* is the
+sharper version of it: the file holds a real partial score, frozen at whenever
+the daily job ran, and rendering that is a stale scoreline that looks exactly
+like a final.
+
+**`status` is why there's no score.** ESPN's own `status.type.name`, verbatim:
+`STATUS_SCHEDULED`, `STATUS_IN_PROGRESS`, `STATUS_POSTPONED`, `STATUS_CANCELED`,
+`STATUS_FINAL`, and `""` for a game written before endgame carried the field.
+`completed` says only result / not-a-result, which was enough while the files
+held nothing but results and isn't now that they hold the schedule too: a row
+with an empty Result cell is a game on tonight, a game being played, or a game
+that was called off, and a page that renders those three the same makes a
+reader wait all evening for a score that isn't coming.
+
+Passed through rather than mapped onto an enum of our own, for the reason
+endgame declines to enumerate it upstream: it is a value ESPN sends, not a
+parameter anyone sends it, so a status nobody has seen before should reach the
+page as an odd string rather than as a category error. The page renders the
+states worth naming, keeps the dash for a game that simply hasn't happened
+— the tip-off beside it has already said so — and turns an unrecognized
+`STATUS_FOO_BAR` into "Foo bar" rather than hiding it.
+
+**And nothing unplayed is ever daggered.** §13.3's `in_sample` has two signals
+and the schedule can fool both: a postponed game sits at its original tip-off,
+behind a watermark that has moved past it, and a training run walking a season
+file straight through would put tonight's fixtures in `processed_game_ids` as
+readily as last night's finals. A game with no result is a forecast whatever
+either signal says, so `completed` gates them.
 
 ### 13.2 What this costs to read
 
@@ -1340,6 +1367,62 @@ grouping in Central and printing times in the reader's own zone, produces a page
 that argues with itself: a 9pm game filed under "Today" and labelled 2:00 AM.
 One zone, named once above the tables, is the version that can't.
 
+### 13.5 Reading a season file whose `Game` isn't the `Game` we installed
+
+The change that put fixtures in the bucket also appended a field to endgame's
+`Game`, and that is a harder problem than the field itself. `Game` is a
+`NamedTuple`: it pickles as its values and nothing else, and unpickles by
+calling the **current** class with the **stored** ones. So a field added
+upstream is not a missing attribute on the way back in — it is a bare
+`TypeError` out of `__new__`, on every season file written since it appeared.
+
+Both readers here catch that per file and log it (§12.4, §13.2), which is the
+right degradation for a single bad object and the wrong one for this: the
+failure lands on every league at once, so the games page goes silently empty
+and every volume count goes blank, with nothing to say why but one warning per
+league. §14 already named this coupling "load-bearing and silent". This is the
+half of it that can be fixed without a query engine.
+
+**The pin can't simply be bumped.** endgame arrives transitively — cassandra →
+endgame-aws → endgame — and poetry refuses two git revs of one package, so a
+direct pin here fails to resolve until cassandra bumps endgame-aws and
+endgame-aws bumps endgame. Two upstream releases is not a reasonable thing to
+put between this app and a bucket it can already read, and it would be the
+standing cost of *every* future field.
+
+**So `app.endgame_pickle` reads a `Game` by field order rather than by class.**
+A `pickle.Unpickler` whose `find_class` answers `endgame.types.Game` with a
+local `RawGame`: same values, same attribute names, extra ones dropped and
+absent trailing ones defaulted. Nothing downstream changes — `game.completed`,
+`game.date`, `game.status` all read as before.
+
+Three things about the shape of that trade:
+
+- **It is one substitution, not a sandbox.** `Season` and `Week` still resolve
+  to endgame's own classes, because this walks them rather than reading fields
+  off them. And the objects come from endgame's bucket at exactly the trust
+  level the `pickle.loads` it replaced already assumed.
+- **It buys tolerance of an *appended* field at the price of assuming nothing
+  is inserted or reordered.** That price is only worth paying if the assumption
+  is checked, so `test_endgame_pickle.py` pins `RawGame.FIELDS` against the
+  installed `endgame.types.Game` — a reordering upstream is a red check rather
+  than a silently wrong number.
+- **Both eras of file have to read anyway.** `seasons/` holds files from either
+  side of the flip: the daily jobs rewrite the current year, but a previous
+  year's file is only rewritten when that year is pulled. A tolerant reader is
+  what a correct pin would have bought too, since the appended field carries a
+  default upstream for the same reason.
+
+The tests build the era this image *doesn't* install by pickling a namedtuple
+of any arity under `endgame.types.Game`, which is byte for byte what a
+differently-versioned endgame writes. That is the only way one image can check
+both, and it is what makes this testable at all rather than provable only in
+production.
+
+None of this is a reason not to bump the chain when it catches up — a matching
+class is still the more exact answer, and cassandra's own `read_all_seasons` is
+a third unpickler with none of this protection.
+
 ---
 
 ## 14. Games out of a database, not pickles
@@ -1369,7 +1452,10 @@ Three things the pickles cannot do, in rough order of when they'll bite:
   unpickling needs endgame's classes importable, and that a cassandra bump
   dropping them "would turn the counts into `None` rather than break the page —
   the right failure but a quiet one". Two places in this app now depend on that,
-  and cassandra's `read_all_seasons` is a third.
+  and cassandra's `read_all_seasons` is a third. §13.5 defuses the two here — a
+  `Game` is read by field order, so an appended field costs nothing — but that
+  is a patch on the coupling, not an end to it: the field *order* is now mirrored
+  in this repo, and cassandra's reader is still exposed.
 
 ### 14.1 Where the transform runs
 

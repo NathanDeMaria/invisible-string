@@ -7,6 +7,7 @@ import {
   probability,
   score,
   spread,
+  statusLabel,
   tipoff,
   todayOf,
   zoneLabel,
@@ -126,5 +127,45 @@ describe("todayOf", () => {
     expect(todayOf({ until: "2026-08-23", days_ahead: 1 })).toBe("2026-08-22");
     expect(todayOf({ until: "2026-09-01", days_ahead: 1 })).toBe("2026-08-31");
     expect(todayOf({ until: "2026-08-22", days_ahead: 0 })).toBe("2026-08-22");
+  });
+});
+
+describe("statusLabel", () => {
+  it("says nothing for a game that simply hasn't happened", () => {
+    // The tip-off beside it already says the game is ahead of us, so the
+    // result column stays a dash rather than repeating it on every row.
+    expect(statusLabel("STATUS_SCHEDULED")).toBeNull();
+  });
+
+  it("says nothing for a game saved before endgame carried a status", () => {
+    // Most of the bucket, and all of it finished -- so this only ever reaches
+    // a row that has a score to show anyway.
+    expect(statusLabel("")).toBeNull();
+    expect(statusLabel(undefined)).toBeNull();
+    expect(statusLabel(null)).toBeNull();
+  });
+
+  it("names the states a dash would leave you waiting on", () => {
+    expect(statusLabel("STATUS_IN_PROGRESS")).toBe("In progress");
+    expect(statusLabel("STATUS_POSTPONED")).toBe("Postponed");
+    expect(statusLabel("STATUS_CANCELED")).toBe("Cancelled");
+  });
+
+  it("calls a final with no score what it is", () => {
+    // ESPN lists the occasional fixture it never fills in, and the scrape
+    // records it unplayed without rewriting the status to agree. "No result"
+    // rather than "Final": there is no score, and there never will be.
+    expect(statusLabel("STATUS_FINAL")).toBe("No result");
+  });
+
+  it("renders a status nobody has seen rather than swallowing it", () => {
+    // The API passes ESPN's own name through, so this list is open at the
+    // bottom by design -- an unknown state is still better said than hidden
+    // behind a dash that claims the game is merely upcoming.
+    expect(statusLabel("STATUS_BAD_WEATHER")).toBe("Bad weather");
+  });
+
+  it("passes through anything not shaped like one of ESPN's names", () => {
+    expect(statusLabel("weird")).toBe("weird");
   });
 });

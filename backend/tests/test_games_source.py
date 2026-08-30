@@ -29,6 +29,8 @@ from app.games import (
 )
 from app.seasons import AwsGamesSource
 
+from .conftest import new_game, new_season_pickle
+
 BUCKET = "endgame-data"
 
 
@@ -445,3 +447,87 @@ class TestOneBadGame:
         )
         source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
         assert ids(source) == {"nfl-today"}
+
+
+class TestANewerSeasonFile:
+    """The files the jobs write now: fixtures alongside results, and a status
+    on every game.
+
+    This is the whole point of `app.endgame_pickle`. Without it the pickles
+    below don't unpickle at all against a pinned `Game` with eight fields --
+    every league loses its games at once, and the only thing that says so is a
+    warning per league in the log.
+    """
+
+    def put_season(self, s3: Any) -> None:
+        midnight = datetime.combine(datetime.now(GAME_TZ).date(), datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=new_season_pickle(
+                [
+                    new_game(
+                        midnight - timedelta(days=1),
+                        gid="final",
+                        status="STATUS_FINAL",
+                        completed=True,
+                    ),
+                    new_game(
+                        midnight.replace(hour=19),
+                        gid="tonight",
+                        status="STATUS_SCHEDULED",
+                    ),
+                    new_game(
+                        midnight.replace(hour=13),
+                        gid="live",
+                        status="STATUS_IN_PROGRESS",
+                    ),
+                    new_game(
+                        midnight.replace(hour=18),
+                        gid="called-off",
+                        status="STATUS_POSTPONED",
+                    ),
+                ]
+            ),
+        )
+
+    @pytest.fixture
+    def rows(self, s3: Any) -> dict[str, Any]:
+        self.put_season(s3)
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        return {g.game_id: g for g in source.window(2, 1).games}
+
+    def test_the_games_are_read_at_all(self, rows: dict[str, Any]) -> None:
+        mens = {gid for gid, row in rows.items() if row.league == "mens"}
+        assert mens == {"final", "tonight", "live", "called-off"}
+
+    def test_the_status_comes_through(self, rows: dict[str, Any]) -> None:
+        assert rows["tonight"].status == "STATUS_SCHEDULED"
+        assert rows["called-off"].status == "STATUS_POSTPONED"
+        assert rows["final"].status == "STATUS_FINAL"
+
+    def test_a_game_in_progress_keeps_its_partial_score_off_the_row(
+        self, rows: dict[str, Any]
+    ) -> None:
+        """A season file is rewritten once a day, so the score on a game ESPN
+        hadn't finished is a snapshot from whenever the job ran. Rendering it
+        would be a stale scoreline that looks exactly like a final."""
+        assert rows["live"].completed is False
+        assert rows["live"].home_score is None
+        assert rows["live"].away_score is None
+
+    def test_an_older_file_alongside_it_still_reads(self, s3: Any) -> None:
+        """Both eras are in the bucket: a previous year's file is only
+        rewritten when that year is pulled."""
+        self.put_season(s3)
+        midnight = datetime.combine(datetime.now(GAME_TZ).date(), datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/nfl.pkl",
+            Body=season_pickle([game(midnight.replace(hour=12), gid="pre-flip")]),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+        by_id = {g.game_id: g for g in source.window(2, 1).games}
+        assert "pre-flip" in by_id
+        # "" rather than STATUS_FINAL: it is final, but nothing recorded that.
+        assert by_id["pre-flip"].status == ""

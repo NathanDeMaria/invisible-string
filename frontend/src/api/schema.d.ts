@@ -174,6 +174,8 @@ export interface components {
              * Format: date-time
              */
             start: string;
+            /** Status */
+            status: string;
         };
         /** GamesResponse */
         GamesResponse: {

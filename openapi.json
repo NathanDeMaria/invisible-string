@@ -120,6 +120,10 @@
             "format": "date-time",
             "title": "Start",
             "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
@@ -131,6 +135,7 @@
           "away",
           "neutral",
           "completed",
+          "status",
           "home_score",
           "away_score",
           "market_spread",

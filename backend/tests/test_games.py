@@ -43,6 +43,7 @@ def game(
     home: str = "Duke",
     away: str = "Houston",
     completed: bool = False,
+    status: str = "",
     home_score: int | None = None,
     away_score: int | None = None,
 ) -> ScheduledGame:
@@ -55,6 +56,7 @@ def game(
         away=away,
         neutral=False,
         completed=completed,
+        status=status,
         home_score=home_score,
         away_score=away_score,
     )
@@ -225,6 +227,37 @@ class TestGamesEndpoint:
         row = _game(client, "401710101")
         assert (row["home_score"], row["away_score"]) == (78, 71)
 
+    def test_every_row_says_what_state_it_is_in(self, client: TestClient) -> None:
+        """`completed` alone can't render a row once the season files carry
+        fixtures: a game with no score is on tonight, being played, called off
+        or moved, and those are four different things to say."""
+        rows = client.get("/api/games").json()["games"]
+        assert all("status" in row for row in rows)
+
+    def test_the_status_is_espns_own(self, client: TestClient) -> None:
+        # Verbatim rather than mapped onto an enum here: it is a value ESPN
+        # sends, so one nobody has seen before should reach the page as an odd
+        # string rather than as a category error.
+        assert _game(client, "401710106")["status"] == "STATUS_IN_PROGRESS"
+        assert _game(client, "401810102")["status"] == "STATUS_POSTPONED"
+        assert _game(client, "401810103")["status"] == "STATUS_CANCELED"
+
+    def test_a_game_saved_before_the_flip_has_no_status(
+        self, client: TestClient
+    ) -> None:
+        """Most of `seasons/` still, and all of it final -- but nothing
+        recorded that, so the row says nothing rather than claiming it."""
+        row = _game(client, "401710102")
+        assert row["completed"] is True
+        assert row["status"] == ""
+
+    def test_a_game_in_progress_shows_no_score(self, client: TestClient) -> None:
+        """A season file is rewritten once a day, so a partial score in it is
+        a snapshot from whenever the job ran -- and it renders exactly like a
+        final."""
+        row = _game(client, "401710106")
+        assert (row["home_score"], row["away_score"]) == (None, None)
+
     def test_caps_the_window(self, client: TestClient) -> None:
         assert client.get("/api/games", params={"back": 30}).status_code == 422
         assert client.get("/api/games", params={"ahead": 30}).status_code == 422
@@ -262,6 +295,31 @@ class TestInSample:
         upcoming = game(game_id="new")
         body = client_for(StubGames(upcoming), store).get("/api/games").json()
         assert body["games"][0]["prediction"]["in_sample"] is False
+
+    def test_a_game_with_no_result_is_never_hindsight(
+        self, store: ReleaseStore
+    ) -> None:
+        """A postponed game sits at its original tip-off, behind a watermark
+        that has moved past it. There is no result to have learned from, so
+        the number beside it is a forecast whatever the watermark says."""
+        moved = game(game_id="postponed", status="STATUS_POSTPONED").model_copy(
+            update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)}
+        )
+        body = client_for(StubGames(moved), store).get("/api/games").json()
+        assert body["games"][0]["prediction"]["in_sample"] is False
+
+    def test_the_same_game_played_would_be(self, store: ReleaseStore) -> None:
+        """The other half: the guard is about the result, not about the date,
+        so it must not swallow the flag on a game that did finish."""
+        played = game(
+            game_id="postponed",
+            completed=True,
+            status="STATUS_FINAL",
+            home_score=70,
+            away_score=68,
+        ).model_copy(update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)})
+        body = client_for(StubGames(played), store).get("/api/games").json()
+        assert body["games"][0]["prediction"]["in_sample"] is True
 
 
 def _by_league(client: TestClient, league: str) -> list[dict]:

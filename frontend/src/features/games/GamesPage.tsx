@@ -124,7 +124,10 @@ export function GamesPage() {
               </>
             )}{" "}
             Scores arrive with the nightly scrape, so a game that has just
-            finished can still read as scheduled.
+            finished can still read as scheduled, and one being played now shows
+            no score rather than a stale one. Games with nothing to report yet
+            keep a dash; anything else &mdash; postponed, called off, under way
+            &mdash; says so in the result column.
           </p>
         </>
       )}

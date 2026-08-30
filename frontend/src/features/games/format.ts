@@ -54,6 +54,76 @@ export function score(
 }
 
 /**
+ * What to say in the Result column for a game with no result.
+ *
+ * The season files carry the games ESPN hasn't finished as well as the ones it
+ * has, so most rows in the window have no score -- and `completed` on its own
+ * can't tell a game that is on tonight from one that was called off. `status`
+ * is ESPN's own `status.type.name`, passed through verbatim by the API for the
+ * reason endgame declines to enumerate it upstream: it is a value ESPN sends,
+ * not a parameter anyone sends it.
+ *
+ * So the mapping lives here rather than in a union type, and it is open at the
+ * bottom: a status nobody has seen before is rendered from its own name rather
+ * than swallowed. Returns null for the states with nothing to add, which is
+ * where the em dash stays.
+ */
+const STATE_LABELS: Record<string, string> = {
+  STATUS_IN_PROGRESS: "In progress",
+  STATUS_END_PERIOD: "In progress",
+  STATUS_HALFTIME: "Halftime",
+  STATUS_DELAYED: "Delayed",
+  STATUS_RAIN_DELAY: "Delayed",
+  STATUS_SUSPENDED: "Suspended",
+  STATUS_POSTPONED: "Postponed",
+  STATUS_CANCELED: "Cancelled",
+  STATUS_FORFEIT: "Forfeit",
+  // ESPN calls a game final; the scrape found no score on either side of it
+  // and recorded it unplayed, without rewriting the status to agree. That
+  // disagreement is the whole content of the row -- there is no result to
+  // show and there never will be, which is not the same as "not yet".
+  STATUS_FINAL: "No result",
+  STATUS_FINAL_OVERTIME: "No result",
+};
+
+/**
+ * The states worth no words: the game simply hasn't happened yet.
+ *
+ * "" is a game saved before endgame carried a status, which is most of the
+ * bucket and all of it finished -- so it only reaches here on a row that is
+ * already saying nothing.
+ */
+const QUIET_STATES = new Set(["", "STATUS_SCHEDULED", "STATUS_PRE"]);
+
+/**
+ * The label for an unfinished game's Result cell, or null for the em dash.
+ *
+ * Nullish is a dash too, like every other formatter here: the field is
+ * required on the wire, and a row that lost it is still a row.
+ */
+export function statusLabel(status: string | null | undefined): string | null {
+  if (status == null || QUIET_STATES.has(status)) return null;
+  const known = STATE_LABELS[status];
+  if (known) return known;
+  return unknownLabel(status);
+}
+
+/**
+ * A status this page has never seen, said out loud anyway.
+ *
+ * `STATUS_BAD_WEATHER` reads as "Bad weather" -- which is worse than a real
+ * label and much better than a dash, since the alternative is a row that
+ * silently claims a game is merely upcoming when ESPN said something else
+ * about it. Anything not shaped like one of ESPN's names is passed through
+ * untouched rather than mangled.
+ */
+function unknownLabel(status: string): string {
+  if (!status.startsWith("STATUS_")) return status;
+  const words = status.slice("STATUS_".length).replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
  * The zone the whole page is stated in: the one endgame's jobs think in, and
  * the one the backend cuts days on (DESIGN.md §13).
  */

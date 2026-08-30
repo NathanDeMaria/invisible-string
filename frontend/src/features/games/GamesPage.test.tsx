@@ -107,11 +107,49 @@ describe("GamesPage", () => {
     expect(await headings()).toEqual(["Today", "Tomorrow", "Yesterday"]);
   });
 
+  it("says what became of a game with no result", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+
+    // Without this the row is a dash, and a reader waits all evening for a
+    // score that was never coming.
+    expect(await rowFor("Vermont @ UConn")).toContain("Cancelled");
+  });
+
+  it("shows a game under way as under way, not as a score", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+
+    // The season file is rewritten once a day, so its partial score is a
+    // snapshot from whenever the job ran -- and it renders like a final.
+    const row = await rowFor("Vermont @ Kansas");
+    expect(row).toContain("In progress");
+    expect(row).not.toMatch(/\d+–\d+/);
+  });
+
+  it("leaves an ordinary upcoming game a dash", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+
+    // "Scheduled" on every row of tonight's slate is noise: the tip-off
+    // beside it has already said so.
+    const row = await rowFor("Duke @ Houston");
+    expect(row).toContain("—");
+    expect(row).not.toContain("Scheduled");
+  });
+
+  it("still shows the score for a game saved before statuses existed", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+
+    // Most of the bucket. Final, but nothing recorded that -- and the score
+    // is what the row is for either way.
+    expect(await rowFor("Green Bay Packers @ Chicago Bears")).toContain(
+      "24–17",
+    );
+  });
+
   it("summarizes the window above the tables", async () => {
     renderApp(<GamesPage />, { route: "/games" });
 
     const meta = await screen.findByTestId("games-meta");
-    expect(meta).toHaveTextContent("4 games");
+    expect(meta).toHaveTextContent("6 games");
     expect(meta).toHaveTextContent("2 days back");
   });
 
@@ -143,6 +181,7 @@ describe("GamesPage", () => {
               away: "Houston",
               neutral: false,
               completed: false,
+              status: "STATUS_SCHEDULED",
               home_score: null,
               away_score: null,
               market_spread: -2.5,

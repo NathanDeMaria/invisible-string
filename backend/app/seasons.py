@@ -21,7 +21,6 @@ Three things keep that affordable in a request path:
 
 import json
 import logging
-import pickle
 import re
 import threading
 import time
@@ -34,6 +33,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
+from app.endgame_pickle import load_seasons
 from app.games import (
     MAX_DAYS_AHEAD,
     MAX_DAYS_BACK,
@@ -167,20 +167,19 @@ class AwsGamesSource:
             return None
 
         try:
-            loaded = pickle.loads(raw)
+            seasons = load_seasons(raw)
         except Exception as exc:  # noqa: BLE001 - unpickling a foreign graph
             log.warning("could not unpickle s3://%s/%s: %s", self._bucket, key, exc)
             return None
-
-        # `save_to_s3` writes a list of seasons; tolerate a bare one.
-        seasons = loaded if isinstance(loaded, list) else [loaded]
 
         try:
             pooled = _pool_games(seasons, league, horizon)
         except Exception as exc:  # noqa: BLE001 - see the docstring
             # Not the same failure as an unreadable body: the file parsed and
-            # its shape is wrong, which is what a Game gaining or losing a
-            # field upstream looks like from here.
+            # its *shape* is wrong -- a season with no `weeks`, a week with no
+            # `games`. A `Game` gaining a field no longer lands here (or
+            # anywhere): `app.endgame_pickle` reads one by field order, so an
+            # appended field is dropped rather than fatal.
             log.warning("could not walk s3://%s/%s: %s", self._bucket, key, exc)
             return None
 
@@ -312,9 +311,16 @@ def _pool_games(
 def _to_row(game: Any, league: str) -> ScheduledGame:
     """One endgame `Game` in the shape this app serves.
 
-    The scores are dropped until the game is completed. A season file stores 0
-    for an unplayed game, and passing that through would render tonight's
-    schedule as a column of 0-0 finals.
+    The scores are dropped until the game is completed, and that is now the
+    common case rather than the edge one: the jobs write the games ESPN hasn't
+    finished as well as the ones it has, and every one of those carries 0-0.
+    Passing it through would render tonight's slate as a column of scoreless
+    finals -- and a game *in progress* would render its partial score as a
+    final, which is worse, because it looks right.
+
+    `status` is what makes the empty score readable. `completed` says only
+    result / not-a-result; a game with no result is scheduled, in progress,
+    postponed or cancelled, and those are four different rows.
     """
     return ScheduledGame(
         league=league,
@@ -324,6 +330,7 @@ def _to_row(game: Any, league: str) -> ScheduledGame:
         away=game.away,
         neutral=game.neutral_site,
         completed=game.completed,
+        status=game.status,
         home_score=game.home_score if game.completed else None,
         away_score=game.away_score if game.completed else None,
     )
