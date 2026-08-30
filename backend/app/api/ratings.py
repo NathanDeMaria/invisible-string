@@ -65,6 +65,10 @@ def _rank(release: ModelRelease) -> list[TeamRow]:
     sitting in tonight's standings (`app.teams`). They're dropped before the
     ranks are handed out, so the numbers count teams rather than history --
     a leaderboard whose 4th is really 5th is worse than one that's short.
+
+    Only the folded ones. A team that moved or was renamed is still playing
+    under a later name, and its old name is a naming problem for upstream
+    rather than a row to delete -- see `app.teams`.
     """
     playing = [
         (team, rating)

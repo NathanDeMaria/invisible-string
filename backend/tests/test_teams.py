@@ -1,8 +1,9 @@
-"""Hiding the teams a league doesn't field any more (`app.teams`).
+"""Hiding the franchises a league doesn't have any more (`app.teams`).
 
-The wnba fixture is a small version of the real thing: four teams that play
-now and three names that nothing answers to -- one folded, one relocated under
-a new name, and one whose name a 2026 expansion team took back.
+The wnba fixture is a small version of the real thing: three teams playing
+under their own names, two that folded, one relocated franchise ESPN still
+files under the name it left behind, and one whose name a 2026 expansion team
+took back.
 """
 
 from fastapi.testclient import TestClient
@@ -14,10 +15,12 @@ class TestStillPlaying:
     def test_a_folded_team_is_not_playing(self) -> None:
         assert not still_playing("wnba", "Houston Comets")
 
-    def test_a_relocated_teams_old_name_is_not_playing(self) -> None:
-        # The franchise is alive and playing in Las Vegas. Nothing answers to
-        # the name it left behind.
-        assert not still_playing("wnba", "San Antonio Stars")
+    def test_a_relocated_team_is_still_playing(self) -> None:
+        # The franchise is alive and playing in Las Vegas, and its rating is
+        # the continuation of this one. Hiding the old name would drop a live
+        # team's history off the board; the fix is a rename upstream, where
+        # the names are known.
+        assert still_playing("wnba", "San Antonio Stars")
 
     def test_a_current_team_is_playing(self) -> None:
         assert still_playing("wnba", "Las Vegas Aces")
@@ -41,29 +44,30 @@ class TestStillPlaying:
 
 
 class TestRatingsDropThem:
-    def test_leaderboard_holds_only_teams_that_play(self, client: TestClient) -> None:
+    def test_leaderboard_drops_the_folded_and_keeps_the_moved(
+        self, client: TestClient
+    ) -> None:
         rows = client.get("/api/leagues/wnba/ratings").json()["ratings"]
         assert [row["team"] for row in rows] == [
             "Las Vegas Aces",
             "New York Liberty",
             "Minnesota Lynx",
+            "San Antonio Stars",
             "Portland Fire",
         ]
 
     def test_ranks_count_teams_rather_than_history(self, client: TestClient) -> None:
-        # The Comets rate above two of these, so leaving them in the sort and
-        # dropping them afterwards would hand out 1, 2, 4, 5. A leaderboard
+        # The Comets rate above three of these, so leaving them in the sort and
+        # dropping them afterwards would hand out 1, 2, 4, 5, 6. A leaderboard
         # whose 4th is really 5th is worse than one that's short.
         rows = client.get("/api/leagues/wnba/ratings").json()["ratings"]
-        assert [row["rank"] for row in rows] == [1, 2, 3, 4]
+        assert [row["rank"] for row in rows] == [1, 2, 3, 4, 5]
 
     def test_other_leagues_keep_every_team(self, client: TestClient) -> None:
         rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
         assert len(rows) == 4
 
-    def test_predict_still_answers_for_a_team_that_stopped(
-        self, client: TestClient
-    ) -> None:
+    def test_predict_still_answers_for_a_folded_team(self, client: TestClient) -> None:
         # A saved link to an old matchup is a fair question about what the
         # ratings say. Hiding a team from the picker isn't a claim that the
         # model has nothing to say about it.
