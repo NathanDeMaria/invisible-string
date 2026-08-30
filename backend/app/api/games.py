@@ -94,6 +94,11 @@ class GameRow(BaseModel):
     away: str
     neutral: bool
     completed: bool
+    # ESPN's own status name, verbatim -- STATUS_SCHEDULED, STATUS_IN_PROGRESS,
+    # STATUS_POSTPONED, STATUS_CANCELED, STATUS_FINAL, or "" for a game saved
+    # before endgame carried it. What `completed` is false *because of*, which
+    # is the difference between an empty Result cell and a called-off game.
+    status: str
     home_score: int | None
     away_score: int | None
     market_spread: float | None
@@ -322,7 +327,18 @@ def _in_sample(model: _LeagueModel, game: ScheduledGame) -> bool:
     idempotency marker, so a game in it has been folded in. It only covers the
     current season, so the watermark date is the fallback, and a release
     carrying neither says "no" rather than guessing.
+
+    A game with no result can't be in sample whatever either of them says, and
+    that guard earns its place now that the season files carry unplayed games.
+    Both signals can claim one: a postponed game sits at its original tip-off,
+    behind a watermark that has moved past it, and a training run walking a
+    season file straight through would put tonight's fixtures in
+    `processed_game_ids` as readily as last night's finals. Neither is a
+    reason to dagger a forecast as hindsight -- there is nothing to have
+    learned from yet.
     """
+    if not game.completed:
+        return False
     if game.game_id in model.processed:
         return True
     watermark = model.release.trained_through.last_game_date

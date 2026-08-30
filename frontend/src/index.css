@@ -382,6 +382,13 @@ a.utility.active {
   color: var(--muted);
 }
 
+/* A word where the column otherwise holds a score. Smaller, so "In progress"
+   doesn't read as the loudest thing in a row whose numbers are the point --
+   and so it doesn't set the width of a column of two-digit scores. */
+.games .state {
+  font-size: 0.8125rem;
+}
+
 /* A prediction the model has already seen the answer to. Small, and carries
    its explanation in the title and in the note under the table -- a marker
    nobody can decode is worse than no marker. */

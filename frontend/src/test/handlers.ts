@@ -328,6 +328,8 @@ const gameRow = (
   start: new Date(Date.now() + offset * 86_400_000).toISOString(),
   neutral: false,
   completed: false,
+  // The ordinary unplayed game: on the schedule, nothing to report.
+  status: "STATUS_SCHEDULED",
   home_score: null,
   away_score: null,
   market_spread: null,
@@ -360,10 +362,20 @@ export const games: GamesResponse = {
       home: "Duke",
       away: "North Carolina",
       completed: true,
+      status: "STATUS_FINAL",
       home_score: 78,
       away_score: 71,
       market_spread: -4.5,
       prediction: predicted(-5.3, 0.69, true),
+    }),
+    // Two days back, and called off. A row the dash can't explain: without a
+    // status a reader waits all evening for a score that isn't coming.
+    gameRow(-2, {
+      league: "womens",
+      game_id: "g-2c",
+      home: "UConn",
+      away: "Vermont",
+      status: "STATUS_CANCELED",
     }),
     // Yesterday, and a league with no published model: score and line only.
     gameRow(-1, {
@@ -372,6 +384,8 @@ export const games: GamesResponse = {
       home: "Chicago Bears",
       away: "Green Bay Packers",
       completed: true,
+      // Saved before endgame carried a status. Final, but nothing said so.
+      status: "",
       home_score: 17,
       away_score: 24,
       market_spread: 6.5,
@@ -383,6 +397,15 @@ export const games: GamesResponse = {
       away: "Duke",
       market_spread: -2.5,
       prediction: predicted(-3.7, 0.633),
+    }),
+    // Tonight, already under way. The season file's partial score is a
+    // snapshot from whenever the job ran, so the row shows the state instead.
+    gameRow(0, {
+      game_id: "g0live",
+      home: "Kansas",
+      away: "Vermont",
+      status: "STATUS_IN_PROGRESS",
+      market_spread: -18.5,
     }),
     // Tomorrow, with no line on the board yet.
     gameRow(1, {
