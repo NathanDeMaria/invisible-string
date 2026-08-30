@@ -1423,6 +1423,48 @@ None of this is a reason not to bump the chain when it catches up — a matching
 class is still the more exact answer, and cassandra's own `read_all_seasons` is
 a third unpickler with none of this protection.
 
+### 13.6 Was the model right?
+
+The page's own framing — *what's on tonight, and was the model right about last
+night?* — is only half answered by putting the two spreads side by side. The
+gap between them is the model's disagreement with the book, and once the game
+is final that disagreement has an answer. The mark beside the model's number is
+it: ✓ if the side the model liked covered, ✗ if it didn't, `=` if the game
+landed exactly on the number.
+
+**The pick is inferred, not stated.** The model never names a side; it names a
+number. So the side it likes is whichever one its number gives more points to
+than the book's does — a model at -8.5 against a line of -4.5 is saying the home
+team should be laying more than that, which is a bet on the home team. That
+inference is worth spelling out on the page, because a check mark whose subject
+is a guess is worse than no check mark, and the note under the tables says it in
+one sentence.
+
+**Four cases are left blank rather than graded.** No line on the board, no model
+number, no result yet, and the two numbers agreeing to within what the column
+prints. The last one is the interesting one: `spread()` rounds to a tenth, so a
+gap under 0.05 shows as two identical numbers, and marking it would grade a
+disagreement the reader can't see and hand a coin flip an opinion.
+
+**A daggered game is graded like any other.** §13.3's whole point is that these
+predictions are usually hindsight, and hindsight is exactly as capable of being
+wrong. The mark says what happened; the dagger says what the number was worth
+before it happened. The footnote now ties them together rather than leaving a
+reader to assume a ✓ on a daggered row was a forecast.
+
+**No record, no win rate, no units.** A tally at the top of the page would be a
+model's ATS record over whatever days the picker happens to be showing, most of
+them in sample — a number that looks like a claim about the model and isn't one.
+`against_spread_accuracy` in the release metrics is the honest version of that
+number, over the model's whole evaluation set, and it is already on the ratings
+page. This page grades games, not the model.
+
+**Colour is the fast read; the glyph is the accessible one.** Green and red are
+the second colours on the site (the first is the job dashboard's failure red,
+`--fail`), and neither carries the meaning alone: the three marks differ in
+shape, each carries the full sentence in its `title`, and the note under the
+tables spells them out.
+
 ---
 
 ## 14. Games out of a database, not pickles

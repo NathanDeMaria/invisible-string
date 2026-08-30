@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { useGetGamesQuery, type GameRow } from "../../services/api";
+import { atsCall } from "./ats";
 import { GameTable } from "./GameTable";
 import { count } from "../jobs/format";
 import { dayLabel, dayRank, todayOf, zoneLabel } from "./format";
@@ -46,6 +47,7 @@ export function GamesPage() {
   );
 
   const hindsight = shown.some((game) => game.prediction?.in_sample);
+  const graded = shown.some((game) => atsCall(game) !== null);
   const today = games.data ? todayOf(games.data) : undefined;
   const days = useMemo(() => byDay(shown, today), [shown, today]);
 
@@ -113,14 +115,29 @@ export function GamesPage() {
             Spreads are quoted from the home team&rsquo;s side, so -6.5 means
             the home side lays six and a half. The model column is each
             league&rsquo;s lowest-Brier release.
+            {/* Said only when there are marks to explain, like the dagger
+                below it. The rule itself is worth spelling out: the model
+                never names a side, so which one it picked is something the
+                page inferred from the gap between the two numbers. */}
+            {graded && (
+              <>
+                {" "}
+                A finished game&rsquo;s model number carries how it did against
+                the line: the model takes whichever side it gives more points to
+                than the book does, and &#10003; means that side covered,
+                &#10007; that it didn&rsquo;t, and = that the game landed
+                exactly on the number. A game with no line, or one the two
+                numbers agree on, gets no mark.
+              </>
+            )}
             {/* Only said when there's a dagger to explain: a footnote about a
                 symbol that isn't on the page is one more thing to look for. */}
             {hindsight && (
               <>
                 {" "}
                 &dagger; marks a game whose result that release has already
-                trained on, which makes the number hindsight rather than a
-                forecast.
+                trained on, which makes the number &mdash; and any mark beside
+                it &mdash; hindsight rather than a forecast.
               </>
             )}{" "}
             Scores arrive with the nightly scrape, so a game that has just

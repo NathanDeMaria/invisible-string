@@ -56,6 +56,49 @@ describe("GamesPage", () => {
     );
   });
 
+  it("marks a finished game the model got right against the line", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // The model had Duke laying 5.3 against a line of 4.5, and Duke won by 7:
+    // the side it took covered. That verdict is the page's whole point, and
+    // it sits on the number that earned it.
+    const mark = screen.getByTitle(
+      "The model liked Duke at -4.5; Duke covered",
+    );
+    expect(mark).toHaveTextContent("✓");
+    expect(mark.closest("tr")?.textContent).toContain("North Carolina @ Duke");
+  });
+
+  it("marks one it got wrong, and says which side it was on", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // Named from the side the model took rather than from the home team's:
+    // a reader hovering a cross wants to know what the model backed.
+    const mark = screen.getByTitle(
+      "The model liked South Carolina at -6.5; South Carolina didn’t cover",
+    );
+    expect(mark).toHaveTextContent("✗");
+  });
+
+  it("leaves a game with no line ungraded", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // Nothing to be right or wrong about. The nfl row has a line but no
+    // model, and tonight's games have both and no result -- neither is a
+    // verdict, and marking them would put a symbol on most of the page.
+    expect(screen.getAllByTitle(/The model liked/)).toHaveLength(2);
+  });
+
+  it("explains the marks only when there are marks", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    expect(screen.getByText(/means that side covered/)).toBeInTheDocument();
+  });
+
   it("keeps the games of a league with no model", async () => {
     renderApp(<GamesPage />, { route: "/games" });
 
@@ -149,7 +192,7 @@ describe("GamesPage", () => {
     renderApp(<GamesPage />, { route: "/games" });
 
     const meta = await screen.findByTestId("games-meta");
-    expect(meta).toHaveTextContent("6 games");
+    expect(meta).toHaveTextContent("7 games");
     expect(meta).toHaveTextContent("2 days back");
   });
 
@@ -201,8 +244,10 @@ describe("GamesPage", () => {
     await screen.findAllByRole("table");
 
     // A footnote about a symbol that isn't on the page is one more thing to
-    // go looking for.
+    // go looking for. The one game here is unplayed, so neither mark is on
+    // it and neither note belongs under it.
     expect(screen.queryByText(/already trained on/)).toBeNull();
+    expect(screen.queryByText(/means that side covered/)).toBeNull();
     expect(screen.getByText(/home team’s side/)).toBeInTheDocument();
   });
 
