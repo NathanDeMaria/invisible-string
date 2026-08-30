@@ -66,7 +66,7 @@ class CountingClient:
 
 class TestListing:
     def test_lists_leagues(self, store: S3ReleaseStore) -> None:
-        assert store.list_leagues() == ["mens", "womens"]
+        assert store.list_leagues() == ["mens", "wnba", "womens"]
 
     def test_lists_models_for_a_league(self, store: S3ReleaseStore) -> None:
         assert store.list_models("mens") == ["elo", "glicko_tuned"]
