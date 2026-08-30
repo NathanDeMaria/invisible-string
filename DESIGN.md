@@ -1659,3 +1659,47 @@ What it doesn't give: "as of this date". §6's rating history and §13.3's
 out-of-sample predictions are the two features that make a query engine
 unavoidable, and both are storage problems wearing feature costumes. Build §14
 when one of them is next, not before.
+
+---
+
+## 15. Teams that don't play any more
+
+A release rates every team its model has ever seen — that's what training on a
+decade of seasons produces, and for the college leagues it's right, because the
+teams are all still out there. For a closed pro league it isn't. The wnba
+leaderboard carried the Houston Comets, who folded in 2008, ranked among teams
+playing tonight, and the matchup picker offered them as an opponent.
+
+`app.teams` holds the answer as a list of names per league, and
+`/api/leagues/{league}/ratings` drops them before it hands out ranks — so the
+numbers count teams rather than history, and a leaderboard whose 4th is really
+5th never happens. The matchup picker reads that same response (§3), so it
+follows for free.
+
+**Why a list and not a rule.** Nothing in a `ModelRelease` says when a team last
+played: `ratings` is a name-to-number mapping, and the win/loss record beside
+each is *this* season's, which is 0-0 for every team in the league in April. The
+signal that would answer it properly is the schedule — a team with no games in
+the current season file doesn't play any more — and reaching for it would make
+the ratings endpoint a reader of endgame's bucket: a second upstream, a second
+failure mode, and a second cache in front of an endpoint that has none of them
+today. Eleven names for a league of a dozen-odd teams is much the cheaper answer, and
+the honest cost is written where the list is: a team that stops playing needs a
+line added by hand.
+
+**The gone, not the current.** A roster of teams that *do* play reads better and
+fails worse: an expansion team, or a franchise ESPN renames, would be missing
+from it and silently vanish from the leaderboard the season it starts playing.
+Listed the other way round, a new team appears on its own and only a team that
+stops needs an edit.
+
+**Names, not franchises.** The Portland Fire folded in 2002 and the name came
+back as a 2026 expansion team. A list of dead franchises would have hidden a
+team that plays this week; a list of names nothing answers to now doesn't, and
+also catches the other direction — a relocated franchise is alive under its new
+name, and the old one it left behind belongs on the list.
+
+**`/api/predict` still answers for them**, deliberately. A saved link to an old
+matchup is a fair question about what the ratings say, and the prediction was
+never a claim that the game is on anyone's schedule. Hiding a team from the
+pickers is a statement about the leaderboard, not about the model.

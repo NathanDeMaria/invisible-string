@@ -14,6 +14,7 @@ from app.releases import (
     resolve_release,
 )
 from app.schema import Metrics, ModelRelease, TrainedThrough
+from app.teams import still_playing
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +58,21 @@ class RatingsResponse(BaseModel):
 
 
 def _rank(release: ModelRelease) -> list[TeamRow]:
+    """The release's ratings as a leaderboard of the teams that still play.
+
+    A model trained on a decade of seasons rates every team it has ever seen,
+    which for a closed pro league means franchises that folded years ago
+    sitting in tonight's standings (`app.teams`). They're dropped before the
+    ranks are handed out, so the numbers count teams rather than history --
+    a leaderboard whose 4th is really 5th is worse than one that's short.
+    """
+    playing = [
+        (team, rating)
+        for team, rating in release.ratings.items()
+        if still_playing(release.league, team)
+    ]
     # Ties break on team name so a redeploy doesn't reshuffle equal-rated teams.
-    ordered = sorted(release.ratings.items(), key=lambda kv: (-kv[1].rating, kv[0]))
+    ordered = sorted(playing, key=lambda kv: (-kv[1].rating, kv[0]))
     return [
         TeamRow(
             rank=i,

@@ -38,9 +38,11 @@ class TestPickDefault:
 
 
 class TestListLeagues:
-    def test_lists_both_leagues(self, client: TestClient) -> None:
+    def test_lists_every_league_with_a_servable_release(
+        self, client: TestClient
+    ) -> None:
         body = client.get("/api/leagues").json()
-        assert [entry["league"] for entry in body] == ["mens", "womens"]
+        assert [entry["league"] for entry in body] == ["mens", "wnba", "womens"]
 
     def test_marks_exactly_one_default_per_league(self, client: TestClient) -> None:
         for entry in client.get("/api/leagues").json():
