@@ -377,6 +377,21 @@ export const games: GamesResponse = {
       away: "Vermont",
       status: "STATUS_CANCELED",
     }),
+    // Yesterday, finished, and the model was on the wrong side of it: it
+    // gave the home team more than the book did, and the visitors covered.
+    // Out of sample too, so the cross carries no dagger.
+    gameRow(-1, {
+      league: "womens",
+      game_id: "g-1w",
+      home: "South Carolina",
+      away: "UConn",
+      completed: true,
+      status: "STATUS_FINAL",
+      home_score: 68,
+      away_score: 72,
+      market_spread: -6.5,
+      prediction: predicted(-9.2, 0.78),
+    }),
     // Yesterday, and a league with no published model: score and line only.
     gameRow(-1, {
       league: "nfl",

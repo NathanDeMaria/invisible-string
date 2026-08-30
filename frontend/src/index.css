@@ -4,9 +4,13 @@
   --muted: #6b6862;
   --line: #e4e0d9;
   --accent: #7b3f2e;
-  /* Only the job dashboard uses this, and only for the rows you're meant to
-     look at first. Everything else stays in the two neutrals plus accent. */
+  /* The two verdict colours, and the only places anything is coloured for
+     meaning: the job rows you're meant to look at first, and whether a
+     finished game's model number beat the line. Everything else stays in the
+     two neutrals plus accent. Neither ever carries a meaning alone -- the
+     word or the glyph beside it says the same thing. */
   --fail: #a3301c;
+  --good: #2f6b4a;
   color-scheme: light dark;
 }
 
@@ -18,6 +22,7 @@
     --line: #2e2c36;
     --accent: #d99a6c;
     --fail: #ef8b76;
+    --good: #6fc194;
   }
 }
 
@@ -398,6 +403,33 @@ a.utility.active {
   color: var(--muted);
   text-decoration: none;
   cursor: help;
+}
+
+/* How the model's number did against the line beside it. Sized and spaced
+   like the dagger it sits next to, because they are the same kind of mark on
+   the same number -- and small enough that a row with both isn't a row of
+   symbols. The colour is the fast read; the glyph is what survives greyscale,
+   a colour-blind reader, and the note under the table explains both. */
+.ats {
+  margin-left: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: help;
+}
+
+.ats.hit {
+  color: var(--good);
+}
+
+.ats.miss {
+  color: var(--fail);
+}
+
+/* Nobody was right: the game landed on the number. Muted, so a push doesn't
+   read as either verdict at a glance. */
+.ats.push {
+  color: var(--muted);
 }
 
 /* Narrow screens: buy the table horizontal room back from its padding, and
