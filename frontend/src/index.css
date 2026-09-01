@@ -394,6 +394,28 @@ a.utility.active {
   font-size: 0.8125rem;
 }
 
+/* The model's disagreement with the line above it, in the second line every
+   other cell on this table already has. Muted and small like the win
+   probability it sits beside: the two spreads are the numbers, and this is
+   what they come to. */
+.edge {
+  text-decoration: none;
+  cursor: help;
+}
+
+/* A control that reads as prose, because it sits inside a sentence: the way
+   out of a league filter belongs next to the line saying the filter is why
+   the page is empty, not up in a toolbar the reader has already looked at. */
+.as-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* A prediction the model has already seen the answer to. Small, and carries
    its explanation in the title and in the note under the table -- a marker
    nobody can decode is worse than no marker. */

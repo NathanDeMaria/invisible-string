@@ -4,6 +4,7 @@ import {
   dayLabel,
   dayRank,
   daysBetween,
+  points,
   probability,
   score,
   spread,
@@ -35,6 +36,23 @@ describe("spread", () => {
   it("says nothing rather than zero when there's no line", () => {
     expect(spread(null)).toBe("—");
     expect(spread(undefined)).toBe("—");
+  });
+});
+
+describe("points", () => {
+  it("prints a whole number of points without a decimal", () => {
+    expect(points(4)).toBe("4");
+  });
+
+  it("rounds to a tenth, like the columns it describes", () => {
+    // A reader who subtracts the two printed spreads should land on this
+    // number rather than a tenth off it.
+    expect(points(0.75)).toBe("0.8");
+    expect(points(3.14)).toBe("3.1");
+  });
+
+  it("is a size, not a direction -- the side is said in words", () => {
+    expect(points(-2.5)).toBe("2.5");
   });
 });
 

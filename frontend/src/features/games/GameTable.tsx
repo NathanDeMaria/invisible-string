@@ -1,6 +1,13 @@
 import type { GameRow } from "../../services/api";
-import { type AtsResult, atsCall, atsTitle } from "./ats";
-import { probability, score, spread, statusLabel, tipoff } from "./format";
+import { type AtsResult, atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
+import {
+  points,
+  probability,
+  score,
+  spread,
+  statusLabel,
+  tipoff,
+} from "./format";
 
 /**
  * The mark a finished game's line earns the model.
@@ -27,8 +34,9 @@ interface Props {
  * The two spread columns sit next to each other on purpose. Both are quoted
  * from the home team's side (DESIGN.md §13), so the gap between them is
  * readable straight off the row -- which is the only reason to put a model's
- * number beside a book's at all. Once the game is final that gap has an
- * answer, and the mark beside the model's number is it.
+ * number beside a book's at all. That gap is stated under the book's number
+ * rather than left as a subtraction, and once the game is final it has an
+ * answer: the mark beside the model's number is it.
  */
 export function GameTable({ games }: Props) {
   return (
@@ -53,6 +61,9 @@ export function GameTable({ games }: Props) {
           // it is a judgement on the gap between the two spread columns, and
           // that gap is the model's, not the game's.
           const ats = atsCall(game);
+          // The same disagreement the mark grades, said before there's
+          // anything to grade -- which is the state most of this page is in.
+          const edge = modelEdge(game);
           return (
             <tr key={`${game.league}-${game.game_id}`}>
               <td>
@@ -102,7 +113,22 @@ export function GameTable({ games }: Props) {
                   <span className="rate">&mdash;</span>
                 )}
               </td>
-              <td className="num">{spread(game.market_spread)}</td>
+              <td className="num">
+                <span className="rate">{spread(game.market_spread)}</span>
+                {/* How far the model's number is from this one, and which
+                    side that favours. "home +4" is the model giving the home
+                    team four points more than the book does -- the same
+                    shorthand as the "63% home" beside it, and the sign means
+                    what it means in the columns above: points *to* that side.
+                    The note under the tables decodes it. */}
+                {edge && (
+                  <span className="of">
+                    <abbr className="edge" title={edgeTitle(edge)}>
+                      {edge.home ? "home" : "away"} +{points(edge.points)}
+                    </abbr>
+                  </span>
+                )}
+              </td>
               <td className="num">
                 {game.completed ? (
                   <>
