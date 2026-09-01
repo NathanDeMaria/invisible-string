@@ -33,6 +33,19 @@ export function spread(value: number | null | undefined): string {
   return `${rounded > 0 ? "+" : "-"}${magnitude}`;
 }
 
+/**
+ * A margin in points, unsigned.
+ *
+ * Rounded exactly like `spread()`, so a gap stated in these terms is the gap
+ * between the two spread columns *as the page prints them* rather than as it
+ * stores them -- a reader who subtracts the two numbers themselves should get
+ * this one back.
+ */
+export function points(value: number): string {
+  const rounded = Math.round(Math.abs(value) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 /** A win probability, rounded to the point where the extra digits are noise. */
 export function probability(value: number | null | undefined): string {
   if (value == null) return "—";

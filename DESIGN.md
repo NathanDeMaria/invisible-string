@@ -1357,6 +1357,28 @@ league tabs nest *panels under a league*, and a night's games span every league
 at once. The league picker on the page is a filter over what's loaded, not a
 route.
 
+**Both filters live in the query string**, the way §3 puts the matchup pickers
+there: `?league=nfl&back=7`. "Tonight's nfl slate" is a thing to send someone,
+and the URL is the only state a link carries. Redux was the other candidate and
+the wrong one — a filter that outlived the page would mean coming back to a
+scoreboard quietly hiding most of the games, where one that lives in the URL is
+at least *visible* in the URL. Replaced rather than pushed, like the matchup
+page: narrowing a filter is adjusting the view you're on, and a history entry
+per turn of a picker makes Back mean nothing.
+
+A window the picker doesn't offer falls back to the default rather than being
+clamped. The API caps `back` at a week, so a hand-edited `?back=400` clamped
+would render seven days of games under a picker reading something else — which
+looks like it worked.
+
+**The league picker keeps the league it's set to, even in a window with none of
+its games.** Its options are built from the games that loaded, so a link that
+outlived its slate — or a reader who narrowed the window afterwards — would
+otherwise leave the select holding a value it has no option for, which renders
+blank. And the page underneath has to say *which* empty page it is: an evening
+with nothing on, or a filter hiding the games there are. The second one says so,
+counts what it's hiding, and carries the way out of it in the same sentence.
+
 Days are grouped, and ordered **today, tomorrow, then backwards**. Not
 chronological in either direction: chronological buries tonight's games under
 two days of box scores, and reverse-chronological puts tomorrow above them.
@@ -1440,11 +1462,32 @@ inference is worth spelling out on the page, because a check mark whose subject
 is a guess is worse than no check mark, and the note under the tables says it in
 one sentence.
 
+**The disagreement is shown before it has an answer.** The mark grades a pick,
+and the pick exists from the moment both numbers are on the board — which is
+the state most of this page is in, since *what's on tonight* is half its
+framing. Leaving the gap implicit meant a reader scanning tonight's slate for
+where the model is off the board had to subtract two columns per row to find
+it. So the gap is printed under the book's number, in the second line every
+other cell on the table already has: `home +4` is the model giving the home
+team four points more than the book does. The sign means there what it means in
+the columns above — points *to* that side — and the shorthand mirrors the
+`63% home` beside it rather than inventing a second idiom for the same table.
+
+One rule rather than two: `modelEdge` answers which side and by how much, and
+`atsCall` is that plus a result.
+
+**Still no record, no win rate, no units** — see below. Naming where the model
+disagrees is not the same as tallying how often it was right to, and the second
+one is the number that would look like a claim about the model.
+
 **Four cases are left blank rather than graded.** No line on the board, no model
 number, no result yet, and the two numbers agreeing to within what the column
 prints. The last one is the interesting one: `spread()` rounds to a tenth, so a
 gap under 0.05 shows as two identical numbers, and marking it would grade a
-disagreement the reader can't see and hand a coin flip an opinion.
+disagreement the reader can't see and hand a coin flip an opinion. Three of
+the four silence the edge line as well, because there is no disagreement to
+state; "no result yet" is the grade's alone, and is exactly the row the edge
+line exists for.
 
 **A daggered game is graded like any other.** §13.3's whole point is that these
 predictions are usually hindsight, and hindsight is exactly as capable of being

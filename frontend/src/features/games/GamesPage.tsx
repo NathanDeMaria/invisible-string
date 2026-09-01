@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { useGetGamesQuery, type GameRow } from "../../services/api";
-import { atsCall } from "./ats";
+import { atsCall, modelEdge } from "./ats";
 import { GameTable } from "./GameTable";
 import { count } from "../jobs/format";
 import { dayLabel, dayRank, todayOf, zoneLabel } from "./format";
@@ -27,19 +28,45 @@ const ALL = "";
  * loaded rather than refetching -- one window covers them all, so switching is
  * instant and hits nothing.
  *
- * Local state rather than a slice: nothing outside this page reads the window,
- * and a filter that outlived the page would mean coming back to a scoreboard
- * quietly hiding most of the games.
+ * Both filters live in the query string, for the reason the matchup page's
+ * pickers do (§13.4): "tonight's nfl slate" is a thing to send someone, and
+ * the URL is the only state a link can carry. Not redux, which was the other
+ * candidate and the wrong one -- a filter that outlived the page would mean
+ * coming back to a scoreboard quietly hiding most of the games, whereas one
+ * that lives in the URL is visible in the URL.
  */
 export function GamesPage() {
-  const [back, setBack] = useState(DEFAULT_BACK);
-  const [league, setLeague] = useState(ALL);
+  const [params, setParams] = useSearchParams();
+  const back = windowOf(params.get("back"));
+  const league = params.get("league") ?? ALL;
   const games = useGetGamesQuery({ back, ahead: AHEAD });
 
+  // Replace rather than push, like the matchup page: narrowing a filter is
+  // adjusting the view you're on, not moving to another one, and a history
+  // entry per keystroke of the picker makes Back mean nothing.
+  const update = (next: Record<string, string | null>) => {
+    const merged = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null) merged.delete(key);
+      else merged.set(key, value);
+    }
+    setParams(merged, { replace: true });
+  };
+
   const all = useMemo(() => games.data?.games ?? [], [games.data]);
+  // The leagues in the window, plus whichever one is selected even when the
+  // window holds none of its games. Dropping it would leave the select with a
+  // value it has no option for -- which renders blank, and hides the reason
+  // the page below it is empty.
   const leagues = useMemo(
-    () => [...new Set(all.map((game) => game.league))].sort(),
-    [all],
+    () =>
+      [
+        ...new Set([
+          ...all.map((game) => game.league),
+          ...(league ? [league] : []),
+        ]),
+      ].sort(),
+    [all, league],
   );
   const shown = useMemo(
     () => (league ? all.filter((game) => game.league === league) : all),
@@ -47,6 +74,7 @@ export function GamesPage() {
   );
 
   const hindsight = shown.some((game) => game.prediction?.in_sample);
+  const priced = shown.some((game) => modelEdge(game) !== null);
   const graded = shown.some((game) => atsCall(game) !== null);
   const today = games.data ? todayOf(games.data) : undefined;
   const days = useMemo(() => byDay(shown, today), [shown, today]);
@@ -61,7 +89,7 @@ export function GamesPage() {
           <select
             aria-label="Since"
             value={back}
-            onChange={(e) => setBack(Number(e.target.value))}
+            onChange={(e) => update({ back: e.target.value })}
           >
             {WINDOWS.map((option) => (
               <option key={option} value={option}>
@@ -75,7 +103,7 @@ export function GamesPage() {
           <select
             aria-label="League"
             value={league}
-            onChange={(e) => setLeague(e.target.value)}
+            onChange={(e) => update({ league: e.target.value || null })}
           >
             <option value={ALL}>All leagues</option>
             {leagues.map((name) => (
@@ -98,7 +126,27 @@ export function GamesPage() {
       ) : games.isLoading ? (
         <p className="loading">Loading&hellip;</p>
       ) : days.length === 0 ? (
-        <p className="empty">No games in this window.</p>
+        // Two different empty pages, and saying so is the whole point: a
+        // window with games in it that the league filter has hidden is not an
+        // evening with nothing on, and a reader who narrowed the window three
+        // steps ago has no other way to tell them apart.
+        <p className="empty">
+          {league && all.length > 0 ? (
+            <>
+              No {league} games in this window &mdash;{" "}
+              {count(all.length, "game")} in the other leagues.{" "}
+              <button
+                type="button"
+                className="as-link"
+                onClick={() => update({ league: null })}
+              >
+                Show all leagues
+              </button>
+            </>
+          ) : (
+            "No games in this window."
+          )}
+        </p>
       ) : (
         <>
           <p className="meta" data-testid="games-meta">
@@ -115,23 +163,32 @@ export function GamesPage() {
             Spreads are quoted from the home team&rsquo;s side, so -6.5 means
             the home side lays six and a half. The model column is each
             league&rsquo;s lowest-Brier release.
-            {/* Said only when there are marks to explain, like the dagger
-                below it. The rule itself is worth spelling out: the model
-                never names a side, so which one it picked is something the
-                page inferred from the gap between the two numbers. */}
+            {/* Said only when some row has a gap to explain. The rule itself
+                is worth spelling out: the model never names a side, so which
+                one it picked is something the page inferred from the two
+                numbers rather than something the model said. */}
+            {priced && (
+              <>
+                {" "}
+                Under the book&rsquo;s number is how far the model&rsquo;s is
+                from it, and which side that favours &mdash; &ldquo;home
+                +4&rdquo; is the model giving the home team four points more
+                than the book does. That side is the model&rsquo;s pick, in the
+                only sense it has one: it names a number, not a team.
+              </>
+            )}
+            {/* Only once a game on the page has actually been graded -- a
+                footnote about a mark that isn't there is one more thing to go
+                looking for, and the same is true of the dagger below it. */}
             {graded && (
               <>
                 {" "}
-                A finished game&rsquo;s model number carries how it did against
-                the line: the model takes whichever side it gives more points to
-                than the book does, and &#10003; means that side covered,
-                &#10007; that it didn&rsquo;t, and = that the game landed
-                exactly on the number. A game with no line, or one the two
-                numbers agree on, gets no mark.
+                Once a game is final that pick has an answer, and the mark
+                beside the model&rsquo;s number is it: &#10003; means that side
+                covered, &#10007; that it didn&rsquo;t, and = that the game
+                landed exactly on the number.
               </>
             )}
-            {/* Only said when there's a dagger to explain: a footnote about a
-                symbol that isn't on the page is one more thing to look for. */}
             {hindsight && (
               <>
                 {" "}
@@ -150,6 +207,19 @@ export function GamesPage() {
       )}
     </section>
   );
+}
+
+/**
+ * The window a `?back=` names, or the default.
+ *
+ * Anything that isn't one of the offered windows falls back rather than being
+ * clamped or passed through: a hand-edited `?back=400` is a typo, and the
+ * backend would answer a clamped one with a week of games under a picker
+ * reading something else.
+ */
+function windowOf(raw: string | null): number {
+  const value = Number(raw);
+  return WINDOWS.includes(value) ? value : DEFAULT_BACK;
 }
 
 /** Games grouped into days, in the order §13 puts them on the page. */

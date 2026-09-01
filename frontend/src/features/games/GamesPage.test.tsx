@@ -82,6 +82,76 @@ describe("GamesPage", () => {
     expect(mark).toHaveTextContent("✗");
   });
 
+  it("says which side the model is on before the game is played", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // The gap between the two spread columns is the whole reason they sit
+    // beside each other, and until now it was a subtraction the reader did:
+    // the model has Houston laying 3.7 against a board of 2.5.
+    const edge = screen.getByTitle(
+      "The model gives Houston 1.2 more points than the book does",
+    );
+    expect(edge).toHaveTextContent("home +1.2");
+    expect(edge.closest("tr")?.textContent).toContain("Duke @ Houston");
+  });
+
+  it("names the away side when the model won't lay the price", async () => {
+    server.use(
+      http.get("/api/games", () =>
+        HttpResponse.json({
+          days_back: 2,
+          days_ahead: 1,
+          since: "2026-08-20",
+          until: "2026-08-23",
+          games: [
+            {
+              league: "mens",
+              game_id: "g",
+              day: "2026-08-22",
+              start: "2026-08-23T01:00:00Z",
+              home: "Duke",
+              away: "Houston",
+              neutral: false,
+              completed: false,
+              status: "STATUS_SCHEDULED",
+              home_score: null,
+              away_score: null,
+              market_spread: -7.5,
+              prediction: {
+                model: "glicko_tuned",
+                run_id: "r1",
+                home_win_prob: 0.55,
+                predicted_spread: -2,
+                in_sample: false,
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // The board asks Duke to lay 7.5 and the model only lays 2, which is 5.5
+    // points of value on the visitors.
+    const edge = screen.getByTitle(
+      "The model gives Houston 5.5 more points than the book does",
+    );
+    expect(edge).toHaveTextContent("away +5.5");
+  });
+
+  it("says nothing where the model and the book agree", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // Tomorrow's game has a model number and no line, and the live one has a
+    // line and no model. Neither is a disagreement, and printing a zero on
+    // them would read as one.
+    expect(await rowFor("Houston @ Kansas")).not.toMatch(/home \+|away \+/);
+    expect(await rowFor("Vermont @ Kansas")).not.toMatch(/home \+|away \+/);
+  });
+
   it("leaves a game with no line ungraded", async () => {
     renderApp(<GamesPage />, { route: "/games" });
     await screen.findAllByRole("table");
@@ -135,6 +205,70 @@ describe("GamesPage", () => {
     // One window covers every league, so this is a filter over what's already
     // loaded -- the day headings for leagues with nothing in them go with it.
     expect(await headings()).toEqual(["Yesterday"]);
+  });
+
+  it("puts both filters in the URL, so a slate can be linked", async () => {
+    const user = userEvent.setup();
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    await user.selectOptions(screen.getByLabelText("League"), "nfl");
+    await user.selectOptions(screen.getByLabelText("Since"), "7");
+
+    // "Tonight's nfl games" is a thing to send someone, and the URL is the
+    // only state a link carries.
+    const url = () => screen.getByTestId("location").textContent;
+    await waitFor(() => expect(url()).toContain("league=nfl"));
+    expect(url()).toContain("back=7");
+
+    // And the default is the absence of the parameter rather than a spelling
+    // of it, so an unfiltered page is still `/games`.
+    await user.selectOptions(screen.getByLabelText("League"), "");
+    await waitFor(() => expect(url()).not.toContain("league"));
+  });
+
+  it("reads the window and the league back out of the URL", async () => {
+    renderApp(<GamesPage />, { route: "/games?league=nfl&back=1" });
+
+    expect(
+      await screen.findByText(/Green Bay Packers @ Chicago Bears/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("League")).toHaveValue("nfl");
+    expect(screen.getByLabelText("Since")).toHaveValue("1");
+  });
+
+  it("ignores a window nobody offered", async () => {
+    renderApp(<GamesPage />, { route: "/games?back=400" });
+    await screen.findAllByRole("table");
+
+    // Not clamped to the cap: the backend would answer a clamped one with a
+    // week of games under a picker reading something else. A typo gets the
+    // default, and the picker says which one it got.
+    expect(screen.getByLabelText("Since")).toHaveValue("2");
+    expect(await screen.findByTestId("games-meta")).toHaveTextContent(
+      "2 days back",
+    );
+  });
+
+  it("keeps a league the window has no games for, and says why it's empty", async () => {
+    const user = userEvent.setup();
+    // What a link looks like a few days after it was sent. The filter is
+    // still on and the window has moved past it.
+    renderApp(<GamesPage />, { route: "/games?league=nhl" });
+
+    // The picker has to keep offering the league it's set to. Built from the
+    // loaded games alone, this select would have a value with no option --
+    // which renders blank, and hides the reason the page is empty.
+    expect(await screen.findByText(/No nhl games/)).toBeInTheDocument();
+    expect(screen.getByLabelText("League")).toHaveValue("nhl");
+    // An empty window and an emptied one are different pages, and a reader
+    // who filtered three steps ago has no other way to tell them apart.
+    expect(screen.getByText(/7 games in the other leagues/)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Show all leagues/ }));
+    expect(
+      await screen.findByText(/North Carolina @ Duke/),
+    ).toBeInTheDocument();
   });
 
   it("narrows the window when you ask for fewer days", async () => {
@@ -194,6 +328,52 @@ describe("GamesPage", () => {
     const meta = await screen.findByTestId("games-meta");
     expect(meta).toHaveTextContent("7 games");
     expect(meta).toHaveTextContent("2 days back");
+  });
+
+  it("decodes the shorthand under the tables", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // "home +4" in a column of spreads is not self-evident, and the title on
+    // it is no help to anyone who can't hover.
+    expect(screen.getByText(/home \+4/)).toBeInTheDocument();
+  });
+
+  it("drops that note when no row uses the shorthand", async () => {
+    server.use(
+      http.get("/api/games", () =>
+        HttpResponse.json({
+          days_back: 2,
+          days_ahead: 1,
+          since: "2026-08-20",
+          until: "2026-08-23",
+          games: [
+            {
+              league: "nfl",
+              game_id: "g",
+              day: "2026-08-22",
+              start: "2026-08-23T01:00:00Z",
+              home: "Chicago Bears",
+              away: "Green Bay Packers",
+              neutral: false,
+              completed: false,
+              status: "STATUS_SCHEDULED",
+              home_score: null,
+              away_score: null,
+              market_spread: -3.5,
+              prediction: null,
+            },
+          ],
+        }),
+      ),
+    );
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // A league with no model has no number to disagree with the book, so
+    // there is no shorthand on the page to explain.
+    expect(screen.queryByText(/home \+4/)).toBeNull();
+    expect(screen.getByText(/home team’s side/)).toBeInTheDocument();
   });
 
   it("explains the sign convention and the dagger", async () => {
