@@ -181,6 +181,73 @@ nav.panels a.active {
   white-space: nowrap;
 }
 
+/* The day picker: two arrows and a reset around a native date field. A group
+   rather than three loose controls, because they act on one value -- and the
+   arrows are what a reader moving through a week actually uses, so they sit
+   in the row rather than behind the calendar's popover. */
+.controls .field {
+  display: flex;
+  flex: 1 1 18rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* The caption only. Without this it takes `.controls label`'s flex-basis,
+   which inside a column container is a *height* -- the trap the note above
+   records, and the same 350px-tall control it produced there. */
+.controls .field > label {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* The field gives up the room; the buttons are as wide as their glyphs. */
+.stepper > input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.step {
+  flex: 0 0 auto;
+  font: inherit;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+/* The chevrons carry no word, so they earn the size the words don't need.
+   The padding box is the tap target either way; this is about seeing them. */
+.step.arrow {
+  font-size: 1.15rem;
+  line-height: 1.05;
+  padding: 0.25rem 0.6rem;
+}
+
+.step:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+/* Spent, not gone: at the horizon the API answers for, and on the day you're
+   already on. A control that vanished at the edge would read as a page that
+   lost a feature rather than one that has run out of days. */
+.step:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
 .meta,
 .loading,
 .empty,

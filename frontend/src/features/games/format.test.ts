@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   dayLabel,
-  dayRank,
   daysBetween,
   points,
   probability,
@@ -10,7 +9,9 @@ import {
   spread,
   statusLabel,
   tipoff,
-  todayOf,
+  parseDay,
+  shiftDay,
+  todayCentral,
   zoneLabel,
 } from "./format";
 
@@ -124,27 +125,54 @@ describe("dayLabel", () => {
   });
 });
 
-describe("dayRank", () => {
-  it("puts today first, then forward, then backwards", () => {
-    const today = "2026-08-22";
-    const order = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"]
-      .sort((a, b) => dayRank(a, today) - dayRank(b, today))
-      .map((day) => dayLabel(day, today));
+describe("todayCentral", () => {
+  it("reads the day in the zone the games are filed under", () => {
+    // 1:30am UTC on the 23rd is still the evening of the 22nd in Chicago,
+    // which is the boundary these games are cut on -- and the hour a night's
+    // scores are actually being read.
+    expect(todayCentral(new Date("2026-08-23T01:30:00Z"))).toBe("2026-08-22");
+    expect(todayCentral(new Date("2026-08-23T13:00:00Z"))).toBe("2026-08-23");
+  });
 
-    // Chronological would bury tonight's games under two days of box scores;
-    // reverse-chronological would put tomorrow above them.
-    expect(order).toEqual(["Today", "Tomorrow", "Yesterday", order[3]]);
-    expect(order[3]).toContain("Thursday");
+  it("doesn't depend on where the reader is", () => {
+    // The whole reason it goes through Intl rather than the local date: a
+    // reader in Auckland is a day ahead of the boundary and would otherwise
+    // open the page on tomorrow.
+    expect(todayCentral(new Date("2026-01-01T05:00:00Z"))).toBe("2025-12-31");
   });
 });
 
-describe("todayOf", () => {
-  it("takes today from the window, not from the browser's clock", () => {
-    // The window is cut in US Central; a reader in another zone asking their
-    // own clock would label the wrong group "Today" for part of the day.
-    expect(todayOf({ until: "2026-08-23", days_ahead: 1 })).toBe("2026-08-22");
-    expect(todayOf({ until: "2026-09-01", days_ahead: 1 })).toBe("2026-08-31");
-    expect(todayOf({ until: "2026-08-22", days_ahead: 0 })).toBe("2026-08-22");
+describe("shiftDay", () => {
+  it("moves a day, over the month and year boundaries", () => {
+    expect(shiftDay("2026-08-22", 1)).toBe("2026-08-23");
+    expect(shiftDay("2026-08-22", -1)).toBe("2026-08-21");
+    expect(shiftDay("2026-08-31", 1)).toBe("2026-09-01");
+    expect(shiftDay("2026-01-01", -1)).toBe("2025-12-31");
+  });
+
+  it("moves a week at a time too, which is the horizon", () => {
+    expect(shiftDay("2026-08-22", -7)).toBe("2026-08-15");
+    expect(shiftDay("2026-08-22", 7)).toBe("2026-08-29");
+  });
+});
+
+describe("parseDay", () => {
+  it("takes a day", () => {
+    expect(parseDay("2026-08-22")).toBe("2026-08-22");
+  });
+
+  it("refuses a date that isn't one", () => {
+    // The shape check alone passes this, and `Date` rolls it into March
+    // rather than refusing -- so the round trip is what actually decides.
+    expect(parseDay("2026-02-31")).toBeNull();
+    expect(parseDay("2026-13-01")).toBeNull();
+  });
+
+  it("refuses anything that isn't shaped like one", () => {
+    expect(parseDay("yesterday")).toBeNull();
+    expect(parseDay("2026-8-22")).toBeNull();
+    expect(parseDay("")).toBeNull();
+    expect(parseDay(null)).toBeNull();
   });
 });
 
