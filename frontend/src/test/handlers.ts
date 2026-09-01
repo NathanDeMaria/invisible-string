@@ -1,6 +1,8 @@
 import { HttpResponse, http } from "msw";
 
 import type {
+  CurvePoint,
+  GameDetail,
   GameRow,
   GamesResponse,
   JobHealth,
@@ -10,6 +12,7 @@ import type {
   PredictResponse,
   RatingsResponse,
   VolumeResponse,
+  WinProbabilityResponse,
 } from "../services/api";
 
 // Mirrors backend/tests/fixtures/models/mens/glicko_tuned. `margin_mae` is
@@ -465,6 +468,76 @@ export const games: GamesResponse = {
   ],
 };
 
+// -- one game, and its curve ------------------------------------------
+//
+// Two endpoints because the app reads two upstreams, and the fixtures keep
+// that separation: a game exists whether or not anyone has play-by-play for
+// it, and only football has a fit at all.
+
+/** Only football has a win probability model, which is what the flag says. */
+const detailFor = (row: GameRow): GameDetail => ({
+  ...row,
+  season: 2026,
+  week: 3,
+  has_win_probability: row.league === "nfl" || row.league === "ncaafb",
+});
+
+/**
+ * A short game whose scoreboard moves twice, which is all the chart needs to
+ * be worth testing: a line with a shape, two scoring marks, and a control
+ * number that isn't 0.5.
+ *
+ * Written as (period, clock, home, away, probability) rather than as full
+ * objects -- the fields that don't vary are noise in a fixture whose point is
+ * the five that do.
+ */
+const snap = (
+  period: number,
+  clock: number,
+  home: number,
+  away: number,
+  prob: number,
+): CurvePoint => ({
+  play_id: `p${period}-${clock}`,
+  play_number: (period - 1) * 100 + (900 - clock),
+  period,
+  clock_seconds: clock,
+  seconds_remaining: clock + (4 - period) * 900,
+  home_score: home,
+  away_score: away,
+  home_win_prob: prob,
+});
+
+export const winProbability: WinProbabilityResponse = {
+  league: "nfl",
+  game_id: "g-1",
+  home: "Chicago Bears",
+  away: "Green Bay Packers",
+  home_team_id: "3",
+  away_team_id: "9",
+  fit: {
+    league: "nfl",
+    run_id: "20260901-004159",
+    seasons: [2023, 2024, 2025],
+    n_games: 3975,
+    brier_score: 0.159,
+    log_loss: 0.476,
+  },
+  control: { home: 0.42, away: 0.58, seconds: 3580 },
+  points: [
+    snap(1, 890, 0, 0, 0.54),
+    snap(1, 402, 0, 0, 0.5),
+    snap(1, 96, 0, 7, 0.31),
+    snap(2, 700, 0, 7, 0.33),
+    snap(2, 210, 7, 7, 0.52),
+    snap(3, 640, 7, 7, 0.5),
+    snap(3, 120, 14, 7, 0.74),
+    snap(4, 500, 14, 7, 0.78),
+    snap(4, 40, 17, 24, 0.04),
+  ],
+  trained_on_this_season: false,
+};
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
   http.get("/api/predict", ({ request }) => {
@@ -512,6 +585,30 @@ export const handlers = [
       games: games.games.filter(
         (game) => game.day >= since && game.day <= until,
       ),
+    });
+  }),
+  http.get("/api/games/:league/:gameId", ({ params }) => {
+    const row = games.games.find(
+      (game) => game.league === params.league && game.game_id === params.gameId,
+    );
+    if (!row) {
+      return HttpResponse.json({ detail: "not found" }, { status: 404 });
+    }
+    return HttpResponse.json(detailFor(row));
+  }),
+  http.get("/api/games/:league/:gameId/win-probability", ({ params }) => {
+    if (params.league !== "nfl") {
+      return HttpResponse.json({ detail: "no model" }, { status: 404 });
+    }
+    // Only the finished game has plays. The scheduled one is the case the
+    // page has to say something about rather than draw.
+    return HttpResponse.json({
+      ...winProbability,
+      game_id: String(params.gameId),
+      points: params.gameId === "g-1" ? winProbability.points : [],
+      control: params.gameId === "g-1" ? winProbability.control : null,
+      home_team_id: params.gameId === "g-1" ? "3" : null,
+      away_team_id: params.gameId === "g-1" ? "9" : null,
     });
   }),
   http.get("/api/jobs/volume", ({ request }) => {

@@ -509,6 +509,21 @@ a.utility.active {
   display: block;
 }
 
+/* The matchup is the way into the game's own page. Coloured like text rather
+   than like a link: a table whose every first cell is blue reads as a page of
+   links rather than as a scoreboard, and the underline on hover is enough to
+   say it's one. */
+.games a.job-name {
+  color: inherit;
+  text-decoration: none;
+}
+
+.games a.job-name:hover,
+.games a.job-name:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
 .games .when,
 .games .of {
   display: block;
@@ -593,9 +608,215 @@ a.utility.active {
   color: var(--muted);
 }
 
+/* One game ---------------------------------------------------------------
+
+   Reached from a row of the table above, so it keeps that page's heading
+   scale and its two-line "number, then what it's of" cells -- a game page in
+   a different idiom would read as a different app. */
+.game-page > h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 1.5rem 0 0.6rem;
+}
+
+.game-page h3 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 1.75rem 0 0.5rem;
+}
+
+/* The matchup is the title of the page, so it is the one heading that isn't
+   a label. */
+.game-page h3.game-title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--fg);
+  margin: 0.75rem 0 0.25rem;
+}
+
+.game-page .meta a,
+.game-page .error a {
+  color: var(--accent);
+  text-transform: capitalize;
+}
+
+/* The result, sized like the matchup page's answer: on a finished game it is
+   what the page is about. */
+.game-page .line {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  margin: 0.75rem 0 1.5rem;
+}
+
+.game-page .line .of {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 0.4rem;
+}
+
+.game-page .line .quiet {
+  color: var(--muted);
+}
+
+/* A definition list rather than a table: these are one game's facts, not rows
+   to compare, and a two-column table of eight one-cell rows is a table
+   pretending. Same two-line cell the tables use, so a number and what it's of
+   read the same way everywhere. */
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.9rem 1.25rem;
+}
+
+.facts > div {
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+.facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.facts .of {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: normal;
+}
+
+/* The win probability chart ----------------------------------------------
+
+   One series, so no legend: the y axis is labelled with the two team names,
+   which is what up and down mean. Everything that isn't the line is recessive
+   -- the quarters and the 50% rule are there to be read past. */
+.wp {
+  margin: 0.5rem 0 0.25rem;
+}
+
+/* The axis key: which end of the y axis is which team. Sits above the chart
+   because that is where a reader looks before the line means anything. */
+.wp-key {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.wp-key strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.wp svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: pan-y;
+}
+
+.wp-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wp-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+/* The only value on the axis that means anything on its own, so it is dashed
+   rather than drawn like the quarters beside it. */
+.wp-even {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.7;
+}
+
+.wp-axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+/* The snaps where the scoreboard had just moved -- the only points on the
+   line that moved for a reason a reader can name. Ringed in the page's own
+   background so a mark on a steep segment stays a mark rather than thickening
+   the line. */
+.wp-score {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.wp-cursor line {
+  stroke: var(--fg);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+
+.wp-cursor circle {
+  fill: var(--fg);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+/* Held in the layout rather than floating over the chart, so the page can't
+   change height under the pointer. */
+.wp-readout {
+  min-height: 1.4rem;
+  margin: 0.25rem 0 1rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.wp-readout .wp-when {
+  color: var(--muted);
+}
+
+.wp-readout .wp-prob {
+  font-weight: 600;
+}
+
+.wp-readout .wp-hint {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* The chart's numbers, for a reader who can't hover one out of it -- and the
+   list of swings, which is the part of the game worth reading anyway. */
+.wp-table {
+  margin-bottom: 1rem;
+}
+
 /* Narrow screens: buy the table horizontal room back from its padding, and
    let a long team name wrap rather than widen the column. */
 @media (max-width: 30rem) {
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
   .app {
     padding: 1.25rem 0.75rem 3rem;
   }

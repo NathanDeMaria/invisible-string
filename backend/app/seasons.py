@@ -33,7 +33,7 @@ from typing import Any
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from app.endgame_pickle import load_seasons
+from app.endgame_pickle import load_seasons, numbered_weeks
 from app.games import (
     MAX_DAYS_AHEAD,
     MAX_DAYS_BACK,
@@ -277,12 +277,13 @@ def _pool_games(
     first_failure: Exception | None = None
 
     for season in seasons:
-        for week in getattr(season, "weeks", []):
-            for game in week.games:
+        year = getattr(season, "year", None)
+        for number, games in numbered_weeks(season):
+            for game in games:
                 if not since <= game_day(game.date) <= until:
                     continue
                 try:
-                    row = _to_row(game, league)
+                    row = _to_row(game, league, season=year, week=number)
                 except Exception as exc:  # noqa: BLE001 - a foreign, evolving Game
                     skipped += 1
                     # The count on its own says a game was dropped without
@@ -308,7 +309,9 @@ def _pool_games(
     return pooled
 
 
-def _to_row(game: Any, league: str) -> ScheduledGame:
+def _to_row(
+    game: Any, league: str, season: int | None = None, week: int | None = None
+) -> ScheduledGame:
     """One endgame `Game` in the shape this app serves.
 
     The scores are dropped until the game is completed, and that is now the
@@ -321,9 +324,16 @@ def _to_row(game: Any, league: str) -> ScheduledGame:
     `status` is what makes the empty score readable. `completed` says only
     result / not-a-result; a game with no result is scheduled, in progress,
     postponed or cancelled, and those are four different rows.
+
+    `season` and `week` are the file's own, carried through so the plays for
+    this game can be found later: they are the partition the processed
+    play-by-play is written under, and the season file is the only place that
+    says which one a game is in.
     """
     return ScheduledGame(
         league=league,
+        season=season,
+        week=week,
         game_id=game.game_id,
         start=as_aware(game.date),
         home=game.home,

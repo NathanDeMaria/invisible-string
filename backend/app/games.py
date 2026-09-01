@@ -107,6 +107,14 @@ class ScheduledGame(BaseModel):
     home team is favoured. That's the sign cassandra's own betting metrics
     assume (`spread + team1_mov > 0` is a home cover), which is what makes the
     two numbers comparable in a table.
+
+    `season` and `week` are where the game's *play-by-play* lives, not facts
+    about the schedule: endgame keys its processed plays by league, season and
+    the week numbers `iter_weeks` walks, and nothing else in the bucket ties a
+    game id to that triple. They ride along here because the season file is
+    the only place the answer exists -- see `app.endgame_pickle.numbered_weeks`
+    -- and they are optional because a source that has games without having
+    walked a season file legitimately doesn't know.
     """
 
     league: str
@@ -120,6 +128,8 @@ class ScheduledGame(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     market_spread: float | None = None
+    season: int | None = None
+    week: int | None = None
 
     @property
     def day(self) -> date:
@@ -149,6 +159,28 @@ def window_bounds(
     """The first and last day of the window, inclusive, in `GAME_TZ`."""
     today = (now or datetime.now(UTC)).astimezone(GAME_TZ).date()
     return today - timedelta(days=days_back), today + timedelta(days=days_ahead)
+
+
+def find_game(source: GamesSource, league: str, game_id: str) -> ScheduledGame | None:
+    """One game out of the widest window the API will serve, or None.
+
+    There is no by-id read to make here. A season file is keyed by league and
+    year and holds the whole schedule, so "find game 401671789" is either a
+    walk of every season file in the bucket or a walk of the days this app
+    already reads, and the second is much the cheaper. Its expensive half is
+    shared, too: a season file is read for the whole horizon whatever window
+    asked for it, so this adds an odds listing rather than a pickle read
+    (§13.2).
+
+    The horizon is a cost cap rather than a retention ceiling: a link to a game
+    from last month 404s, which is the same week either side of today the games
+    page itself can reach.
+    """
+    window = source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+    for game in window.games:
+        if game.league == league and game.game_id == game_id:
+            return game
+    return None
 
 
 def each_day(since: date, until: date) -> list[date]:

@@ -1837,3 +1837,201 @@ dead franchise's name would have hidden a team that plays this week.
 matchup is a fair question about what the ratings say, and the prediction was
 never a claim that the game is on anyone's schedule. Hiding a team from the
 pickers is a statement about the leaderboard, not about the model.
+
+## 16. One game, and how it went
+
+The games page answers two questions a night raises — what's on, and was the
+model right about last night. It cannot answer the third, which is the one
+anybody actually asks about a game they watched: *how did it go?* A row has
+four columns and a final score, and a final score is the one part of a football
+game that says least about it. 24–17 covers a wire-to-wire hold and a
+fourth-quarter theft equally well.
+
+So `/games/{league}/{game_id}` is a page about one game. It lists everything
+this app has on it — schedule, status, score, the book's number, the model's
+number and the two ratings behind it, which release said so, and which week of
+which season endgame filed it under — and for a football game with play-by-play
+behind it, it draws the win probability over time.
+
+### 16.1 The curve comes from a package, not a bucket
+
+[the-lucky-ones][lucky] is an in-game win probability model for football:
+plays in, one probability per snap out, plus `game_control` — the average of
+that curve weighted by how long each reading stood, which is the number under
+the graph.
+
+**Its fits ship inside the wheel.** `MODELS.NFL` and `MODELS.NCAAFB` are
+`lucky_ones/releases/*.json` packaged with the code, so scoring a game needs no
+bucket, no credentials and no fitting stack. That is the opposite of the
+arrangement §2 argues for with cassandra's `ModelRelease`, and the difference
+between the two is the right one to notice:
+
+| | cassandra's release | the-lucky-ones' fit |
+|---|---|---|
+| how it arrives | an S3 artifact this app reads | a data file inside the package |
+| how often it changes | nightly | a few times a season |
+| "which model is serving?" | whatever was at the key when the cache filled | the pinned rev |
+| a retrain is | a file copy | a commit, a bump here |
+
+Ratings move every night, so an artifact is the only shape that works. Eight
+logistic coefficients over twenty seasons do not, and for something that
+changes that rarely, *pinning the package pins the model* is worth more than
+being able to swap it without a deploy. `pyproject.toml` pins it by rev the
+same way it pins cassandra, and for the same stated reason.
+
+**The bare install, not `lucky-ones[train]`.** The extra adds scikit-learn, and
+the rule §2 states about cassandra applies unchanged: reading a stored fit must
+never require the ability to produce one. What this app does take is `pyarrow`,
+declared directly rather than through the extra, because `lucky_ones.arrow` is
+how endgame's stored plays become plays and that is the half of the extra this
+uses. `No module named sklearn` here still means something is trying to fit.
+
+### 16.2 A league without a fit, and a game without plays
+
+Three things have to meet to draw a curve — a game, a fit for its league, and
+that game's play-by-play — and two of the three are routinely absent for
+reasons that are not failures:
+
+- **Only football has a fit.** There is no in-game win probability model for a
+  basketball game here, and the games page lists every league. So the game
+  endpoint carries `has_win_probability`, a fact about the *league*, and the
+  page skips the request entirely rather than making one that can only 404.
+- **Most games have no play-by-play.** ESPN has none for the D2/D3 half of an
+  NCAAFB week, none for a game that hasn't kicked off, and none stored for a
+  week the transform hasn't run over yet. All three are a 200 with no points,
+  and the page says which it is as far as it can tell.
+
+Only an upstream refusing to be read is an error, and it is a 502 — the same
+line §12 and §13 already draw between "nothing to report" and "we couldn't
+look".
+
+The two halves are **two endpoints and two queries**, for the reason job health
+and data volume are (§12.1): they read different upstreams — a season pickle
+and a parquet object under a different prefix — and one being slow or missing
+must not blank the other. A game with no chart still has a score on it.
+
+### 16.3 Finding one game's plays
+
+endgame's processed layer writes one parquet object per league-week:
+
+```
+processed/plays/league={league}/season={season}/week={week:02d}/data.parquet
+```
+
+sorted by `game_id` and written in 2048-row groups, specifically so a reader
+can take one game out of one without moving the week — the filter goes to the
+parquet reader, which checks it against each row group's min/max in the footer
+and fetches only the ranges that can match. On a real NCAAFB week that is
+~150 KB of ~930 KB. `app.processed_plays` spends exactly that property, and
+it is the only place in this app that reads through `pyarrow.fs.S3FileSystem`
+rather than boto3: everything else here reads whole objects, where boto3 is
+right, and this reads byte ranges out of a footer index, where Arrow's own
+filesystem is what turns a filter into them.
+
+**What it costs.** pyarrow is ~150MB on disk and is now the largest thing in
+the image, against a service §13.2 already had to defend from its own memory
+ceiling. It is not avoidable: the plays are parquet, and there is no smaller
+reader. What is avoidable is paying it in the wrong place, so
+`app.plays._build_source` imports the module only when a bucket is configured,
+the way `app.releases` defers `app.s3` — a local run and the test suite import
+neither Arrow's dataset layer nor boto3.
+
+**What it costs in IAM.** One more prefix on the instance role's grant:
+`processed/plays/*`, `GetObject` and `ListBucket` both. The list is for Arrow
+rather than for us — nothing here lists that prefix, but `S3FileSystem`
+resolves a path before it opens it and falls back to a list when the head is
+refused. §12.2 already spent the two-bucket boundary; this is the last thing
+behind it that this app didn't have.
+
+**The path is built, never listed.** Which means the season and the week have
+to be known *before* the read, and nothing in the bucket ties a game id to
+them. So `ScheduledGame` carries them out of the season file, and the awkward
+part is which number `week` is.
+
+### 16.4 The week number is a key, and getting it wrong is silent
+
+endgame writes plays under "the week numbers `iter_weeks` walks" — the source's
+own numbering for the NFL, whose weeks are already chronological, and *calendar
+weeks counted from the start of the season* for NCAAFB, whose source numbering
+isn't (it runs into January, and a bowl game filed under the ESPN url's week
+would restart the count). A `Season` says which it is: `season_start` is set
+exactly when the games have to be regrouped.
+
+`app.endgame_pickle.numbered_weeks` mirrors that rule, for the same reason
+`RawGame` mirrors a field order (§13.5): the class that owns it lives in a
+transitively-pinned package this image can't bump on its own. Deliberately not
+`Season.calendar_weeks`, which would make endgame's `Week`, `supersedes` and
+`group_games_into_weeks` load-bearing for the games page — the regrouping
+itself is two dates and a subtraction.
+
+**The failure mode is what makes it worth pinning.** A wrong week number does
+not raise. It opens a real week's real parquet, finds no matching game id, and
+returns an empty curve — or, worse, on a league where two weeks could hold the
+same id, somebody else's game. So `tests/test_endgame_pickle.py` checks the
+arithmetic against endgame's own `group_games_into_weeks`, and a rule that
+moves upstream is a red check rather than a curve drawn from the wrong plays.
+
+### 16.5 The horizon, and what a stale link does
+
+There is no by-id read to make against a season file: it is keyed by league and
+year and holds the whole schedule, so "find game 401671789" is either a walk of
+every season object in the bucket or a walk of the days this app already reads.
+`app.games.find_game` does the second, over the widest window the API serves.
+
+That is not free, and it is worth being exact about which half isn't. The
+expensive half is shared: a season file is read for the *whole* horizon
+whatever window asked for it, and re-read only when its ETag moves (§13.2), so
+the game page pays nothing for the games. The odds half is per-day, so asking
+for the full fortnight lists ~15 days of prefixes rather than one — bounded,
+behind the same TTL, and under its own cache key, so a reader clicking through
+several games pays it once.
+
+The other cost is that the horizon is the same one §13.2 set: a week either
+side of today. A link older than that 404s, and the page says so in those
+words rather than rendering an empty game. That is the honest version of a limit the games
+page already has — it cannot link to a game it cannot show either — and lifting
+it is the same change as giving `/api/games` a real `day=` parameter, which
+§13.4 already names as the next thing worth doing here.
+
+### 16.6 Drawing it
+
+One series, so no legend, and the chart is small enough to say in a sentence:
+a 2px line on a dashed 50% rule, quarter separators, and a mark at every snap
+where the scoreboard had just moved. Five decisions in it are worth writing
+down.
+
+**The x axis is elapsed regulation time, not play number.** Snaps aren't evenly
+spaced in time — a two-minute drill is fifteen of them and a quarter of
+grinding is thirty — so spacing them evenly would stretch the frantic end of a
+game across half the width. It is the same weighting `game_control` uses, and
+for the same reason.
+
+**Overtime stacks on the right-hand edge.** The API sends `seconds_remaining:
+0` for every overtime snap, because college overtime has no clock at all to
+place them on and the model reads none. Piling them at the end is honest;
+inventing an axis for them would not be.
+
+**Straight segments, not a spline.** A win probability holds its value until
+the next snap changes it. Smoothing would draw the model easing into a
+touchdown it learned about all at once.
+
+**Which way is up is a caption, not an axis label.** The first version put the
+two team names down the left-hand side, which clips: a gutter that fits "Duke"
+does not fit "North Carolina State". So the axis holds the one word that never
+grows — "even" — and the direction is a line of text above the chart, inside
+the `<figure>` so it travels with it.
+
+**The scoring plays are a table as well as marks.** Seven or eight labels on a
+640-unit axis is a chart you read by squinting, and the swings are the part of
+the game worth reading anyway — so they are a real table under the chart, which
+is also how the numbers are available to a reader who can't hover one out of a
+line. The hover readout sits in the layout rather than floating, so the page
+can't change height under the pointer.
+
+**And the number under it is not a win probability.** `game_control` is the
+average of the curve weighted by the clock, so 0.58 says "averaged over the
+minutes, that's where the model had them", not "they were 58% to win". The page
+says so in those words, and states the minutes it covers, because regulation is
+all it covers.
+
+[lucky]: https://github.com/NathanDeMaria/the-lucky-ones

@@ -134,6 +134,11 @@ data "aws_iam_policy_document" "apprunner_job_health" {
   # Listing is most of the volume half: odds pulls per league per day, and
   # which season objects exist. The prefix condition is what keeps this from
   # being "read EndGame's bucket" in general.
+  #
+  # `processed/plays/*` is here for Arrow rather than for us: nothing in this
+  # app lists that prefix -- the partition path is built from the game's own
+  # season and week (section 16.3) -- but `S3FileSystem` resolves a path
+  # before it opens it, and falls back to a list when the head is refused.
   statement {
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
@@ -142,20 +147,28 @@ data "aws_iam_policy_document" "apprunner_job_health" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["seasons/*", "odds/*"]
+      values   = ["seasons/*", "odds/*", "processed/plays/*"]
     }
   }
 
-  # The two objects the app opens: the newest odds pull per league, for a real
-  # record count, and each league's season file, to count games by date
-  # (section 12.4). This is the grant that spends the last of the boundary in
-  # 11.2 -- with it, the web tier can read raw scrape data.
+  # The objects the app opens: the newest odds pull per league, for a real
+  # record count; each league's season file, to count games by date and to list
+  # the games around today (sections 12.4 and 13.1); and one week of processed
+  # play-by-play per game page (section 16.3). This is the grant that spends
+  # the last of the boundary in 11.2 -- with it, the web tier can read raw
+  # scrape data.
+  #
+  # `processed/plays/*` is read a byte range at a time rather than whole: the
+  # parquet reader asks for the footer and then only the row groups that can
+  # hold the game. IAM has nowhere to say that, so the grant is the same
+  # GetObject the other two get.
   statement {
     effect  = "Allow"
     actions = ["s3:GetObject"]
     resources = [
       "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/odds/*",
       "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/seasons/*",
+      "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/processed/plays/*",
     ]
   }
 }

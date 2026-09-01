@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.games import GamesSource, LocalGamesSource, get_games_source
 from app.jobs import JobsSource, LocalJobsSource, get_jobs_source
 from app.main import create_app
+from app.plays import LocalPlaysSource, PlaysSource, get_plays_source
 from app.releases import LocalReleaseStore, ReleaseStore, get_release_store
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -37,13 +38,22 @@ def games_source() -> GamesSource:
 
 
 @pytest.fixture
+def plays_source() -> PlaysSource:
+    return LocalPlaysSource(FIXTURES)
+
+
+@pytest.fixture
 def client(
-    store: ReleaseStore, jobs_source: JobsSource, games_source: GamesSource
+    store: ReleaseStore,
+    jobs_source: JobsSource,
+    games_source: GamesSource,
+    plays_source: PlaysSource,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_release_store] = lambda: store
     app.dependency_overrides[get_jobs_source] = lambda: jobs_source
     app.dependency_overrides[get_games_source] = lambda: games_source
+    app.dependency_overrides[get_plays_source] = lambda: plays_source
     return TestClient(app)
 
 
