@@ -31,22 +31,19 @@ cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "785
 # retrain arrives here as a bump rather than as a file that changed in a
 # bucket.
 #
-# Deliberately the bare install, not `lucky-ones[train]`. The extra adds
-# scikit-learn, and the same rule cassandra's dependency states applies here:
-# reading a stored fit must never require the ability to produce one. Scoring
-# a game is nine floats and a logistic function.
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "b9c86061672c87e41f1861e7b81bc6926df97c69" }
-
-# Not the bare install's business, and asked for here rather than through
-# `lucky-ones[train]`: `lucky_ones.arrow` needs pyarrow to turn a table into
-# plays, and that is the half of the extra this app uses. Taking the extra
-# instead would drag the solver in behind it.
+# The `data` extra and not `fit`. Upstream keeps them apart precisely so a
+# consumer can say which half it means: `data` is pyarrow, for turning
+# endgame's stored parquet into plays, and `fit` is scikit-learn, for
+# producing a release. This app only ever reads one, and the same rule
+# cassandra's dependency states applies here -- reading a stored fit must
+# never require the ability to produce one.
 #
-# It is the heaviest thing in the image by some way (~150MB on disk), and
+# pyarrow is the heaviest thing in the image by some way (~150MB on disk), and
 # section 16.3 is the argument for paying it: endgame's play-by-play is
 # parquet, one object per league-week, and reading one game out of one is
-# what makes a curve affordable at all.
-pyarrow = "^25.0"
+# what makes a curve affordable at all. The solver behind `fit` buys nothing
+# here, and this is how the dependency says so.
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "6a6ecb247668f829bb372db2e566bcda7b2f8414", extras = ["data"] }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"

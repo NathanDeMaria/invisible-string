@@ -1879,12 +1879,20 @@ changes that rarely, *pinning the package pins the model* is worth more than
 being able to swap it without a deploy. `pyproject.toml` pins it by rev the
 same way it pins cassandra, and for the same stated reason.
 
-**The bare install, not `lucky-ones[train]`.** The extra adds scikit-learn, and
-the rule §2 states about cassandra applies unchanged: reading a stored fit must
-never require the ability to produce one. What this app does take is `pyarrow`,
-declared directly rather than through the extra, because `lucky_ones.arrow` is
-how endgame's stored plays become plays and that is the half of the extra this
-uses. `No module named sklearn` here still means something is trying to fit.
+**`lucky-ones[data]`, not `[fit]`.** Upstream keeps those two extras apart so
+a consumer can say which half it means — `data` is pyarrow, for turning
+endgame's stored parquet into plays, and `fit` is scikit-learn, for producing a
+release. This app only ever reads one, and the rule §2 states about cassandra
+applies unchanged: reading a stored fit must never require the ability to
+produce one. So `No module named sklearn` here still means something is trying
+to fit.
+
+That split was made *for* this: the extra was one `[train]` covering both jobs,
+which handed this image a ~100MB solver to satisfy an import it never makes,
+and the first version of this section argued its way around that by taking the
+bare install and asking for `pyarrow` directly. Naming half of somebody else's
+extra in your own dependency list is a workaround, not a design — the fix
+belonged upstream, and [the split][lucky-split] is it.
 
 ### 16.2 A league without a fit, and a game without plays
 
@@ -2035,3 +2043,4 @@ says so in those words, and states the minutes it covers, because regulation is
 all it covers.
 
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
+[lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/commit/6a6ecb247668f829bb372db2e566bcda7b2f8414

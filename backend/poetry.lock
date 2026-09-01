@@ -1582,16 +1582,18 @@ develop = false
 
 [package.dependencies]
 numpy = ">=2.4.0"
+pyarrow = {version = ">=21.0.0", optional = true}
 pydantic = ">=2.12.5"
 
 [package.extras]
-train = ["pyarrow (>=21.0.0)", "scikit-learn (>=1.8.0)"]
+data = ["pyarrow (>=21.0.0)"]
+fit = ["scikit-learn (>=1.8.0)"]
 
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/the-lucky-ones.git"
-reference = "b9c86061672c87e41f1861e7b81bc6926df97c69"
-resolved_reference = "b9c86061672c87e41f1861e7b81bc6926df97c69"
+reference = "6a6ecb247668f829bb372db2e566bcda7b2f8414"
+resolved_reference = "6a6ecb247668f829bb372db2e566bcda7b2f8414"
 
 [[package]]
 name = "markupsafe"
@@ -3551,4 +3553,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "1d611eb77e2a79c2afde844f2e7161cb389d4a231fac74f59c5d3b0eef03f8f7"
+content-hash = "274eabdccc4caf9257c27bc56195e241a4f64d686f5857ccdaf55dcd14193a7b"
