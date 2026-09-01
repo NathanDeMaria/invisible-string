@@ -313,8 +313,30 @@ export const volume: VolumeResponse = {
 // reason the job fixtures are: the page groups by day against a "today" it
 // derives from the window, so fixed dates would stop landing in it.
 
-const isoDay = (offset: number): string => {
-  const at = new Date(Date.now() + offset * 86_400_000);
+/**
+ * A day `offset` days from today, in US Central.
+ *
+ * The zone matters, and adding milliseconds to `Date.now()` was the wrong
+ * arithmetic for it: that files a game under the *runner's* date, which is a
+ * day ahead of Central for the hours either side of UTC midnight. The old
+ * page asked for a window and grouped whatever came back, so it never
+ * noticed; a page that asks for one particular day does.
+ *
+ * Its own implementation rather than the page's, because this stands in for
+ * the backend -- which has one of its own, in `app.games.window_bounds`. A
+ * fixture that agreed with the browser by construction couldn't catch the
+ * page reading the wrong day.
+ */
+export const isoDay = (offset: number): string => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: string) =>
+    Number(parts.find((piece) => piece.type === type)?.value);
+  const at = new Date(part("year"), part("month") - 1, part("day") + offset);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 };
@@ -462,15 +484,23 @@ export const handlers = [
     });
   }),
   http.get("/api/games", ({ request }) => {
-    const back = Number(new URL(request.url).searchParams.get("back") ?? 2);
-    // The window is a real filter, not decoration: a shorter one drops the
-    // older days, which is what the picker is for.
+    const q = new URL(request.url).searchParams;
+    const back = Number(q.get("back") ?? 2);
+    const ahead = Number(q.get("ahead") ?? 1);
+    // Both ends are a real filter, not decoration. The page asks for one day
+    // as an offset from today, so `ahead` is what stops a request for
+    // yesterday from also answering with tomorrow.
     const since = isoDay(-back);
+    const until = isoDay(ahead);
     return HttpResponse.json({
       ...games,
       days_back: back,
+      days_ahead: ahead,
       since,
-      games: games.games.filter((game) => game.day >= since),
+      until,
+      games: games.games.filter(
+        (game) => game.day >= since && game.day <= until,
+      ),
     });
   }),
   http.get("/api/jobs/volume", ({ request }) => {

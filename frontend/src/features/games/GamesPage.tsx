@@ -1,21 +1,27 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { useGetGamesQuery, type GameRow } from "../../services/api";
+import { useGetGamesQuery } from "../../services/api";
 import { atsCall, modelEdge } from "./ats";
 import { GameTable } from "./GameTable";
 import { count } from "../jobs/format";
-import { dayLabel, dayRank, todayOf, zoneLabel } from "./format";
+import {
+  dayLabel,
+  daysBetween,
+  parseDay,
+  shiftDay,
+  todayCentral,
+  zoneLabel,
+} from "./format";
 
 /**
- * How far back the page looks. Forward is fixed at tomorrow: two days of
- * scores and the next slate is the question this page answers, and a second
- * picker for the other direction would be chrome on a page whose point is a
- * quick scan.
+ * How far either side of today the API will answer for -- the backend's
+ * `MAX_DAYS_BACK` and `MAX_DAYS_AHEAD` (DESIGN.md §13.2), which are a cost cap
+ * rather than a retention one. The picker is bounded by them rather than left
+ * to offer days the endpoint would refuse.
  */
-const WINDOWS = [1, 2, 3, 7];
-const DEFAULT_BACK = 2;
-const AHEAD = 1;
+const MAX_BACK = 7;
+const MAX_AHEAD = 7;
 
 const ALL = "";
 
@@ -25,25 +31,40 @@ const ALL = "";
  * A top-level route rather than a league panel, for the reason `/jobs` is one
  * (DESIGN.md §12.5): the league tabs nest *panels under a league*, and this
  * page is every league at once. The league picker here filters what's already
- * loaded rather than refetching -- one window covers them all, so switching is
+ * loaded rather than refetching -- one day covers them all, so switching is
  * instant and hits nothing.
  *
- * Both filters live in the query string, for the reason the matchup page's
- * pickers do (§13.4): "tonight's nfl slate" is a thing to send someone, and
- * the URL is the only state a link can carry. Not redux, which was the other
- * candidate and the wrong one -- a filter that outlived the page would mean
- * coming back to a scoreboard quietly hiding most of the games, whereas one
- * that lives in the URL is visible in the URL.
+ * **One day at a time** (§13.4). A scoreboard's question is "what's on
+ * tonight", and the answer to it was previously four days long, with tonight's
+ * slate as the first of four tables to scroll past. So the page opens on
+ * today, and the days either side of it are somewhere to *go* -- an arrow at a
+ * time, or straight to a date -- rather than something to read through.
+ *
+ * Both the day and the league live in the query string, for the reason the
+ * matchup page's pickers do: a slate is a thing to send someone, and the URL
+ * is the only state a link carries.
  */
 export function GamesPage() {
   const [params, setParams] = useSearchParams();
-  const back = windowOf(params.get("back"));
+  const today = todayCentral();
+  const day = dayIn(params.get("day"), today);
+  const offset = daysBetween(today, day);
   const league = params.get("league") ?? ALL;
-  const games = useGetGamesQuery({ back, ahead: AHEAD });
 
-  // Replace rather than push, like the matchup page: narrowing a filter is
+  // One day, asked for as the offset the endpoint takes -- it has no `day=`,
+  // and it counts from its own today. Today itself is `back=0&ahead=0`, which
+  // is the cheapest window it can build and is now what the page opens on.
+  // A day further out costs the days in between, which is the price of not
+  // adding a parameter; nothing here can ask for more than the old picker's
+  // widest window did.
+  const games = useGetGamesQuery({
+    back: offset < 0 ? -offset : 0,
+    ahead: offset > 0 ? offset : 0,
+  });
+
+  // Replace rather than push, like the matchup page: stepping through days is
   // adjusting the view you're on, not moving to another one, and a history
-  // entry per keystroke of the picker makes Back mean nothing.
+  // entry per arrow press makes Back mean nothing.
   const update = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params);
     for (const [key, value] of Object.entries(next)) {
@@ -53,11 +74,18 @@ export function GamesPage() {
     setParams(merged, { replace: true });
   };
 
-  const all = useMemo(() => games.data?.games ?? [], [games.data]);
-  // The leagues in the window, plus whichever one is selected even when the
-  // window holds none of its games. Dropping it would leave the select with a
-  // value it has no option for -- which renders blank, and hides the reason
-  // the page below it is empty.
+  const goTo = (value: string) => update({ day: dayParam(value, today) });
+
+  // The window can hold days either side of the one being shown -- see the
+  // query above -- so the day is a filter here and not just a request.
+  const all = useMemo(
+    () => (games.data?.games ?? []).filter((game) => game.day === day),
+    [games.data, day],
+  );
+  // The leagues playing that day, plus whichever one is selected even when
+  // none of its games are. Dropping it would leave the select with a value it
+  // has no option for -- which renders blank, and hides the reason the page
+  // below it is empty.
   const leagues = useMemo(
     () =>
       [
@@ -76,28 +104,61 @@ export function GamesPage() {
   const hindsight = shown.some((game) => game.prediction?.in_sample);
   const priced = shown.some((game) => modelEdge(game) !== null);
   const graded = shown.some((game) => atsCall(game) !== null);
-  const today = games.data ? todayOf(games.data) : undefined;
-  const days = useMemo(() => byDay(shown, today), [shown, today]);
 
   return (
     <section className="games-page">
       <h2>Games</h2>
 
       <div className="controls">
-        <label>
-          Since
-          <select
-            aria-label="Since"
-            value={back}
-            onChange={(e) => update({ back: e.target.value })}
-          >
-            {WINDOWS.map((option) => (
-              <option key={option} value={option}>
-                {count(option, "day")} ago
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* One value, three controls, so they read as one thing. The arrows
+            are what a reader moving through a week actually uses, so they sit
+            beside the field rather than behind the calendar's popover. */}
+        <div className="field">
+          <label htmlFor="games-day">Day</label>
+          <div className="stepper">
+            <button
+              type="button"
+              className="step arrow"
+              aria-label="Previous day"
+              disabled={offset <= -MAX_BACK}
+              onClick={() => goTo(shiftDay(day, -1))}
+            >
+              &lsaquo;
+            </button>
+            <input
+              id="games-day"
+              type="date"
+              value={day}
+              // The horizon, stated to the control rather than only enforced
+              // after the fact: the native picker greys out what the API
+              // can't answer for, which is a better refusal than a page that
+              // silently snaps back to today.
+              min={shiftDay(today, -MAX_BACK)}
+              max={shiftDay(today, MAX_AHEAD)}
+              onChange={(e) => goTo(e.target.value)}
+            />
+            <button
+              type="button"
+              className="step arrow"
+              aria-label="Next day"
+              disabled={offset >= MAX_AHEAD}
+              onClick={() => goTo(shiftDay(day, 1))}
+            >
+              &rsaquo;
+            </button>
+            {/* Held disabled rather than hidden, like the arrows at the
+                horizon: a control that comes and goes is harder to find than
+                one that is sometimes spent. */}
+            <button
+              type="button"
+              className="step"
+              disabled={offset === 0}
+              onClick={() => goTo(today)}
+            >
+              Today
+            </button>
+          </div>
+        </div>
         <label>
           League
           <select
@@ -125,84 +186,88 @@ export function GamesPage() {
         </p>
       ) : games.isLoading ? (
         <p className="loading">Loading&hellip;</p>
-      ) : days.length === 0 ? (
-        // Two different empty pages, and saying so is the whole point: a
-        // window with games in it that the league filter has hidden is not an
-        // evening with nothing on, and a reader who narrowed the window three
-        // steps ago has no other way to tell them apart.
-        <p className="empty">
-          {league && all.length > 0 ? (
-            <>
-              No {league} games in this window &mdash;{" "}
-              {count(all.length, "game")} in the other leagues.{" "}
-              <button
-                type="button"
-                className="as-link"
-                onClick={() => update({ league: null })}
-              >
-                Show all leagues
-              </button>
-            </>
-          ) : (
-            "No games in this window."
-          )}
-        </p>
       ) : (
         <>
-          <p className="meta" data-testid="games-meta">
-            {count(shown.length, "game")} &middot; {count(back, "day")} back
-            through tomorrow &middot; times {zoneLabel()}
-          </p>
-          {days.map(([day, dayGames]) => (
-            <section key={day}>
-              <h3>{today ? dayLabel(day, today) : day}</h3>
-              <GameTable games={dayGames} />
-            </section>
-          ))}
-          <p className="meta">
-            Spreads are quoted from the home team&rsquo;s side, so -6.5 means
-            the home side lays six and a half. The model column is each
-            league&rsquo;s lowest-Brier release.
-            {/* Said only when some row has a gap to explain. The rule itself
-                is worth spelling out: the model never names a side, so which
-                one it picked is something the page inferred from the two
-                numbers rather than something the model said. */}
-            {priced && (
-              <>
-                {" "}
-                Under the book&rsquo;s number is how far the model&rsquo;s is
-                from it, and which side that favours &mdash; &ldquo;home
-                +4&rdquo; is the model giving the home team four points more
-                than the book does. That side is the model&rsquo;s pick, in the
-                only sense it has one: it names a number, not a team.
-              </>
-            )}
-            {/* Only once a game on the page has actually been graded -- a
-                footnote about a mark that isn't there is one more thing to go
-                looking for, and the same is true of the dagger below it. */}
-            {graded && (
-              <>
-                {" "}
-                Once a game is final that pick has an answer, and the mark
-                beside the model&rsquo;s number is it: &#10003; means that side
-                covered, &#10007; that it didn&rsquo;t, and = that the game
-                landed exactly on the number.
-              </>
-            )}
-            {hindsight && (
-              <>
-                {" "}
-                &dagger; marks a game whose result that release has already
-                trained on, which makes the number &mdash; and any mark beside
-                it &mdash; hindsight rather than a forecast.
-              </>
-            )}{" "}
-            Scores arrive with the nightly scrape, so a game that has just
-            finished can still read as scheduled, and one being played now shows
-            no score rather than a stale one. Games with nothing to report yet
-            keep a dash; anything else &mdash; postponed, called off, under way
-            &mdash; says so in the result column.
-          </p>
+          {/* The day in words, which the date field can't say: "Yesterday" is
+              how anyone reading last night's scores thinks about them. */}
+          <h3>{dayLabel(day, today)}</h3>
+
+          {shown.length === 0 ? (
+            // Two different empty pages, and saying so is the whole point: a
+            // day with games on it that the league filter has hidden is not a
+            // day with nothing on, and a reader who set that filter on
+            // another day has no other way to tell them apart.
+            <p className="empty">
+              {league && all.length > 0 ? (
+                <>
+                  No {league} games on this day &mdash;{" "}
+                  {count(all.length, "game")} in the other leagues.{" "}
+                  <button
+                    type="button"
+                    className="as-link"
+                    onClick={() => update({ league: null })}
+                  >
+                    Show all leagues
+                  </button>
+                </>
+              ) : (
+                "No games on this day."
+              )}
+            </p>
+          ) : (
+            <>
+              <p className="meta" data-testid="games-meta">
+                {count(shown.length, "game")} &middot; times {zoneLabel()}
+              </p>
+              <GameTable games={shown} />
+              <p className="meta">
+                Spreads are quoted from the home team&rsquo;s side, so -6.5
+                means the home side lays six and a half. The model column is
+                each league&rsquo;s lowest-Brier release.
+                {/* Said only when some row has a gap to explain. The rule
+                    itself is worth spelling out: the model never names a
+                    side, so which one it picked is something the page
+                    inferred from the two numbers rather than something the
+                    model said. */}
+                {priced && (
+                  <>
+                    {" "}
+                    Under the book&rsquo;s number is how far the model&rsquo;s
+                    is from it, and which side that favours &mdash; &ldquo;home
+                    +4&rdquo; is the model giving the home team four points more
+                    than the book does. That side is the model&rsquo;s pick, in
+                    the only sense it has one: it names a number, not a team.
+                  </>
+                )}
+                {/* Only once a game on the page has actually been graded -- a
+                    footnote about a mark that isn't there is one more thing to
+                    go looking for, and the same is true of the dagger below
+                    it. */}
+                {graded && (
+                  <>
+                    {" "}
+                    Once a game is final that pick has an answer, and the mark
+                    beside the model&rsquo;s number is it: &#10003; means that
+                    side covered, &#10007; that it didn&rsquo;t, and = that the
+                    game landed exactly on the number.
+                  </>
+                )}
+                {hindsight && (
+                  <>
+                    {" "}
+                    &dagger; marks a game whose result that release has already
+                    trained on, which makes the number &mdash; and any mark
+                    beside it &mdash; hindsight rather than a forecast.
+                  </>
+                )}{" "}
+                Scores arrive with the nightly scrape, so a game that has just
+                finished can still read as scheduled, and one being played now
+                shows no score rather than a stale one. Games with nothing to
+                report yet keep a dash; anything else &mdash; postponed, called
+                off, under way &mdash; says so in the result column.
+              </p>
+            </>
+          )}
         </>
       )}
     </section>
@@ -210,27 +275,29 @@ export function GamesPage() {
 }
 
 /**
- * The window a `?back=` names, or the default.
+ * The day a `?day=` names, or today.
  *
- * Anything that isn't one of the offered windows falls back rather than being
- * clamped or passed through: a hand-edited `?back=400` is a typo, and the
- * backend would answer a clamped one with a week of games under a picker
- * reading something else.
+ * Today for anything the API can't answer: a value that isn't a date, and a
+ * date outside the week either side it serves. The second one is a link that
+ * outlived its horizon rather than a typo, and today is a better answer to it
+ * than an empty page that looks like a broken one.
  */
-function windowOf(raw: string | null): number {
-  const value = Number(raw);
-  return WINDOWS.includes(value) ? value : DEFAULT_BACK;
+function dayIn(raw: string | null, today: string): string {
+  const day = parseDay(raw);
+  if (day === null) return today;
+  const delta = daysBetween(today, day);
+  if (delta < -MAX_BACK || delta > MAX_AHEAD) return today;
+  return day;
 }
 
-/** Games grouped into days, in the order §13 puts them on the page. */
-function byDay(games: GameRow[], today?: string): [string, GameRow[]][] {
-  const grouped = new Map<string, GameRow[]>();
-  for (const game of games) {
-    const day = grouped.get(game.day);
-    if (day) day.push(game);
-    else grouped.set(game.day, [game]);
-  }
-  const days = [...grouped.entries()];
-  if (!today) return days;
-  return days.sort(([a], [b]) => dayRank(a, today) - dayRank(b, today));
+/**
+ * What `?day=` should say, or null to leave it off.
+ *
+ * The default is the absence of the parameter rather than a spelling of it, so
+ * the page's own URL stays `/games` -- and a cleared date field is a way back
+ * to today rather than a page with no day at all.
+ */
+function dayParam(value: string, today: string): string | null {
+  const day = parseDay(value);
+  return day === null || day === today ? null : day;
 }

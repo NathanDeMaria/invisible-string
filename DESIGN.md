@@ -369,10 +369,11 @@ Three routes:
   to the current season with a range picker back through 2010. Time on the x-axis,
   not week number (§6). Reachable from the ratings table with teams preselected, and
   team-keyed in the query string so a comparison is shareable.
-- **`/games`** — every league's games from a couple of days back through tomorrow,
-  grouped by day, each row carrying the default model's spread and win probability,
-  the book's line in the same convention, and the final score. Top-level rather than
-  a league panel, since a night's games span every league (§13.4).
+- **`/games`** — every league's games for one day at a time, opening on today and
+  stepped an arrow or a calendar at a time, each row carrying the default model's
+  spread and win probability, the book's line in the same convention and the gap
+  between the two, and the final score. Top-level rather than a league panel, since
+  a night's games span every league (§13.4).
 - **`/matchup`** — two team comboboxes fed from the ratings response already in the
   RTK Query cache (no extra endpoint), a neutral-site toggle, and a result card:
   win probability for each side plus the spread rendered in familiar form
@@ -1155,7 +1156,7 @@ What makes that affordable in a request path is the ETag. §1's objection is to
 reading these on *every* request — `read_all_seasons` pulling 16 years — not to
 reading one. A season object changes once a day, when its job rewrites it, and its
 ETag says so exactly; between rewrites the count is free. The tally is kept per day
-rather than per window, so moving the window picker re-reads nothing.
+rather than per window, so moving the window re-reads nothing.
 
 Three things the counting is deliberate about:
 
@@ -1273,7 +1274,7 @@ Two caches, for the two things that move at different speeds.
 
 **Seasons are cached on their ETag**, exactly like §12.4's counts and for the
 same reason: the object is rewritten once a day, and between rewrites reading
-the window is free. Games are held grouped by day, so moving the window picker
+the window is free. Games are held grouped by day, so moving the window
 re-reads nothing.
 
 **Only the games within a week either side of today are ever built.** This is
@@ -1316,10 +1317,12 @@ Reading every hourly pull across the window would be ~200 objects to move a
 number by half a point. Days are walked oldest-first and later pulls win, so
 tomorrow's games get their line from today's board.
 
-Neither cache is keyed the way the *window* is, so `?back=` is nearly free to
-change. The window itself is capped at a week either side — not a retention
-ceiling like §12.3's, since a season file holds everything, but a cost cap. A
-month of games is a different page.
+Neither cache is keyed the way the *window* is, so moving the window is nearly
+free — which is what lets §13.4 spend a request per day and step through a week
+without re-reading anything. The window itself is capped at a week either side
+— not a retention ceiling like §12.3's, since a season file holds everything,
+but a cost cap. That cap is also the day picker's horizon. A month of games is a
+different page.
 
 ### 13.3 The prediction is the current release, which has usually seen the result
 
@@ -1357,19 +1360,58 @@ league tabs nest *panels under a league*, and a night's games span every league
 at once. The league picker on the page is a filter over what's loaded, not a
 route.
 
-**Both filters live in the query string**, the way §3 puts the matchup pickers
-there: `?league=nfl&back=7`. "Tonight's nfl slate" is a thing to send someone,
-and the URL is the only state a link carries. Redux was the other candidate and
-the wrong one — a filter that outlived the page would mean coming back to a
-scoreboard quietly hiding most of the games, where one that lives in the URL is
-at least *visible* in the URL. Replaced rather than pushed, like the matchup
-page: narrowing a filter is adjusting the view you're on, and a history entry
-per turn of a picker makes Back mean nothing.
+**One day at a time, opening on today.** The first version of this page showed
+a window: two days back through tomorrow, a table per day, ordered today, then
+tomorrow, then backwards. That ordering rule was doing work the framing should
+have done — a scoreboard's question is *what's on tonight*, and answering it
+with four tables and a rule about which order to read them in is a page you have
+to learn. So the window collapses to a single day, and the days either side
+become somewhere to *go* rather than something to scroll through: an arrow at a
+time, or straight to a date.
 
-A window the picker doesn't offer falls back to the default rather than being
-clamped. The API caps `back` at a week, so a hand-edited `?back=400` clamped
-would render seven days of games under a picker reading something else — which
-looks like it worked.
+The three controls are one group because they set one value. The arrows are what
+a reader moving through a week actually uses, so they sit in the row rather than
+behind the native picker's popover; the date field is for jumping further than
+that; and Today is the way back. All three are held *disabled* rather than
+hidden when they're spent — the arrows at the horizon, Today on the day you're
+already on. A control that vanishes at the edge reads as a page that lost a
+feature rather than one that has run out of days.
+
+**Both the day and the league live in the query string**, the way §3 puts the
+matchup pickers there: `?day=2026-08-29&league=nfl`. A slate is a thing to send
+someone, and the URL is the only state a link carries. Redux was the other
+candidate and the wrong one — a filter that outlived the page would mean coming
+back to a scoreboard quietly hiding most of the games, where one that lives in
+the URL is at least *visible* in the URL. Replaced rather than pushed, like the
+matchup page: stepping through days is adjusting the view you're on, and a
+history entry per arrow press makes Back mean nothing.
+
+Today is the absence of the parameter rather than a spelling of it, so the
+page's own URL stays `/games` and a cleared date field is a way home. A `?day=`
+that isn't a date, or is one past the horizon, gets today: the second is a link
+that outlived the week the API serves, and today is a better answer to it than
+an empty page that looks like a broken one. The shape check alone isn't enough
+for the first — `2026-02-31` matches it, and `Date` rolls it into March rather
+than refusing — so the test is a round trip.
+
+**The endpoint has no `day=`, so the page asks by offset.** `back=0&ahead=0` is
+today, and it is the cheapest window the API can build: the common case is now
+*less* work than the old four-day default. A day further out costs the days in
+between, since the window is anchored on today either way — but the widest
+request this page can make is still narrower than the old picker's, so this
+stays inside the envelope §13.2 spent so much to establish. A real `day=`
+parameter is the version that doesn't pay that at all, and it is a small
+backend change worth making the next time this page is opened.
+
+**So the page now has to know what today is before it asks anything.** It used
+to read that off the response (`until` minus `days_ahead`), which meant the
+browser's clock never entered into it. `todayCentral()` computes it instead,
+through `Intl` in `America/Chicago` — the zone the backend cuts days in. The
+zone question, which was the real one, is still answered exactly: a reader in
+Auckland is a day ahead of the boundary and still opens on the right slate.
+What's left is a trust in the reader's *clock*, and a clock wrong by hours
+across midnight opens the page a day off — visibly, in the date field and in the
+heading, which is what makes that recoverable rather than baffling.
 
 **The league picker keeps the league it's set to, even in a window with none of
 its games.** Its options are built from the games that loaded, so a link that
@@ -1379,15 +1421,11 @@ blank. And the page underneath has to say *which* empty page it is: an evening
 with nothing on, or a filter hiding the games there are. The second one says so,
 counts what it's hiding, and carries the way out of it in the same sentence.
 
-Days are grouped, and ordered **today, tomorrow, then backwards**. Not
-chronological in either direction: chronological buries tonight's games under
-two days of box scores, and reverse-chronological puts tomorrow above them.
-
-Both the day grouping and the tip-off times are stated in US Central — the zone
+Both the day boundary and the tip-off times are stated in US Central — the zone
 endgame's jobs think in, and the one the window is cut in. The alternative,
 grouping in Central and printing times in the reader's own zone, produces a page
 that argues with itself: a 9pm game filed under "Today" and labelled 2:00 AM.
-One zone, named once above the tables, is the version that can't.
+One zone, named once above the table, is the version that can't.
 
 ### 13.5 Reading a season file whose `Game` isn't the `Game` we installed
 

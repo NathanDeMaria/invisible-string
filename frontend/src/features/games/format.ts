@@ -182,6 +182,58 @@ function localMidnight(day: string): Date {
   return new Date(year, month - 1, date);
 }
 
+/** The inverse: a local Date back to the `YYYY-MM-DD` the API speaks. */
+function isoDay(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/**
+ * Today, in the zone the games are filed under.
+ *
+ * The page asks the API for a day as an offset from today, so it has to know
+ * what today is *before* it has asked anything -- which rules out deriving it
+ * from a response. Read through `Intl` in `GAME_TZ` rather than off the local
+ * clock's own date: a reader in Auckland is a day ahead of the boundary these
+ * games are cut on, and would otherwise open the page on tomorrow.
+ *
+ * What's left is a trust in the reader's *clock*, where before there was none.
+ * A clock wrong by hours across midnight opens the page a day off -- and says
+ * which day it opened on, in the picker and in the heading, which is the part
+ * that makes it recoverable rather than confusing.
+ */
+export function todayCentral(at: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: GAME_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const part = (type: string) =>
+    parts.find((piece) => piece.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+/** The day `delta` days from `day`, which is what the arrows move by. */
+export function shiftDay(day: string, delta: number): string {
+  const at = localMidnight(day);
+  at.setDate(at.getDate() + delta);
+  return isoDay(at);
+}
+
+/**
+ * A `YYYY-MM-DD` out of a query string, or null if it isn't one.
+ *
+ * The shape check isn't enough on its own: `2026-02-31` matches it and isn't a
+ * date, and `Date` rolls it forward to March rather than refusing. So the
+ * answer is the round trip -- a day that doesn't come back unchanged was never
+ * a day, and gets the same treatment as a missing one.
+ */
+export function parseDay(raw: string | null | undefined): string | null {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  return isoDay(localMidnight(raw)) === raw ? raw : null;
+}
+
 /** Whole days from `from` to `day`; negative for a day in the past. */
 export function daysBetween(from: string, day: string): number {
   return Math.round(
@@ -207,33 +259,4 @@ export function dayLabel(day: string, today: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-/**
- * Where a day sorts on the page: today, then forward, then backwards.
- *
- * Not simple chronological order, in either direction. Today is what the page
- * is for, so it goes first and tomorrow's slate follows it; the finished days
- * run backwards underneath, which is the direction anything time-ordered is
- * read. Purely chronological would bury tonight's games under two days of box
- * scores, and reverse-chronological would put tomorrow above them.
- */
-export function dayRank(day: string, today: string): number {
-  const delta = daysBetween(today, day);
-  return delta >= 0 ? delta : 1000 - delta;
-}
-
-/**
- * The day "today" was when the window was cut, in the zone the backend counts
- * days in.
- *
- * Derived from the response rather than from the browser's clock: the window
- * is cut in US Central (DESIGN.md §13), and a reader in another zone asking
- * their own clock would label the wrong group "Today" for part of the day.
- */
-export function todayOf(window: { until: string; days_ahead: number }): string {
-  const day = localMidnight(window.until);
-  day.setDate(day.getDate() - window.days_ahead);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
 }
