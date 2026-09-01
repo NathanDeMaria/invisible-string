@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { useGetGamesQuery } from "../../services/api";
+import { useGetGamesQuery, type GameRow } from "../../services/api";
 import { atsCall, modelEdge } from "./ats";
 import { GameTable } from "./GameTable";
+import { byLeagueThenRating } from "./order";
 import { count } from "../jobs/format";
 import {
   dayLabel,
@@ -22,6 +23,12 @@ import {
  */
 const MAX_BACK = 7;
 const MAX_AHEAD = 7;
+
+/** One day's games, and which day they are -- what the page renders from. */
+interface Day {
+  day: string;
+  games: GameRow[];
+}
 
 const ALL = "";
 
@@ -76,12 +83,51 @@ export function GamesPage() {
 
   const goTo = (value: string) => update({ day: dayParam(value, today) });
 
-  // The window can hold days either side of the one being shown -- see the
-  // query above -- so the day is a filter here and not just a request.
-  const all = useMemo(
-    () => (games.data?.games ?? []).filter((game) => game.day === day),
-    [games.data, day],
+  // Whether the response in hand actually answers the day being asked about.
+  //
+  // It often doesn't, and `data` alone can't tell you: while a new day is in
+  // flight RTK Query keeps serving the *previous* one's response, which is
+  // the difference between `isFetching` and `isLoading`. Filtering that by
+  // the new day finds nothing -- which is how stepping to a day used to
+  // flash "No games on this day" before the games arrived.
+  //
+  // The window it was read for is what settles it, and settles it better than
+  // tracking which request is outstanding would: a response fetched for
+  // yesterday covers today too (the window is anchored on today either way),
+  // so stepping forward renders from it immediately instead of waiting on a
+  // request for games already in hand.
+  const answers =
+    games.data && day >= games.data.since && day <= games.data.until
+      ? games.data
+      : null;
+
+  // The window can hold days either side of the one being shown, so the day
+  // is a filter here and not just a request.
+  const arrived = useMemo(
+    () =>
+      answers
+        ? { day, games: answers.games.filter((game) => game.day === day) }
+        : null,
+    [answers, day],
   );
+
+  // The last day that actually rendered. A day the cache hasn't got is a new
+  // query with no data, and blanking the page to a one-word "Loading" for it
+  // loses the reader's place on every arrow press. So the day being left
+  // stays up, greyed and marked busy, until the next one is here -- which
+  // also means the page never changes height under a click.
+  //
+  // Written during render on purpose: an effect would need a second pass to
+  // put it back, and that pass is the flash this exists to avoid.
+  const shown = useRef<Day | null>(null);
+  if (arrived) shown.current = arrived;
+  const view = arrived ?? shown.current;
+  // Real content, from a day that is no longer the one the picker is on.
+  const stale = arrived === null && view !== null;
+
+  // Memoized because the two derivations below key off it, and `view` is
+  // itself stable: `arrived` is memoized, and the fallback is a ref's value.
+  const all = useMemo(() => view?.games ?? [], [view]);
   // The leagues playing that day, plus whichever one is selected even when
   // none of its games are. Dropping it would leave the select with a value it
   // has no option for -- which renders blank, and hides the reason the page
@@ -96,14 +142,18 @@ export function GamesPage() {
       ].sort(),
     [all, league],
   );
-  const shown = useMemo(
-    () => (league ? all.filter((game) => game.league === league) : all),
+  // League, then the best team in the game -- see `order.ts`. Sorted here
+  // rather than by the API, which has no ratings in front of it and orders a
+  // window the only way a window can be ordered: by time.
+  const listed = useMemo(
+    () =>
+      byLeagueThenRating(league ? all.filter((g) => g.league === league) : all),
     [all, league],
   );
 
-  const hindsight = shown.some((game) => game.prediction?.in_sample);
-  const priced = shown.some((game) => modelEdge(game) !== null);
-  const graded = shown.some((game) => atsCall(game) !== null);
+  const hindsight = listed.some((game) => game.prediction?.in_sample);
+  const priced = listed.some((game) => modelEdge(game) !== null);
+  const graded = listed.some((game) => atsCall(game) !== null);
 
   return (
     <section className="games-page">
@@ -184,89 +234,113 @@ export function GamesPage() {
         <p className="error">
           Games are unavailable &mdash; the API didn&rsquo;t answer.
         </p>
-      ) : games.isLoading ? (
-        <p className="loading">Loading&hellip;</p>
       ) : (
         <>
-          {/* The day in words, which the date field can't say: "Yesterday" is
-              how anyone reading last night's scores thinks about them. */}
-          <h3>{dayLabel(day, today)}</h3>
-
-          {shown.length === 0 ? (
-            // Two different empty pages, and saying so is the whole point: a
-            // day with games on it that the league filter has hidden is not a
-            // day with nothing on, and a reader who set that filter on
-            // another day has no other way to tell them apart.
-            <p className="empty">
-              {league && all.length > 0 ? (
-                <>
-                  No {league} games on this day &mdash;{" "}
-                  {count(all.length, "game")} in the other leagues.{" "}
-                  <button
-                    type="button"
-                    className="as-link"
-                    onClick={() => update({ league: null })}
-                  >
-                    Show all leagues
-                  </button>
-                </>
-              ) : (
-                "No games on this day."
-              )}
-            </p>
-          ) : (
+          {/* Something is moving for as long as the request is out. The page
+              below it may be a whole day's games or nothing at all, and either
+              way this is what separates "still coming" from "that's the
+              answer". */}
+          {games.isFetching && (
             <>
-              <p className="meta" data-testid="games-meta">
-                {count(shown.length, "game")} &middot; times {zoneLabel()}
+              <div className="loading-bar" aria-hidden="true" />
+              <p className="sr-only" role="status">
+                Loading games&hellip;
               </p>
-              <GameTable games={shown} />
-              <p className="meta">
-                Spreads are quoted from the home team&rsquo;s side, so -6.5
-                means the home side lays six and a half. The model column is
-                each league&rsquo;s lowest-Brier release.
-                {/* Said only when some row has a gap to explain. The rule
+            </>
+          )}
+
+          {view === null ? (
+            // The first load, and the only time there is nothing to keep up.
+            <p className="loading">Loading&hellip;</p>
+          ) : (
+            <div className={stale ? "stale" : undefined} aria-busy={stale}>
+              {/* The day in words, which the date field can't say:
+                  "Yesterday" is how anyone reading last night's scores thinks
+                  about them. Labelled from the day on screen rather than the
+                  one in the picker -- while a new day loads those differ, and
+                  the greyed table below belongs to the older one. */}
+              <h3>{dayLabel(view.day, today)}</h3>
+
+              {listed.length === 0 ? (
+                // Two different empty pages, and saying so is the whole point: a
+                // day with games on it that the league filter has hidden is not a
+                // day with nothing on, and a reader who set that filter on
+                // another day has no other way to tell them apart.
+                <p className="empty">
+                  {league && all.length > 0 ? (
+                    <>
+                      No {league} games on this day &mdash;{" "}
+                      {count(all.length, "game")} in the other leagues.{" "}
+                      <button
+                        type="button"
+                        className="as-link"
+                        onClick={() => update({ league: null })}
+                      >
+                        Show all leagues
+                      </button>
+                    </>
+                  ) : (
+                    "No games on this day."
+                  )}
+                </p>
+              ) : (
+                <>
+                  <p className="meta" data-testid="games-meta">
+                    {count(listed.length, "game")} &middot; times {zoneLabel()}
+                  </p>
+                  <GameTable games={listed} />
+                  <p className="meta">
+                    Spreads are quoted from the home team&rsquo;s side, so -6.5
+                    means the home side lays six and a half. The model column is
+                    each league&rsquo;s lowest-Brier release.
+                    {/* Said only when some row has a gap to explain. The rule
                     itself is worth spelling out: the model never names a
                     side, so which one it picked is something the page
                     inferred from the two numbers rather than something the
                     model said. */}
-                {priced && (
-                  <>
-                    {" "}
-                    Under the book&rsquo;s number is how far the model&rsquo;s
-                    is from it, and which side that favours &mdash; &ldquo;home
-                    +4&rdquo; is the model giving the home team four points more
-                    than the book does. That side is the model&rsquo;s pick, in
-                    the only sense it has one: it names a number, not a team.
-                  </>
-                )}
-                {/* Only once a game on the page has actually been graded -- a
+                    {priced && (
+                      <>
+                        {" "}
+                        Under the book&rsquo;s number is how far the
+                        model&rsquo;s is from it, and which side that favours
+                        &mdash; &ldquo;home +4&rdquo; is the model giving the
+                        home team four points more than the book does. That side
+                        is the model&rsquo;s pick, in the only sense it has one:
+                        it names a number, not a team.
+                      </>
+                    )}
+                    {/* Only once a game on the page has actually been graded -- a
                     footnote about a mark that isn't there is one more thing to
                     go looking for, and the same is true of the dagger below
                     it. */}
-                {graded && (
-                  <>
-                    {" "}
-                    Once a game is final that pick has an answer, and the mark
-                    beside the model&rsquo;s number is it: &#10003; means that
-                    side covered, &#10007; that it didn&rsquo;t, and = that the
-                    game landed exactly on the number.
-                  </>
-                )}
-                {hindsight && (
-                  <>
-                    {" "}
-                    &dagger; marks a game whose result that release has already
-                    trained on, which makes the number &mdash; and any mark
-                    beside it &mdash; hindsight rather than a forecast.
-                  </>
-                )}{" "}
-                Scores arrive with the nightly scrape, so a game that has just
-                finished can still read as scheduled, and one being played now
-                shows no score rather than a stale one. Games with nothing to
-                report yet keep a dash; anything else &mdash; postponed, called
-                off, under way &mdash; says so in the result column.
-              </p>
-            </>
+                    {graded && (
+                      <>
+                        {" "}
+                        Once a game is final that pick has an answer, and the
+                        mark beside the model&rsquo;s number is it: &#10003;
+                        means that side covered, &#10007; that it didn&rsquo;t,
+                        and = that the game landed exactly on the number.
+                      </>
+                    )}
+                    {hindsight && (
+                      <>
+                        {" "}
+                        &dagger; marks a game whose result that release has
+                        already trained on, which makes the number &mdash; and
+                        any mark beside it &mdash; hindsight rather than a
+                        forecast.
+                      </>
+                    )}{" "}
+                    Scores arrive with the nightly scrape, so a game that has
+                    just finished can still read as scheduled, and one being
+                    played now shows no score rather than a stale one. Games
+                    with nothing to report yet keep a dash; anything else
+                    &mdash; postponed, called off, under way &mdash; says so in
+                    the result column.
+                  </p>
+                </>
+              )}
+            </div>
           )}
         </>
       )}

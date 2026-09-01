@@ -79,6 +79,16 @@ class GamePrediction(BaseModel):
     # True when the ratings behind this number already include this game's
     # result. Hindsight, not a forecast -- see the module docstring.
     in_sample: bool
+    # The two numbers the win probability was computed from, in the release's
+    # own scale. Not required to render a row -- `/api/leagues/{league}/ratings`
+    # already serves them per team -- but joined to the game here so a page
+    # that wants to put the night's best matchup first doesn't have to fetch a
+    # whole ratings table per league to find out which one that is (§13.4).
+    #
+    # Required rather than optional: `predict` returns None unless the release
+    # rates *both* teams, so a prediction without them can't be built.
+    home_rating: float
+    away_rating: float
 
 
 class GameRow(BaseModel):
@@ -222,6 +232,8 @@ class _Models:
                 home_win_prob=prob,
                 predicted_spread=_spread(model.margin, prob),
                 in_sample=_in_sample(model, game),
+                home_rating=model.release.ratings[game.home].rating,
+                away_rating=model.release.ratings[game.away].rating,
             )
         except Exception:  # noqa: BLE001 - see below
             # A predictor that raises on a matchup its own ratings cover is a

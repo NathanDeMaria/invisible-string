@@ -132,6 +132,10 @@ export interface components {
          * @description What one league's default release says about one game.
          */
         GamePrediction: {
+            /** Away Rating */
+            away_rating: number;
+            /** Home Rating */
+            home_rating: number;
             /** Home Win Prob */
             home_win_prob: number;
             /** In Sample */

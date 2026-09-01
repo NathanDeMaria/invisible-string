@@ -4,6 +4,14 @@
       "GamePrediction": {
         "description": "What one league's default release says about one game.",
         "properties": {
+          "away_rating": {
+            "title": "Away Rating",
+            "type": "number"
+          },
+          "home_rating": {
+            "title": "Home Rating",
+            "type": "number"
+          },
           "home_win_prob": {
             "title": "Home Win Prob",
             "type": "number"
@@ -37,7 +45,9 @@
           "run_id",
           "home_win_prob",
           "predicted_spread",
-          "in_sample"
+          "in_sample",
+          "home_rating",
+          "away_rating"
         ],
         "title": "GamePrediction",
         "type": "object"

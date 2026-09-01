@@ -359,16 +359,27 @@ const gameRow = (
   ...overrides,
 });
 
+/**
+ * The ratings the win probability came from, on the release's own scale.
+ *
+ * Defaulted rather than required on every call: only the ordering cares which
+ * game has the better team in it, and spelling two numbers onto rows that
+ * exist to test a status label would bury what those rows are for.
+ */
 const predicted = (
   spread: number,
   homeWinProb: number,
   inSample = false,
+  homeRating = 1600,
+  awayRating = 1500,
 ): GameRow["prediction"] => ({
   model: "glicko_tuned",
   run_id: "r1",
   home_win_prob: homeWinProb,
   predicted_spread: spread,
   in_sample: inSample,
+  home_rating: homeRating,
+  away_rating: awayRating,
 });
 
 export const games: GamesResponse = {

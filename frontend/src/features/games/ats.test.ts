@@ -45,6 +45,9 @@ const game = ({
           home_win_prob: 0.69,
           predicted_spread: model,
           in_sample: false,
+          // Nothing here reads them; the ordering is what ratings are for.
+          home_rating: 1600,
+          away_rating: 1500,
         },
   ...rest,
 });

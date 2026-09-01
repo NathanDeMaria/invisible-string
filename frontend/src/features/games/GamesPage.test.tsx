@@ -1,9 +1,9 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { isoDay } from "../../test/handlers";
+import { games as fixture, isoDay } from "../../test/handlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { GamesPage } from "./GamesPage";
@@ -16,10 +16,19 @@ import { GamesPage } from "./GamesPage";
  */
 const on = (offset: number) => ({ route: `/games?day=${isoDay(offset)}` });
 
-const heading = async () => {
-  await screen.findByRole("heading", { level: 3 });
-  return screen.getByRole("heading", { level: 3 }).textContent ?? "";
-};
+/**
+ * Waits for the day heading to say what it should.
+ *
+ * Waits rather than reads: the page keeps the day it's leaving on screen
+ * until the next one has arrived, so the heading right after an arrow press
+ * is still the old day -- on purpose, and briefly.
+ */
+const headingIs = (text: string) =>
+  waitFor(() =>
+    expect(screen.getByRole("heading", { level: 3 })).toHaveTextContent(
+      new RegExp(`^${text}$`),
+    ),
+  );
 
 const rowFor = async (team: string) => {
   const cell = await screen.findByText(new RegExp(team));
@@ -35,7 +44,7 @@ describe("GamesPage", () => {
 
     // The question a scoreboard answers is "what's on tonight", and the answer
     // used to be four days long with tonight's slate at the top of it.
-    expect(await heading()).toBe("Today");
+    await headingIs("Today");
     expect(await screen.findByText(/Duke @ Houston/)).toBeInTheDocument();
     // Yesterday's games are somewhere to go, not something to scroll past.
     expect(screen.queryByText(/Green Bay Packers @ Chicago Bears/)).toBeNull();
@@ -47,16 +56,16 @@ describe("GamesPage", () => {
     await screen.findAllByRole("table");
 
     await user.click(screen.getByLabelText("Previous day"));
-    expect(await heading()).toBe("Yesterday");
+    await headingIs("Yesterday");
     expect(
       await screen.findByText(/Green Bay Packers @ Chicago Bears/),
     ).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("Next day"));
-    expect(await heading()).toBe("Today");
+    await headingIs("Today");
 
     await user.click(screen.getByLabelText("Next day"));
-    expect(await heading()).toBe("Tomorrow");
+    await headingIs("Tomorrow");
   });
 
   it("goes straight to a day from the calendar", async () => {
@@ -108,7 +117,7 @@ describe("GamesPage", () => {
     expect(today).toBeEnabled();
     await user.click(today);
 
-    expect(await heading()).toBe("Today");
+    await headingIs("Today");
     expect(screen.getByRole("button", { name: "Today" })).toBeDisabled();
   });
 
@@ -136,15 +145,124 @@ describe("GamesPage", () => {
     // The shape check alone would pass 2026-02-31, which Date rolls forward
     // to March rather than refusing.
     renderApp(<GamesPage />, { route: "/games?day=2026-02-31" });
-    expect(await heading()).toBe("Today");
+    await headingIs("Today");
   });
 
   it("ignores a day past the horizon", async () => {
     // A link that outlived the week the API serves. Today is a better answer
     // to it than an empty page that looks like a broken one.
     renderApp(<GamesPage />, on(-30));
-    expect(await heading()).toBe("Today");
+    await headingIs("Today");
     expect(screen.getByLabelText("Day")).toHaveValue(isoDay(0));
+  });
+
+  it("groups the day by league, best game first inside each", async () => {
+    const row = (
+      id: string,
+      league: string,
+      rating: number | null,
+    ): unknown => ({
+      league,
+      game_id: id,
+      day: isoDay(0),
+      start: new Date().toISOString(),
+      home: `${id} Home`,
+      away: `${id} Away`,
+      neutral: false,
+      completed: false,
+      status: "STATUS_SCHEDULED",
+      home_score: null,
+      away_score: null,
+      market_spread: null,
+      prediction:
+        rating === null
+          ? null
+          : {
+              model: "glicko_tuned",
+              run_id: "r1",
+              home_win_prob: 0.6,
+              predicted_spread: -3,
+              in_sample: false,
+              home_rating: rating,
+              away_rating: rating - 200,
+            },
+    });
+
+    server.use(
+      http.get("/api/games", () =>
+        HttpResponse.json({
+          days_back: 0,
+          days_ahead: 0,
+          since: isoDay(0),
+          until: isoDay(0),
+          games: [
+            row("Nfl", "nfl", null),
+            row("Small", "mens", 1500),
+            row("Unrated", "mens", null),
+            row("Big", "mens", 1900),
+          ],
+        }),
+      ),
+    );
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // A single day's games are all within a few hours of each other, so
+    // ordering them by tip-off interleaves the leagues and makes a reader
+    // scanning for one of them read every row. League first, then the better
+    // team in the game -- and the mens game with no rating sorts to the end
+    // of its own league rather than off past the nfl.
+    expect(
+      screen
+        .getAllByRole("row")
+        .slice(1)
+        .map((r) => r.textContent),
+    ).toEqual([
+      expect.stringContaining("Big"),
+      expect.stringContaining("Small"),
+      expect.stringContaining("Unrated"),
+      expect.stringContaining("Nfl"),
+    ]);
+  });
+
+  it("keeps the day it's leaving on screen while the next one loads", async () => {
+    const user = userEvent.setup();
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    server.use(
+      http.get("/api/games", async ({ request }) => {
+        await delay(80);
+        const q = new URL(request.url).searchParams;
+        const since = isoDay(-Number(q.get("back") ?? 0));
+        const until = isoDay(Number(q.get("ahead") ?? 0));
+        return HttpResponse.json({
+          ...fixture,
+          since,
+          until,
+          games: fixture.games.filter((g) => g.day >= since && g.day <= until),
+        });
+      }),
+    );
+
+    await user.click(screen.getByLabelText("Previous day"));
+
+    // Blanking the page to a one-word "Loading" on every arrow press loses
+    // the reader's place and changes the page's height under their click. So
+    // the day being left stays up, marked busy -- and still labelled as the
+    // day it is, because the greyed table below belongs to it and not to the
+    // date now in the picker.
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading");
+    const leaving = screen.getByText(/Duke @ Houston/).closest("[aria-busy]");
+    expect(leaving).toHaveAttribute("aria-busy", "true");
+    expect(leaving).toHaveTextContent("Today");
+
+    // And then it swaps, and stops saying it's working.
+    expect(
+      await screen.findByText(/Green Bay Packers @ Chicago Bears/),
+    ).toBeInTheDocument();
+    await headingIs("Yesterday");
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
   it("says a day with nothing on it is empty", async () => {
