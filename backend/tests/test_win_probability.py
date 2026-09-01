@@ -107,7 +107,7 @@ class TestTheGameEndpoint:
         body = client.get(GAME).json()
         assert body["home"] == "Chicago Bears"
         assert body["away"] == "Green Bay Packers"
-        assert (body["home_score"], body["away_score"]) == (17, 24)
+        assert (body["home_score"], body["away_score"]) == (10, 14)
         assert body["market_spread"] == 6.5
 
     def test_carries_the_partition_its_plays_live_in(self, client: TestClient) -> None:
@@ -148,8 +148,11 @@ class TestTheGameEndpoint:
 
 class TestTheWinProbabilityEndpoint:
     def test_draws_the_curve(self, client: TestClient) -> None:
+        """One point per scrimmage snap. The fixture's six drives carry
+        sixteen of them; its kickoffs and extra points are the rows
+        `iter_states` drops, and the count is what says they were."""
         body = client.get(f"{GAME}/win-probability").json()
-        assert len(body["points"]) > 50
+        assert len(body["points"]) == 16
         assert all(0.0 <= p["home_win_prob"] <= 1.0 for p in body["points"])
 
     def test_the_points_run_down_the_clock(self, client: TestClient) -> None:
