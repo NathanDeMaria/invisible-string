@@ -23,11 +23,16 @@ from typing import Any
 
 import pytest
 from endgame.ncaabb.ncaabb import Season
-from endgame.types import Game, Week
+from endgame.types import Game, Week, group_games_into_weeks
 
-from app.endgame_pickle import RawGame, load_seasons
+from app.endgame_pickle import (
+    RawGame,
+    load_seasons,
+    numbered_weeks,
+    week_number,
+)
 
-from .conftest import NEW_GAME_FIELDS, as_endgames_game
+from .conftest import NEW_GAME_FIELDS, NewGame, as_endgames_game, new_game
 
 TIPOFF = datetime(2026, 3, 1, 20, 0)
 
@@ -165,3 +170,92 @@ def test_only_game_is_substituted() -> None:
     season = load_seasons(pickle.dumps([Season([Week([played], 1)], 2026)]))[0]
     assert isinstance(season, Season)
     assert isinstance(season.weeks[0], Week)
+
+
+class TestWeekNumbering:
+    """The other rule this module mirrors, and the one with a silent failure.
+
+    A week number here isn't a label -- it is the key the processed
+    play-by-play is written under (`processed/plays/.../week=NN/`). Getting it
+    wrong doesn't raise: it reads a real week's real plays and draws somebody
+    else's game. So the arithmetic is pinned against endgame's own, the way
+    `RawGame.FIELDS` is pinned against `Game._fields`.
+    """
+
+    # NCAAFB's, and the only league in the bucket that has one.
+    SEASON_START = (8, 20)
+
+    def test_matches_endgames_own_numbering(self) -> None:
+        games = [
+            new_game(datetime(2026, 8, 29, 19, 0), gid="1", status="STATUS_FINAL"),
+            new_game(datetime(2026, 9, 5, 15, 30), gid="2", status="STATUS_FINAL"),
+            new_game(datetime(2026, 11, 28, 12, 0), gid="3", status="STATUS_FINAL"),
+            new_game(datetime(2027, 1, 11, 19, 30), gid="4", status="STATUS_FINAL"),
+        ]
+        theirs = {
+            game.game_id: week.number
+            for week in group_games_into_weeks(games, 2026, self.SEASON_START)
+            for game in week.games
+        }
+        ours = {
+            game.game_id: week_number(game.date, 2026, self.SEASON_START)
+            for game in games
+        }
+        assert ours == theirs
+
+    def test_a_bowl_game_in_january_keeps_counting(self) -> None:
+        """The case the mirror exists for: NCAAFB runs past new year, and a
+        week numbered off the calendar year rather than the season's would
+        restart at 1 in January."""
+        assert week_number(datetime(2027, 1, 11), 2026, self.SEASON_START) > 18
+
+
+class TestNumberedWeeks:
+    def test_a_season_without_a_start_keeps_the_sources_numbers(self) -> None:
+        """The NFL. Its weeks are already chronological, so endgame walks them
+        in the source's own numbering and so does the plays job."""
+        played = new_game(TIPOFF, gid="401", status="STATUS_FINAL", completed=True)
+        with as_endgames_game(NewGame):
+            season = Season([Week([played], 7)], 2026)
+        assert [number for number, _ in numbered_weeks(season)] == [7]
+
+    def test_a_season_with_a_start_is_regrouped_by_date(self) -> None:
+        """NCAAFB. The source's week numbers aren't chronological, so both
+        endgame's plays job and this regroup the games by calendar week --
+        which means two games the source filed together can land apart."""
+        early = new_game(datetime(2026, 8, 29, 19, 0), gid="1", status="STATUS_FINAL")
+        late = new_game(datetime(2026, 9, 5, 19, 0), gid="2", status="STATUS_FINAL")
+        with as_endgames_game(NewGame):
+            season = Season([Week([early, late], 1)], 2026, None, (8, 20))
+        numbered = dict(numbered_weeks(season))
+        assert len(numbered) == 2
+        assert [
+            g.game_id for g in numbered[week_number(early.date, 2026, (8, 20))]
+        ] == ["1"]
+
+    def test_a_game_fetched_twice_is_only_in_one_week(self) -> None:
+        """A cross-division matchup comes back under both divisions, and the
+        copies needn't agree. Two copies in two calendar weeks would be two
+        rows on the page -- so they're pooled first, exactly as endgame's
+        `calendar_weeks` pools them."""
+        live = new_game(datetime(2026, 9, 5, 19, 0), gid="1", status="STATUS_SCHEDULED")
+        final = new_game(
+            datetime(2026, 9, 5, 19, 0), gid="1", status="STATUS_FINAL", completed=True
+        )
+        with as_endgames_game(NewGame):
+            season = Season([Week([live], 1), Week([final], 2)], 2026, None, (8, 20))
+        (games,) = [games for _, games in numbered_weeks(season)]
+        assert [(g.game_id, g.completed) for g in games] == [("1", True)]
+
+    def test_a_final_is_never_walked_back_to_a_live_game(self) -> None:
+        """`supersedes`, in the one form this needs. Copies of a game in
+        progress are fetched minutes apart, and whichever ran last is not
+        necessarily the one that saw the final whistle."""
+        final = new_game(
+            datetime(2026, 9, 5, 19, 0), gid="1", status="STATUS_FINAL", completed=True
+        )
+        live = new_game(datetime(2026, 9, 5, 19, 0), gid="1", status="STATUS_SCHEDULED")
+        with as_endgames_game(NewGame):
+            season = Season([Week([final], 1), Week([live], 2)], 2026, None, (8, 20))
+        (games,) = [games for _, games in numbered_weeks(season)]
+        assert [(g.game_id, g.completed) for g in games] == [("1", True)]

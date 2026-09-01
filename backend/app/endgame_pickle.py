@@ -41,12 +41,19 @@ Only `Game` is intercepted. `Season` and `Week` resolve to endgame's own
 classes as before: this walks them (`season.weeks`, `week.games`) rather than
 reading fields off them, so their layout isn't something this app has an
 opinion about.
+
+`numbered_weeks` is the one place that reads a few of their fields, and it is
+here rather than in `app.seasons` for the same reason `RawGame` is: it mirrors
+a rule endgame owns -- how a week is numbered -- because that number is a key
+into another prefix of the same bucket, and getting it wrong draws a curve
+from the wrong week's plays.
 """
 
 import io
 import logging
 import pickle
-from datetime import datetime
+from collections.abc import Iterator
+from datetime import date, datetime, timedelta
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -152,3 +159,72 @@ def load_seasons(raw: bytes) -> list[Any]:
     """
     loaded = _SeasonUnpickler(io.BytesIO(raw)).load()
     return loaded if isinstance(loaded, list) else [loaded]
+
+
+def _week_end(day: date) -> date:
+    """The Monday that closes the calendar week `day` falls in.
+
+    endgame's rule, mirrored: the AP poll is released on Monday-Sunday games,
+    so a week is keyed by the Monday after it.
+    """
+    return day + timedelta(days=7 - day.weekday())
+
+
+def week_number(moment: datetime, year: int, season_start: tuple[int, int]) -> int:
+    """Which calendar week of a season a game belongs to.
+
+    endgame's `_week_number`, mirrored here for the same reason `RawGame`
+    mirrors the field order: the number is a *key* into another prefix of the
+    bucket, and the class that computes it is the one this image can't pin.
+    `tests/test_endgame_pickle.py` pins the arithmetic against endgame's own
+    `group_games_into_weeks`, so a rule that moves upstream is a red check
+    rather than a curve drawn from the wrong week's plays.
+    """
+    return (
+        _week_end(moment.date()) - _week_end(date(year, *season_start))
+    ).days // 7 + 1
+
+
+def numbered_weeks(season: Any) -> Iterator[tuple[int, list[Any]]]:
+    """A season's weeks under the numbers endgame's own jobs key them by.
+
+    This is what makes a game's play-by-play findable. The processed plays
+    live at `processed/plays/league=.../season=.../week=NN/`, and endgame
+    writes them under "the week numbers `iter_weeks` walks" -- which is the
+    source's own numbering for the NFL, whose weeks are already chronological,
+    and calendar weeks counted from the start of the season for NCAAFB, whose
+    source numbering isn't. A season file says which it is: `season_start` is
+    set exactly when the games have to be regrouped.
+
+    Deliberately not `season.calendar_weeks`. Walking `season.weeks` is the
+    one thing this app already does to a `Season` (see the module docstring),
+    and reaching for a *property* that rebuilds the season through endgame's
+    `Week`, `supersedes` and `group_games_into_weeks` would make three more
+    pieces of a transitively-pinned package load-bearing for the games page.
+    The regrouping itself is two dates and a subtraction.
+
+    Games are pooled by id first when there is regrouping to do, exactly as
+    `calendar_weeks` pools them: the same game comes back under more than one
+    division, and two copies in two calendar weeks would be two rows.
+    """
+    weeks = getattr(season, "weeks", [])
+    season_start = getattr(season, "season_start", None)
+    if season_start is None:
+        for week in weeks:
+            yield week.number, list(week.games)
+        return
+
+    year = season.year
+    pooled: dict[str, Any] = {}
+    for week in weeks:
+        for game in week.games:
+            seen = pooled.get(game.game_id)
+            # `supersedes`, in the one form this needs: later wins, except
+            # that a final is never walked back to a game still in progress.
+            if seen is None or game.completed or not seen.completed:
+                pooled[game.game_id] = game
+
+    grouped: dict[int, list[Any]] = {}
+    for game in pooled.values():
+        grouped.setdefault(week_number(game.date, year, season_start), []).append(game)
+    yield from grouped.items()

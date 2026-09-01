@@ -285,6 +285,18 @@ describe("GamesPage", () => {
     expect(screen.getByLabelText("Previous day")).toBeEnabled();
   });
 
+  it("makes every matchup a way into that game's own page", async () => {
+    // The row is a scoreboard line, so the things it can't fit -- the two
+    // ratings behind the number, the release that said it, the shape of the
+    // game -- live one click away rather than in a fifth column.
+    renderApp(<GamesPage />, on(-1));
+
+    const link = await screen.findByRole("link", {
+      name: /Green Bay Packers @ Chicago Bears/,
+    });
+    expect(link).toHaveAttribute("href", "/games/nfl/g-1");
+  });
+
   it("shows the model, the line and the result in one row", async () => {
     renderApp(<GamesPage />, on(-2));
 

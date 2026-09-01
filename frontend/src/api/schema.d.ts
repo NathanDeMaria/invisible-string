@@ -21,6 +21,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/games/{league}/{game_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Game
+         * @description Everything this app knows about one game.
+         *
+         *     The same row `/api/games` builds, from the same window and the same
+         *     release -- a game page that disagreed with the table it was reached from
+         *     would be worse than no game page. What it adds is the partition its plays
+         *     live in, and whether there's a model that could draw them.
+         *
+         *     404 for a game outside the week either side of today (see
+         *     `app.games.find_game`): the horizon is a cost cap, and a link that
+         *     outlived it should say so rather than render an empty page.
+         */
+        get: operations["get_game_api_games__league___game_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/games/{league}/{game_id}/win-probability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Win Probability */
+        get: operations["get_win_probability_api_games__league___game_id__win_probability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -127,6 +173,109 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * CurvePoint
+         * @description One snap of the curve.
+         *
+         *     Everything an axis label or a tooltip needs, so the page never goes back
+         *     to the plays: `period` and `clock_seconds` are what a point is *called*
+         *     ("Q3 7:22"), `seconds_remaining` is where it sits on the time axis, and
+         *     the two scores are what makes a step in the line legible.
+         *
+         *     `home_win_prob` is named for `GamePrediction.home_win_prob` beside it,
+         *     which is the same quantity asked before the game rather than during it.
+         */
+        CurvePoint: {
+            /** Away Score */
+            away_score: number;
+            /** Clock Seconds */
+            clock_seconds: number;
+            /** Home Score */
+            home_score: number;
+            /** Home Win Prob */
+            home_win_prob: number;
+            /** Period */
+            period: number;
+            /** Play Id */
+            play_id: string;
+            /** Play Number */
+            play_number: number;
+            /** Seconds Remaining */
+            seconds_remaining: number;
+        };
+        /**
+         * GameControl
+         * @description Share of the game each team spent winning it, weighted by the clock.
+         *
+         *     Not a win probability: 0.68 doesn't say the home team was ever 68% to
+         *     win, it says that averaged over the minutes, that's where the model had
+         *     them. `seconds` is what the average covers -- regulation only, since
+         *     college overtime has no clock to weight by -- and is on the wire so the
+         *     page can say so rather than implying a full sixty minutes.
+         */
+        GameControl: {
+            /** Away */
+            away: number;
+            /** Home */
+            home: number;
+            /** Seconds */
+            seconds: number;
+        };
+        /**
+         * GameDetail
+         * @description One game, with the two things only a page about *it* has room for.
+         *
+         *     `season` and `week` aren't schedule facts -- they're where endgame filed
+         *     this game's play-by-play, and the season file is the only place that says
+         *     (see `app.games.ScheduledGame`). They're on the wire because a reader
+         *     looking at one game may well want to know which week of which season it
+         *     was, and because they are what the curve below is fetched by.
+         *
+         *     `has_win_probability` says whether a fit exists *for the league*, which is
+         *     the question the page has before it asks for a curve: only football has
+         *     one, and asking for a basketball game's would be a request that can only
+         *     404. It does not promise a curve -- the game may have no play-by-play, and
+         *     most of an NCAAFB week doesn't.
+         */
+        GameDetail: {
+            /** Away */
+            away: string;
+            /** Away Score */
+            away_score: number | null;
+            /** Completed */
+            completed: boolean;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Game Id */
+            game_id: string;
+            /** Has Win Probability */
+            has_win_probability: boolean;
+            /** Home */
+            home: string;
+            /** Home Score */
+            home_score: number | null;
+            /** League */
+            league: string;
+            /** Market Spread */
+            market_spread: number | null;
+            /** Neutral */
+            neutral: boolean;
+            prediction: components["schemas"]["GamePrediction"] | null;
+            /** Season */
+            season: number | null;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /** Status */
+            status: string;
+            /** Week */
+            week: number | null;
+        };
         /**
          * GamePrediction
          * @description What one league's default release says about one game.
@@ -494,6 +643,49 @@ export interface components {
             /** Window Days */
             window_days: number;
         };
+        /**
+         * WinProbabilityFit
+         * @description Which fit drew this, and how much to trust it.
+         *
+         *     The counterpart of `GamePrediction`'s `model`/`run_id`: a number on a page
+         *     should say where it came from. `brier_score` and `log_loss` are the
+         *     package's own holdout scores, held out *by game* rather than by snap.
+         */
+        WinProbabilityFit: {
+            /** Brier Score */
+            brier_score: number;
+            /** League */
+            league: string;
+            /** Log Loss */
+            log_loss: number;
+            /** N Games */
+            n_games: number;
+            /** Run Id */
+            run_id: string;
+            /** Seasons */
+            seasons: number[];
+        };
+        /** WinProbabilityResponse */
+        WinProbabilityResponse: {
+            /** Away */
+            away: string;
+            /** Away Team Id */
+            away_team_id: string | null;
+            control: components["schemas"]["GameControl"] | null;
+            fit: components["schemas"]["WinProbabilityFit"];
+            /** Game Id */
+            game_id: string;
+            /** Home */
+            home: string;
+            /** Home Team Id */
+            home_team_id: string | null;
+            /** League */
+            league: string;
+            /** Points */
+            points: components["schemas"]["CurvePoint"][];
+            /** Trained On This Season */
+            trained_on_this_season: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -524,6 +716,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GamesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_game_api_games__league___game_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                league: string;
+                game_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GameDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_win_probability_api_games__league___game_id__win_probability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                league: string;
+                game_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WinProbabilityResponse"];
                 };
             };
             /** @description Validation Error */

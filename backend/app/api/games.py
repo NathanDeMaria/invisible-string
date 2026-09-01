@@ -49,6 +49,7 @@ from app.games import (
     GamesSource,
     GamesUnavailable,
     ScheduledGame,
+    find_game,
     get_games_source,
 )
 from app.releases import (
@@ -59,6 +60,7 @@ from app.releases import (
     resolve_release,
 )
 from app.schema import ModelRelease
+from app.win_probability import fit_for
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +171,65 @@ def get_games(
             )
             for game in window.games
         ],
+    )
+
+
+class GameDetail(GameRow):
+    """One game, with the two things only a page about *it* has room for.
+
+    `season` and `week` aren't schedule facts -- they're where endgame filed
+    this game's play-by-play, and the season file is the only place that says
+    (see `app.games.ScheduledGame`). They're on the wire because a reader
+    looking at one game may well want to know which week of which season it
+    was, and because they are what the curve below is fetched by.
+
+    `has_win_probability` says whether a fit exists *for the league*, which is
+    the question the page has before it asks for a curve: only football has
+    one, and asking for a basketball game's would be a request that can only
+    404. It does not promise a curve -- the game may have no play-by-play, and
+    most of an NCAAFB week doesn't.
+    """
+
+    season: int | None
+    week: int | None
+    has_win_probability: bool
+
+
+@router.get("/games/{league}/{game_id}")
+def get_game(
+    league: str,
+    game_id: str,
+    source: GamesSource = Depends(get_games_source),
+    store: ReleaseStore = Depends(get_release_store),
+) -> GameDetail:
+    """Everything this app knows about one game.
+
+    The same row `/api/games` builds, from the same window and the same
+    release -- a game page that disagreed with the table it was reached from
+    would be worse than no game page. What it adds is the partition its plays
+    live in, and whether there's a model that could draw them.
+
+    404 for a game outside the week either side of today (see
+    `app.games.find_game`): the horizon is a cost cap, and a link that
+    outlived it should say so rather than render an empty page.
+    """
+    try:
+        game = find_game(source, league, game_id)
+    except GamesUnavailable as exc:
+        log.warning("serving 502 for game %s/%s: %s", league, game_id, exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if game is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(f"no {league} game {game_id} in the week either side of today"),
+        )
+
+    return GameDetail(
+        **game.model_dump(),
+        day=game.day,
+        prediction=_Models(store).predict(game),
+        has_win_probability=fit_for(league) is not None,
     )
 
 

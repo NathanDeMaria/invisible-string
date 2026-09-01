@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import type { GameRow } from "../../services/api";
 import { type AtsResult, atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
 import {
@@ -67,9 +69,15 @@ export function GameTable({ games }: Props) {
           return (
             <tr key={`${game.league}-${game.game_id}`}>
               <td>
-                <span className="job-name">
+                {/* The matchup is the link, because it is what the row is
+                    about -- and because a separate "details" affordance in a
+                    four-column table is a fifth column. */}
+                <Link
+                  className="job-name"
+                  to={`/games/${game.league}/${game.game_id}`}
+                >
                   {game.away} {game.neutral ? "vs" : "@"} {game.home}
-                </span>
+                </Link>
                 <span className="when">
                   {game.league} &middot; {tipoff(game.start)}
                 </span>

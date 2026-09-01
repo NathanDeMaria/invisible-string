@@ -1,6 +1,211 @@
 {
   "components": {
     "schemas": {
+      "CurvePoint": {
+        "description": "One snap of the curve.\n\nEverything an axis label or a tooltip needs, so the page never goes back\nto the plays: `period` and `clock_seconds` are what a point is *called*\n(\"Q3 7:22\"), `seconds_remaining` is where it sits on the time axis, and\nthe two scores are what makes a step in the line legible.\n\n`home_win_prob` is named for `GamePrediction.home_win_prob` beside it,\nwhich is the same quantity asked before the game rather than during it.",
+        "properties": {
+          "away_score": {
+            "title": "Away Score",
+            "type": "integer"
+          },
+          "clock_seconds": {
+            "title": "Clock Seconds",
+            "type": "integer"
+          },
+          "home_score": {
+            "title": "Home Score",
+            "type": "integer"
+          },
+          "home_win_prob": {
+            "title": "Home Win Prob",
+            "type": "number"
+          },
+          "period": {
+            "title": "Period",
+            "type": "integer"
+          },
+          "play_id": {
+            "title": "Play Id",
+            "type": "string"
+          },
+          "play_number": {
+            "title": "Play Number",
+            "type": "integer"
+          },
+          "seconds_remaining": {
+            "title": "Seconds Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "play_id",
+          "play_number",
+          "period",
+          "clock_seconds",
+          "seconds_remaining",
+          "home_score",
+          "away_score",
+          "home_win_prob"
+        ],
+        "title": "CurvePoint",
+        "type": "object"
+      },
+      "GameControl": {
+        "description": "Share of the game each team spent winning it, weighted by the clock.\n\nNot a win probability: 0.68 doesn't say the home team was ever 68% to\nwin, it says that averaged over the minutes, that's where the model had\nthem. `seconds` is what the average covers -- regulation only, since\ncollege overtime has no clock to weight by -- and is on the wire so the\npage can say so rather than implying a full sixty minutes.",
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "number"
+          },
+          "home": {
+            "title": "Home",
+            "type": "number"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "home",
+          "away",
+          "seconds"
+        ],
+        "title": "GameControl",
+        "type": "object"
+      },
+      "GameDetail": {
+        "description": "One game, with the two things only a page about *it* has room for.\n\n`season` and `week` aren't schedule facts -- they're where endgame filed\nthis game's play-by-play, and the season file is the only place that says\n(see `app.games.ScheduledGame`). They're on the wire because a reader\nlooking at one game may well want to know which week of which season it\nwas, and because they are what the curve below is fetched by.\n\n`has_win_probability` says whether a fit exists *for the league*, which is\nthe question the page has before it asks for a curve: only football has\none, and asking for a basketball game's would be a request that can only\n404. It does not promise a curve -- the game may have no play-by-play, and\nmost of an NCAAFB week doesn't.",
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "string"
+          },
+          "away_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Score"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "has_win_probability": {
+            "title": "Has Win Probability",
+            "type": "boolean"
+          },
+          "home": {
+            "title": "Home",
+            "type": "string"
+          },
+          "home_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Score"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "market_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Spread"
+          },
+          "neutral": {
+            "title": "Neutral",
+            "type": "boolean"
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GamePrediction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "week": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week"
+          }
+        },
+        "required": [
+          "league",
+          "game_id",
+          "start",
+          "day",
+          "home",
+          "away",
+          "neutral",
+          "completed",
+          "status",
+          "home_score",
+          "away_score",
+          "market_spread",
+          "prediction",
+          "season",
+          "week",
+          "has_win_probability"
+        ],
+        "title": "GameDetail",
+        "type": "object"
+      },
       "GamePrediction": {
         "description": "What one league's default release says about one game.",
         "properties": {
@@ -929,6 +1134,128 @@
         ],
         "title": "VolumeResponse",
         "type": "object"
+      },
+      "WinProbabilityFit": {
+        "description": "Which fit drew this, and how much to trust it.\n\nThe counterpart of `GamePrediction`'s `model`/`run_id`: a number on a page\nshould say where it came from. `brier_score` and `log_loss` are the\npackage's own holdout scores, held out *by game* rather than by snap.",
+        "properties": {
+          "brier_score": {
+            "title": "Brier Score",
+            "type": "number"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "log_loss": {
+            "title": "Log Loss",
+            "type": "number"
+          },
+          "n_games": {
+            "title": "N Games",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Seasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "run_id",
+          "seasons",
+          "n_games",
+          "brier_score",
+          "log_loss"
+        ],
+        "title": "WinProbabilityFit",
+        "type": "object"
+      },
+      "WinProbabilityResponse": {
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "string"
+          },
+          "away_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Team Id"
+          },
+          "control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fit": {
+            "$ref": "#/components/schemas/WinProbabilityFit"
+          },
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "home": {
+            "title": "Home",
+            "type": "string"
+          },
+          "home_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Team Id"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CurvePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "trained_on_this_season": {
+            "title": "Trained On This Season",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "league",
+          "game_id",
+          "home",
+          "away",
+          "home_team_id",
+          "away_team_id",
+          "fit",
+          "control",
+          "points",
+          "trained_on_this_season"
+        ],
+        "title": "WinProbabilityResponse",
+        "type": "object"
       }
     }
   },
@@ -994,6 +1321,103 @@
           }
         },
         "summary": "Get Games"
+      }
+    },
+    "/api/games/{league}/{game_id}": {
+      "get": {
+        "description": "Everything this app knows about one game.\n\nThe same row `/api/games` builds, from the same window and the same\nrelease -- a game page that disagreed with the table it was reached from\nwould be worse than no game page. What it adds is the partition its plays\nlive in, and whether there's a model that could draw them.\n\n404 for a game outside the week either side of today (see\n`app.games.find_game`): the horizon is a cost cap, and a link that\noutlived it should say so rather than render an empty page.",
+        "operationId": "get_game_api_games__league___game_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "game_id",
+            "required": true,
+            "schema": {
+              "title": "Game Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GameDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Game"
+      }
+    },
+    "/api/games/{league}/{game_id}/win-probability": {
+      "get": {
+        "operationId": "get_win_probability_api_games__league___game_id__win_probability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "game_id",
+            "required": true,
+            "schema": {
+              "title": "Game Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WinProbabilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Win Probability"
       }
     },
     "/api/jobs": {

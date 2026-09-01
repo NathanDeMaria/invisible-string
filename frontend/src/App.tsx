@@ -6,6 +6,7 @@ import {
   useLocation,
 } from "react-router-dom";
 
+import { GamePage } from "./features/games/GamePage";
 import { GamesPage } from "./features/games/GamesPage";
 import { JobsPage } from "./features/jobs/JobsPage";
 import { LeagueLayout } from "./features/league/LeagueLayout";
@@ -54,6 +55,11 @@ export function App() {
               segment outranks a dynamic one, so neither of these is ever
               read as a league. */}
           <Route path="/games" element={<GamesPage />} />
+          {/* Under /games rather than under the league tabs, because
+              that is where it is reached from and what "back" should
+              mean -- a game belongs to a night, and the nav above nests
+              panels under a league. */}
+          <Route path="/games/:league/:gameId" element={<GamePage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/:league" element={<LeagueLayout />}>
             <Route index element={<Navigate to="ratings" replace />} />

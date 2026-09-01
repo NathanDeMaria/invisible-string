@@ -3,7 +3,10 @@
 A webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
 results: current ratings per league, win probability / predicted spread for a
 hypothetical matchup, and the games around today with the best model's number
-beside the book's. See [DESIGN.md](./DESIGN.md).
+beside the book's. A football game gets a page of its own, with its in-game win
+probability drawn from
+[the-lucky-ones](https://github.com/NathanDeMaria/the-lucky-ones). See
+[DESIGN.md](./DESIGN.md).
 
 ```
 infra/      terraform: CI OIDC roles now; App Runner, ECR, Batch to come
@@ -95,6 +98,7 @@ fails a build instead of becoming `undefined` in the browser.
 | `INVISIBLE_STRING_BATCH_JOB_QUEUE` | unset | endgame's Batch queue (name or ARN), for the job health dashboard. |
 | `INVISIBLE_STRING_ENDGAME_BUCKET` | unset | endgame's bucket. Listed for odds volume, and season files are read to count games. |
 | `INVISIBLE_STRING_JOBS_CACHE_TTL_SECONDS` | `60` | How long job health is served from memory before Batch and S3 are re-read. |
+| `INVISIBLE_STRING_PLAYS_CACHE_TTL_SECONDS` | `300` | How long one game's play-by-play is served from memory. Read out of the same endgame bucket as the games. |
 
 The last three are the job health dashboard (DESIGN.md §12), and they're read
 live rather than through an artifact. In a deploy, terraform sets the first two

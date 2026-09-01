@@ -20,6 +20,12 @@ export type SeasonObject = components["schemas"]["SeasonObject"];
 export type GamesResponse = components["schemas"]["GamesResponse"];
 export type GameRow = components["schemas"]["GameRow"];
 export type GamePrediction = components["schemas"]["GamePrediction"];
+export type GameDetail = components["schemas"]["GameDetail"];
+export type WinProbabilityResponse =
+  components["schemas"]["WinProbabilityResponse"];
+export type WinProbabilityFit = components["schemas"]["WinProbabilityFit"];
+export type CurvePoint = components["schemas"]["CurvePoint"];
+export type GameControl = components["schemas"]["GameControl"];
 
 export interface RatingsArgs {
   league: string;
@@ -38,6 +44,12 @@ export interface WindowArgs {
 export interface GamesArgs {
   back: number;
   ahead: number;
+}
+
+/** One game, by the two things that name it on the wire. */
+export interface GameArgs {
+  league: string;
+  gameId: string;
 }
 
 export interface PredictArgs {
@@ -82,6 +94,17 @@ export const api = createApi({
     getGames: builder.query<GamesResponse, GamesArgs>({
       query: ({ back, ahead }) => ({ url: "games", params: { back, ahead } }),
     }),
+    // The game page's two queries, against two endpoints, because they read
+    // two upstreams: a season pickle for the schedule and a parquet object
+    // for the plays. The chart being slow -- or absent -- must not hold up
+    // the game it belongs to.
+    getGame: builder.query<GameDetail, GameArgs>({
+      query: ({ league, gameId }) => `games/${league}/${gameId}`,
+    }),
+    getWinProbability: builder.query<WinProbabilityResponse, GameArgs>({
+      query: ({ league, gameId }) =>
+        `games/${league}/${gameId}/win-probability`,
+    }),
     predict: builder.query<PredictResponse, PredictArgs>({
       query: ({ league, home, away, neutral, model }) => ({
         url: "predict",
@@ -106,4 +129,6 @@ export const {
   useGetJobsQuery,
   useGetJobVolumeQuery,
   useGetGamesQuery,
+  useGetGameQuery,
+  useGetWinProbabilityQuery,
 } = api;

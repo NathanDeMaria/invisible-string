@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # TTL actually paces is the odds listing.
     games_cache_ttl_seconds: float = 300.0
 
+    # One game's play-by-play (DESIGN.md section 16), out of the same bucket.
+    # Separate from the window's TTL because it is a different read of a
+    # different object: a game's plays are rewritten while it is being played
+    # and never again, so this is short enough that a live game's curve keeps
+    # up and long enough that re-opening a finished one costs nothing.
+    plays_cache_ttl_seconds: float = 300.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
