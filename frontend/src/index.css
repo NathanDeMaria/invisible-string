@@ -248,6 +248,78 @@ nav.panels a.active {
   opacity: 0.55;
 }
 
+/* Something is moving while a request is out.
+ *
+ * A bar rather than a spinner: it sits where the content is about to be, in a
+ * page whose other horizontal rules are table borders, and it doesn't move the
+ * layout when it goes. Two pixels, in the accent that already means "this is
+ * the live one" in the nav. */
+.loading-bar {
+  height: 2px;
+  margin: 0 0 0.75rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.loading-bar::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 35%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: loading-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes loading-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+/* The day being left, while the next one is on its way. Greyed rather than
+   removed: the reader keeps their place, the page keeps its height, and an
+   arrow press stops meaning "blank the screen". Inert too -- the numbers
+   under the cursor are a day out of date, so the titles on them would be
+   answering a question about the wrong game. */
+.stale {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+
+/* Nothing about either of the two above reaches a screen reader, which gets
+   `aria-busy` and this instead. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* An indeterminate bar sliding forever is exactly the motion this setting is
+   about. Held still and full-width, so it still reads as "working". */
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar::after {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .stale {
+    transition: none;
+  }
+}
+
 .meta,
 .loading,
 .empty,

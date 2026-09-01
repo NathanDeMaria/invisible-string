@@ -1208,7 +1208,7 @@ bucket under the two prefixes §12.2 already spent the boundary on.
 |---|---|
 | matchup, tip-off, score | `seasons/{year}/{league}.pkl` — the same objects §12.4 counts |
 | line | `odds/{league}/{day}/{HH-MM}.json` — the same objects §12.4 counts pulls of |
-| model spread, win probability | the league's default `ModelRelease`, via `predict_matchup` |
+| model spread, win probability, the two teams' ratings | the league's default `ModelRelease`, via `predict_matchup` |
 
 ```
 GET /api/games?back=2&ahead=1
@@ -1228,6 +1228,14 @@ ncaabb are keyed differently — games per gender (`mens`/`womens`), odds per
 league (`ncaabb`) — and declined to invent a join. None is needed here: odds
 objects are keyed by ESPN's `competition_id`, which is exactly `Game.game_id`,
 so a `mens.pkl` game finds its line in an `odds/ncaabb/` pull by id alone.
+
+**The prediction carries the two ratings it was computed from.** Nothing on
+the row renders them — `/api/leagues/{league}/ratings` already serves them per
+team, and this page is about the two spreads. They are here so the page can put
+the night's best matchup first (§13.4) without fetching a whole ratings table
+per league to find out which game that is. They ride along at no cost: the
+release is already open in front of `predict`, and it declines to predict at all
+unless it rates both sides, so a prediction without them can't be built.
 
 **Both spreads are quoted from the home side.** `predicted_spread` already is
 (§3), and cassandra's own betting metrics read the book's the same way — a home
@@ -1368,6 +1376,41 @@ with four tables and a rule about which order to read them in is a page you have
 to learn. So the window collapses to a single day, and the days either side
 become somewhere to *go* rather than something to scroll through: an arrow at a
 time, or straight to a date.
+
+**Within a day: league, then the best team in the game.** The API orders a
+window the only way a window can be ordered, by tip-off, and while the page
+*was* a window that was the order it was read in. On a single day it answers a
+question nobody asked — the games are all within a few hours of each other, so
+sorting by time interleaves the leagues and makes a reader scanning for one
+league's slate read every row to find it. League first fixes that, and it is
+also what makes the second key mean anything: ratings are comparable within a
+league and not across them, since each release has its own scale.
+
+The *better* of the two teams rather than an average, because a top side
+playing a cupcake is a bigger game than two mid-table ones and the average says
+the opposite. A game the model can't rate sorts last inside its own league
+rather than off the bottom of the page: "nothing to say about this one" is a
+reason to read it after the ones there is something to say about. Ties fall to
+tip-off and then to the game id, so the order is total — two equally rated
+games trading places between renders would look like a page still loading.
+
+**A day that hasn't arrived keeps the day it's replacing on screen**, greyed and
+`aria-busy`, under an indeterminate bar. Blanking to a one-word "Loading" on
+every arrow press loses the reader's place and changes the page's height under
+their click. The heading stays with the greyed table rather than jumping ahead
+to the date now in the picker, because the games under it are still the old
+day's.
+
+Which response answers which day is a real question, not a formality. RTK Query
+keeps serving the *previous* day's response while the next is in flight — that
+is the whole difference between `isFetching` and `isLoading` — so `data` alone
+cannot say whether it covers the day being asked about, and filtering it by the
+new day finds nothing. That is not hypothetical: it is what made stepping to a
+day flash "No games on this day" before its games appeared. The window the
+response was read for settles it, and settles it better than tracking the
+outstanding request would — a response fetched for yesterday covers today as
+well, since the window is anchored on today either way, so stepping forward
+renders from what is already in hand instead of waiting on a request for it.
 
 The three controls are one group because they set one value. The arrows are what
 a reader moving through a week actually uses, so they sit in the row rather than

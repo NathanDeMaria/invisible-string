@@ -27,7 +27,7 @@ from app.games import (
     window_bounds,
 )
 from app.main import create_app
-from app.releases import ReleaseStore, get_release_store
+from app.releases import ReleaseStore, get_release_store, resolve_release
 
 from .conftest import FIXTURES
 
@@ -184,6 +184,29 @@ class TestGamesEndpoint:
         predicted = [g["prediction"] for g in mens if g["prediction"]]
         assert predicted
         assert {p["model"] for p in predicted} == {"glicko_tuned"}
+
+    def test_a_prediction_carries_the_two_ratings_behind_it(
+        self, client: TestClient, store: ReleaseStore
+    ) -> None:
+        """The numbers the win probability was computed from, joined to the row.
+
+        Not needed to render one -- the ratings endpoint already serves them
+        per team -- but a page that wants the night's best matchup first would
+        otherwise fetch a whole ratings table per league to find out which
+        game that is.
+        """
+        mens = _by_league(client, "mens")
+        predicted = [g for g in mens if g["prediction"]]
+        assert predicted
+
+        release = resolve_release(store, "mens", None)
+        for row in predicted:
+            assert row["prediction"]["home_rating"] == pytest.approx(
+                release.ratings[row["home"]].rating
+            )
+            assert row["prediction"]["away_rating"] == pytest.approx(
+                release.ratings[row["away"]].rating
+            )
 
     def test_a_league_with_no_release_still_shows_its_games(
         self, client: TestClient
