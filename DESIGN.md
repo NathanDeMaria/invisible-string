@@ -2043,4 +2043,4 @@ says so in those words, and states the minutes it covers, because regulation is
 all it covers.
 
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
-[lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/commit/6a6ecb247668f829bb372db2e566bcda7b2f8414
+[lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/pull/1

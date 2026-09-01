@@ -1592,8 +1592,8 @@ fit = ["scikit-learn (>=1.8.0)"]
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/the-lucky-ones.git"
-reference = "6a6ecb247668f829bb372db2e566bcda7b2f8414"
-resolved_reference = "6a6ecb247668f829bb372db2e566bcda7b2f8414"
+reference = "d253c4b9ef266aab50afce435bf3d2b3ae50eb96"
+resolved_reference = "d253c4b9ef266aab50afce435bf3d2b3ae50eb96"
 
 [[package]]
 name = "markupsafe"
@@ -3553,4 +3553,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "274eabdccc4caf9257c27bc56195e241a4f64d686f5857ccdaf55dcd14193a7b"
+content-hash = "4025e0128b75d425f3f4fcbdc9522506648e8f424ac92889ee5316ccc4d17f56"

@@ -43,7 +43,7 @@ cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "785
 # parquet, one object per league-week, and reading one game out of one is
 # what makes a curve affordable at all. The solver behind `fit` buys nothing
 # here, and this is how the dependency says so.
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "6a6ecb247668f829bb372db2e566bcda7b2f8414", extras = ["data"] }
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "d253c4b9ef266aab50afce435bf3d2b3ae50eb96", extras = ["data"] }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"
