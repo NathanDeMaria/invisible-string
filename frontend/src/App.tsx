@@ -1,4 +1,5 @@
 import {
+  Link,
   NavLink,
   Navigate,
   Route,
@@ -23,30 +24,40 @@ export function App() {
   // make the outer tabs feel like they discard your place rather than move it.
   const panel = pathname.endsWith("/matchup") ? "matchup" : "ratings";
 
+  // Games and jobs span no league, or none in particular, so neither lives
+  // under one -- they're sections in their own right, alongside ratings
+  // rather than beneath it. Ratings is the odd one out: its own section is
+  // every `/:league` route, not a fixed path, since the league (and panel)
+  // stay in the URL rather than in this switch.
+  const section = pathname.startsWith("/games")
+    ? "games"
+    : pathname === "/jobs"
+      ? "jobs"
+      : "ratings";
+
   return (
     <div className="app">
       <header>
-        <div className="masthead">
-          <h1>invisible string</h1>
-          {/* Neither of these is a league tab or a panel: a night's games
-              span every league and job health belongs to none, so putting
-              either in either nav would say they sit under a league. */}
-          <div className="utilities">
-            <NavLink to="/games" className="utility">
-              Games
-            </NavLink>
-            <NavLink to="/jobs" className="utility">
-              Job health
-            </NavLink>
-          </div>
-        </div>
-        <nav aria-label="League">
-          {(leagues ?? []).map((entry) => (
-            <NavLink key={entry.league} to={`/${entry.league}/${panel}`}>
-              {entry.league}
-            </NavLink>
-          ))}
+        <h1>invisible string</h1>
+        <nav aria-label="Section">
+          <NavLink to="/games">Games</NavLink>
+          <Link
+            to={section === "ratings" ? pathname : "/mens/ratings"}
+            className={section === "ratings" ? "active" : undefined}
+          >
+            Ratings
+          </Link>
+          <NavLink to="/jobs">Jobs</NavLink>
         </nav>
+        {section === "ratings" && (
+          <nav aria-label="League" className="panels">
+            {(leagues ?? []).map((entry) => (
+              <NavLink key={entry.league} to={`/${entry.league}/${panel}`}>
+                {entry.league}
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </header>
       <main>
         <Routes>
