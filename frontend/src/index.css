@@ -75,10 +75,11 @@ nav a.active {
   border-bottom-color: var(--accent);
 }
 
-/* A league is the thing you pick first, so its tabs keep the underline and
-   the panels inside it read as secondary -- pills rather than a second row of
-   equals. Two identical tab bars stacked would flatten the nesting the markup
-   is there to express. */
+/* Games, Ratings and Jobs are the three things you pick first, so that row
+   keeps the underline; everything picked afterward -- a league under
+   Ratings, then a panel under that league -- reads as secondary, pills
+   rather than a second row of equals. Two identical tab bars stacked would
+   flatten the nesting the markup is there to express. */
 .league > h2 {
   font-size: 0.95rem;
   font-weight: 600;
@@ -381,34 +382,6 @@ table.ratings,
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0.5rem 0 1rem;
-}
-
-/* Job health ---------------------------------------------------------
-
-   Its own page rather than a panel, because it belongs to no league --
-   so the link to it sits beside the title instead of in either nav. */
-.masthead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.utilities {
-  display: flex;
-  gap: 0.9rem;
-}
-
-a.utility {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-a.utility:hover,
-a.utility.active {
-  color: var(--fg);
 }
 
 .jobs-page > h2 {
@@ -834,11 +807,6 @@ a.utility.active {
 
   .matchup .line {
     font-size: 1.3rem;
-  }
-
-  .masthead {
-    flex-wrap: wrap;
-    gap: 0.25rem;
   }
 
   /* Four columns is the most this table can hold on a phone, so the day
