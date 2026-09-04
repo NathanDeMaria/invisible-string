@@ -87,6 +87,11 @@ class FixturePlay(BaseModel):
     distance: int | None = None
     yardline: int | None = None
     play_type: str | None = None
+    # ESPN's sentence about the play, and the only place the *manner* of one
+    # is recorded: `lucky_ones.luck` reads it to find the fumbles and the
+    # contested passes (DESIGN.md 16.7). Nothing the model sees is built from
+    # it, so a fixture that leaves it out simply has no bounces in it.
+    text: str | None = None
     scoring_play: bool | None = None
     is_penalty: bool | None = None
     is_turnover: bool | None = None

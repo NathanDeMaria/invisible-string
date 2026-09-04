@@ -6,7 +6,7 @@ import {
   type GameDetail,
 } from "../../services/api";
 import { atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
-import { controlLabel, seasonRange } from "./curve";
+import { adjustedControlLabel, luckLabel, seasonRange } from "./curve";
 import {
   points as pointsOf,
   probability,
@@ -16,7 +16,11 @@ import {
   tipoff,
   zoneLabel,
 } from "./format";
-import { ScoringTable, WinProbabilityChart } from "./WinProbabilityChart";
+import {
+  LuckyPlaysTable,
+  ScoringTable,
+  WinProbabilityChart,
+} from "./WinProbabilityChart";
 
 /**
  * One game, and everything this app has on it.
@@ -215,16 +219,39 @@ export function GamePage() {
               <>
                 <WinProbabilityChart curve={curve.data} />
                 <p className="meta">
-                  {controlLabel(
+                  {adjustedControlLabel(
                     curve.data.control,
+                    curve.data.adjusted_control,
+                    curve.data.home,
+                  )}
+                  . Read either as a share of the game held, not as a win
+                  probability: they are the average of the lines above, weighted
+                  by how long each reading stood.
+                </p>
+                <p className="meta">
+                  {luckLabel(
+                    curve.data.luck,
                     curve.data.home,
                     curve.data.away,
+                  ) ??
+                    "Nothing in this game turned on a bounce the model can price"}
+                  . That is a total of win probability rather than a share, so
+                  the two sides don&rsquo;t add up to anything &mdash; it says
+                  how big the breaks were, where the pair above says what the
+                  game looks like without them.
+                  {!curve.data.records_defended_passes && (
+                    <>
+                      {" "}
+                      This game&rsquo;s play-by-play doesn&rsquo;t record the
+                      passes a defender got to, so only the fumbles are split
+                      here: charging a defense for the interceptions it made
+                      without crediting the balls it got a hand on would be
+                      worse than leaving them both alone.
+                    </>
                   )}
-                  . Read that as a share of the game held, not as a win
-                  probability: it is the average of the line above, weighted by
-                  how long each reading stood.
                 </p>
                 <ScoringTable curve={curve.data} />
+                <LuckyPlaysTable curve={curve.data} />
                 <p className="meta">
                   Drawn by the-lucky-ones&rsquo; {curve.data.fit.league} fit,
                   run {curve.data.fit.run_id} &mdash; fit on{" "}

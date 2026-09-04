@@ -11,7 +11,7 @@ two sections up.
 
 What this module is for is the join, which is the part neither package can do
 alone: a league name from a request, a game's plays out of endgame's bucket,
-and the fit that turns one into the other. Two rules shape it.
+and the fit that turns one into the other. Three rules shape it.
 
 **A league without a fit is not an error.** Only football has one -- there is
 no such thing as an in-game win probability model for a basketball game here --
@@ -23,6 +23,13 @@ a league with no readable release.
 for most of an NCAAFB week, none for a game that hasn't kicked off, and none
 for a week the transform hasn't run over. All of those come back as a curve
 with no points rather than as a 404: the game page still has a game on it.
+
+**A game is read once.** Everything below -- the curve, the same curve with
+the bounces split, the share of the game each side held either way, and what
+the bounces were worth -- comes off one walk of the plays and the states it
+builds. That is what upstream's `*_from_states` entry points are for
+(DESIGN.md 16.7), and it is the difference between four passes over a game and
+one.
 """
 
 import logging
@@ -32,7 +39,15 @@ from typing import Sequence
 from lucky_ones import MODELS, CurvePoint, GameControl, group_by_game
 from lucky_ones.bundled import BundledModel
 from lucky_ones.curve import game_control
+from lucky_ones.luck import (
+    LuckyWP,
+    adjusted_curve_from_states,
+    find_lucky_plays,
+    lucky_wp_from_states,
+    records_defended_passes,
+)
 from lucky_ones.plays import Play
+from lucky_ones.state import iter_states
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +65,44 @@ class Curve:
 
     Both are None on an empty curve, which is every case where there was
     nothing to score.
+
+    `points` and `adjusted` are the same snaps twice -- what happened, and
+    what the model makes of it with the fifty-fifty balls split evenly -- so
+    they are the same length and in the same order, and the API sends them as
+    two numbers on one point rather than as two series to line up.
     """
 
     home_team_id: str | None
     away_team_id: str | None
     points: list[CurvePoint]
+    adjusted: list[CurvePoint]
     control: GameControl | None
+    adjusted_control: GameControl | None
+    luck: LuckyWP | None
+    records_defended_passes: bool
+    """Whether this game's feed writes down the passes a defender got to.
+
+    The gate upstream puts on the interception half of the adjustment, and a
+    fact about *the feed* rather than about the football: whether a broken-up
+    pass is recorded follows the venue in NCAAFB and the era in the NFL. A
+    game that only records one side of that coin has its fumbles split and its
+    interceptions left alone, which is a smaller adjustment rather than a
+    fabricated one -- and the page says so, because "no interception was
+    adjusted here" and "nothing was intercepted" are different games.
+    """
+
+
+EMPTY = Curve(
+    home_team_id=None,
+    away_team_id=None,
+    points=[],
+    adjusted=[],
+    control=None,
+    adjusted_control=None,
+    luck=None,
+    records_defended_passes=False,
+)
+"""A game with nothing to draw. See `curve_for` for the three ways to get one."""
 
 
 def fit_for(league: str) -> BundledModel | None:
@@ -82,10 +129,10 @@ def fit_for(league: str) -> BundledModel | None:
 
 
 def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
-    """The curve for the one game `plays` belongs to.
+    """The curve for the one game `plays` belongs to, both ways.
 
-    Empty when there was nothing to draw. Three different reasons reach it and
-    none of them is an error:
+    `EMPTY` when there was nothing to draw. Three different reasons reach it
+    and none of them is an error:
 
     - no plays at all: ESPN has none for this game, or the week hasn't been
       processed yet.
@@ -94,10 +141,17 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
       feature in the game, so it doesn't guess and neither does this.
     - plays that are all kickoffs and clock stoppages, which `iter_states`
       drops -- so a game whose play-by-play is a stub scores no snaps.
+
+    Otherwise it is one walk of the game and four questions of the fit:
+    `find_lucky_plays` reads the play text once, and both metrics are handed
+    that same list, so they can differ about what a bounce was worth but never
+    about which plays bounced. The `*_from_states` pair each re-score the
+    realized curve, which is a matrix multiply over a few hundred rows and is
+    the price of upstream's two entry points staying independent.
     """
     games = group_by_game(plays)
     if not games:
-        return Curve(None, None, [], None)
+        return EMPTY
     if len(games) > 1:
         # One game's plays went in, so more than one coming out means the
         # filter that read them didn't filter. Worth saying out loud rather
@@ -108,10 +162,19 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
             ", ".join(game.game_id for game in games),
         )
     game = games[0]
-    points = fit.curve(game)
+    states = list(iter_states(game))
+    lucky = find_lucky_plays(game.plays)
+    adjusted = adjusted_curve_from_states(fit.model, states, lucky)
     return Curve(
         home_team_id=game.home_team_id,
         away_team_id=game.away_team_id,
-        points=points,
-        control=game_control(points),
+        points=adjusted.realized,
+        adjusted=adjusted.points,
+        control=game_control(adjusted.realized),
+        adjusted_control=game_control(adjusted.points),
+        # None rather than a pair of zeroes on a game with no snaps: "nothing
+        # bounced" is a real reading of a game that was played, and a stub
+        # play-by-play must not render as one.
+        luck=lucky_wp_from_states(fit.model, states, lucky) if states else None,
+        records_defended_passes=records_defended_passes(game.plays),
     )

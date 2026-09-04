@@ -18,9 +18,21 @@
  * of grinding is thirty -- and a chart that spaced them evenly would stretch
  * the frantic end of a game across half the width. It is the same weighting
  * `game_control` uses, and for the same reason.
+ *
+ * **A point carries two probabilities**, and the second one is drawn on the
+ * same axis as the first: `adjusted_win_prob` is the same snap with the
+ * game's fifty-fifty balls split evenly rather than credited to whoever they
+ * fell to. Two lines on one axis rather than two charts, because the whole
+ * reading of it is the gap between them -- see `gapPath` and the rail under
+ * the plot.
  */
 
-import type { CurvePoint, GameControl } from "../../services/api";
+import type {
+  CurvePoint,
+  GameControl,
+  LuckyBounces,
+  LuckySwing,
+} from "../../services/api";
 
 /** Four fifteen-minute quarters, which is what the x axis spans. */
 export const REGULATION_SECONDS = 3600;
@@ -34,8 +46,20 @@ export const PERIOD_SECONDS = 900;
  * would mean sizing it for "North Carolina State", and clipping it is what
  * happens when you size it for "Duke".
  */
-export const PLOT = { left: 34, right: 12, top: 10, bottom: 22 };
-export const VIEWBOX = { width: 640, height: 220 };
+export const PLOT = { left: 34, right: 12, top: 10, bottom: 56 };
+export const VIEWBOX = { width: 640, height: 248 };
+
+/**
+ * The rail of bounces under the plot: where its baseline sits, and how tall
+ * the biggest tick on it gets.
+ *
+ * Under the chart rather than on it. A bounce is a thing that happened at a
+ * moment, not a value on the win probability axis, and drawing it as a mark
+ * on the line would make it look like one -- the tick shares the plot's x
+ * axis and nothing else. Up is a break that went the home team's way, down is
+ * one that went the other, which is the same direction the curve above means.
+ */
+export const RAIL = { height: 14, floor: 0.02 };
 
 /**
  * Seconds of regulation gone by the time of a snap.
@@ -70,13 +94,41 @@ export function plotBox() {
   };
 }
 
-/** One snap's place in the plot. */
+/** One snap's place in the plot, on the curve that happened. */
 export function place(point: CurvePoint): Point {
+  return placeAt(point, point.home_win_prob);
+}
+
+/** The same snap on the curve with its bounces split. */
+export function placeAdjusted(point: CurvePoint): Point {
+  return placeAt(point, point.adjusted_win_prob);
+}
+
+/**
+ * A snap's x, and the y of whichever of its two probabilities is being drawn.
+ *
+ * The two curves share an axis and a time, so they share this: a second
+ * placement function would be the same arithmetic with one field swapped, and
+ * the field is the only thing that differs between the lines.
+ */
+export function placeAt(point: CurvePoint, probability: number): Point {
   const box = plotBox();
   return {
     x: box.x + acrossTheGame(point) * box.width,
-    y: box.y + (1 - point.home_win_prob) * box.height,
+    y: box.y + (1 - probability) * box.height,
   };
+}
+
+/**
+ * The rail's baseline, in viewBox units.
+ *
+ * Below the quarter labels rather than inside the plot, and close enough to
+ * them that the two read as one axis: the rail's whole meaning is the x it
+ * shares with the curve, and a band of empty space between them would make it
+ * a second chart.
+ */
+export function railY(): number {
+  return VIEWBOX.height - 22;
 }
 
 /** The y of a win probability, for the reference lines. */
@@ -100,22 +152,53 @@ export function secondsX(seconds: number): number {
  * as no path rather than as a broken one.
  */
 export function linePath(points: CurvePoint[]): string {
+  return pathThrough(points, place);
+}
+
+/**
+ * The other line: the same snaps with each bounce replaced by the average of
+ * its two branches, and every later point carrying the difference forward.
+ *
+ * Drawn from the same points as the realized line rather than from a second
+ * series, because that is what it is -- the API sends both numbers on one
+ * snap precisely so the two can never come apart here.
+ */
+export function adjustedLinePath(points: CurvePoint[]): string {
+  return pathThrough(points, placeAdjusted);
+}
+
+function pathThrough(
+  points: CurvePoint[],
+  at: (point: CurvePoint) => Point,
+): string {
   if (points.length === 0) return "";
   return points
     .map((point, index) => {
-      const { x, y } = place(point);
+      const { x, y } = at(point);
       return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
 }
 
-/** The same line closed down to the 50% rule, so the area can be filled. */
-export function areaPath(points: CurvePoint[]): string {
+/**
+ * The band between the two curves, as one closed path.
+ *
+ * The gap is the whole point of drawing them together -- it is the win
+ * probability the bounces are holding up -- so it gets a wash rather than
+ * being left as white space between two strokes. Down one line and back along
+ * the other, which closes cleanly whichever line is on top and however often
+ * they cross.
+ */
+export function gapPath(points: CurvePoint[]): string {
   if (points.length === 0) return "";
-  const first = place(points[0]);
-  const last = place(points[points.length - 1]);
-  const middle = probabilityY(0.5);
-  return `M${first.x.toFixed(1)} ${middle.toFixed(1)} ${linePath(points).slice(1)} L${last.x.toFixed(1)} ${middle.toFixed(1)} Z`;
+  const back = [...points]
+    .reverse()
+    .map((point) => {
+      const { x, y } = placeAdjusted(point);
+      return `L${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return `${linePath(points)} ${back} Z`;
 }
 
 /**
@@ -181,26 +264,6 @@ export function clockLabel(point: CurvePoint): string {
 }
 
 /**
- * Game control as a sentence, or null when there's nothing to say.
- *
- * Deliberately not phrased as a win probability. 0.68 doesn't say the home
- * team was ever 68% to win; it says that averaged over the minutes, that's
- * where the model had them -- so the words are "spent ... of the game ahead",
- * and the minutes it covers are stated because overtime isn't in them.
- */
-export function controlLabel(
-  control: GameControl | null | undefined,
-  home: string,
-  away: string,
-): string | null {
-  if (!control) return null;
-  const ahead = control.home >= control.away ? home : away;
-  const share = Math.max(control.home, control.away);
-  const minutes = Math.round(control.seconds / 60);
-  return `${ahead} held ${Math.round(share * 100)}% of the game, over ${minutes} minutes of regulation clock`;
-}
-
-/**
  * The seasons a fit was trained on, as a range where they're contiguous.
  *
  * Twenty years spelled out is a paragraph nobody reads, and "2006–2025" is
@@ -215,4 +278,121 @@ export function seasonRange(seasons: number[]): string {
   if (sorted.length === 1) return String(first);
   if (last - first + 1 === sorted.length) return `${first}–${last}`;
   return sorted.join(", ");
+}
+
+/** One bounce, placed on the rail under the plot. */
+export interface Tick {
+  swing: LuckySwing;
+  point: CurvePoint;
+  x: number;
+  /** Signed: up the rail for a break the home team got, down for the away. */
+  height: number;
+}
+
+/**
+ * The bounces, placed on the rail: where each one happened, and how big it
+ * was against the biggest one in this game.
+ *
+ * Scaled to the game rather than to a fixed axis, because the alternative is
+ * an axis whose top is a number nobody has a feel for -- a full turnover swing
+ * is worth wildly different amounts in the first quarter and the fourth. What
+ * the rail is for is "which of these were the big ones, and when", and that is
+ * a comparison inside one game. `RAIL.floor` is what stops a game of trivial
+ * bounces from drawing them at full height: below it, the ticks stay small
+ * because they were small.
+ *
+ * A swing whose play isn't on the curve is dropped rather than placed at
+ * zero. It shouldn't happen -- upstream only prices a bounce that is a snap
+ * with something after it -- and inventing an x for one would be a mark on
+ * the rail at a moment the game wasn't at.
+ */
+export function railTicks(points: CurvePoint[], swings: LuckySwing[]): Tick[] {
+  const biggest = Math.max(
+    RAIL.floor,
+    ...swings.map((swing) => Math.abs(swing.home_delta)),
+  );
+  const byPlay = new Map(points.map((point) => [point.play_id, point]));
+  const ticks: Tick[] = [];
+  for (const swing of swings) {
+    const point = byPlay.get(swing.play_id);
+    if (!point) continue;
+    ticks.push({
+      swing,
+      point,
+      x: place(point).x,
+      height: (swing.home_delta / biggest) * RAIL.height,
+    });
+  }
+  return ticks;
+}
+
+/**
+ * What a bounce is called, in the page's words rather than the wire's.
+ *
+ * An unknown kind is spelled out rather than dropped: `kind` is a string on
+ * the wire precisely because upstream may name a fifth coin one day, and a
+ * row that renders blank would be worse than one that reads oddly.
+ */
+export function kindLabel(kind: string): string {
+  const known: Record<string, string> = {
+    fumble_lost: "Fumble lost",
+    fumble_kept: "Fumble recovered",
+    pass_defended_interception: "Interception",
+    pass_defended_incomplete: "Pass broken up",
+  };
+  return known[kind] ?? kind.replace(/_/g, " ");
+}
+
+/**
+ * The pair of control numbers as a sentence, or null when there's nothing to
+ * compare.
+ *
+ * Three things it is careful about. It is said about the *home team* both
+ * times, which is what makes it a comparison -- `GameControl` names both
+ * sides, so a sentence that switched teams between the two numbers would read
+ * as a swing that isn't there. It is phrased as a share held rather than as a
+ * win probability: 58% doesn't say they were ever 58% to win, it says that
+ * averaged over the minutes, that's where the model had them. And it states
+ * the minutes, because regulation is all either number covers -- college
+ * overtime has no clock to weight by, so a game that went to one is averaged
+ * over less than sixty.
+ */
+export function adjustedControlLabel(
+  control: GameControl | null | undefined,
+  adjusted: GameControl | null | undefined,
+  home: string,
+): string | null {
+  if (!control || !adjusted) return null;
+  const minutes = Math.round(control.seconds / 60);
+  return (
+    `${home} held ${percent(control.home)} of the game, ` +
+    `and ${percent(adjusted.home)} of it with the fifty-fifty balls split ` +
+    `evenly, over ${minutes} minutes of regulation clock`
+  );
+}
+
+/**
+ * What the bounces were worth to each side, or null when nothing bounced.
+ *
+ * Deliberately not phrased as a share: the two totals are win probability in
+ * the units the curve is drawn in, and they do not sum to anything. "Worth
+ * 0.13 of win probability" is clumsier than "13%" and it is the honest
+ * version -- a percentage here would be read as a share of the game, which is
+ * the number two lines up.
+ */
+export function luckLabel(
+  luck: LuckyBounces | null | undefined,
+  home: string,
+  away: string,
+): string | null {
+  if (!luck || luck.swings.length === 0) return null;
+  return (
+    `The bounces were worth ${luck.home.toFixed(2)} of win probability to ` +
+    `${home} and ${luck.away.toFixed(2)} to ${away}`
+  );
+}
+
+/** A share of the game, rounded the way the sentences above read it. */
+function percent(share: number): string {
+  return `${Math.round(share * 100)}%`;
 }

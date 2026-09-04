@@ -21,6 +21,7 @@ bucket refusing to be read, exactly as on the games page.
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from lucky_ones import GameControl as LuckyOnesGameControl
 from pydantic import BaseModel
 
 from app.games import GamesSource, GamesUnavailable, find_game, get_games_source
@@ -55,6 +56,12 @@ class CurvePoint(BaseModel):
     home_score: int
     away_score: int
     home_win_prob: float
+    # The same snap with the game's coin flips split evenly rather than
+    # credited to whoever they fell to, carried forward from every bounce
+    # before it. Two numbers on one point rather than two series, because they
+    # are the same snaps in the same order and lining them up on the page
+    # would be work the wire can do once.
+    adjusted_win_prob: float
 
 
 class GameControl(BaseModel):
@@ -70,6 +77,51 @@ class GameControl(BaseModel):
     home: float
     away: float
     seconds: int
+
+
+class LuckySwing(BaseModel):
+    """One play whose result was decided by a bounce, priced both ways.
+
+    `realized` and `counterfactual` are the two branches as home win
+    probability: what the model made of the snap that followed, and what it
+    makes of the snap that would have followed had the ball gone the other
+    way. `retained` is how often the outcome that happened happens -- half a
+    fumble either way, a fifth of the contested passes -- so `home_delta` is
+    the part of the gap between the branches the *bounce* handed out rather
+    than the offense earning it.
+
+    `kind` is upstream's `LuckKind` on the wire: `fumble_lost`, `fumble_kept`,
+    `pass_defended_interception`, `pass_defended_incomplete`. Sent as its own
+    string rather than as prose so the page can name it in the page's own
+    words.
+    """
+
+    play_id: str
+    play_number: int
+    kind: str
+    retained: float
+    realized: float
+    counterfactual: float
+    # `realized - expected`: win probability the bounce handed the home team,
+    # negative when it went the other way.
+    home_delta: float
+
+
+class LuckyBounces(BaseModel):
+    """What the bounces were worth to each team over the game.
+
+    The accounting beside `adjusted_control`'s rewrite, and deliberately not a
+    share of anything: **`home` and `away` do not sum to 1**. Each is a total
+    of win probability in the units the curve is drawn in, so 0.18 reads as
+    "the breaks that went their way were worth eighteen points of win
+    probability more than those same plays were worth before the ball
+    landed". Two totals rather than one signed number because "both teams got
+    a big break" and "neither got one" are different games.
+    """
+
+    home: float
+    away: float
+    swings: list[LuckySwing]
 
 
 class WinProbabilityFit(BaseModel):
@@ -103,6 +155,20 @@ class WinProbabilityResponse(BaseModel):
     # None when there was no elapsed regulation clock to average over, which
     # is any game with no curve and a game whose only snaps were in overtime.
     control: GameControl | None
+    # The same share of the game with the fumbles and the contested passes
+    # split evenly -- what the game looks like without the breaks. None
+    # wherever `control` is None, and equal to it on a game where nothing
+    # bounced.
+    adjusted_control: GameControl | None
+    # How big the breaks were, which is the other thing to say about them.
+    # None on a game with no snaps to account for, where a pair of zeroes
+    # would read as "nothing bounced" rather than "there was no game here".
+    luck: LuckyBounces | None
+    # Whether this game's feed records the passes a defender got to, which is
+    # the gate on the interception half of the adjustment. False means the
+    # fumbles were split and the interceptions were left alone -- a smaller
+    # adjustment rather than a fabricated one -- and the page says so.
+    records_defended_passes: bool
     # Empty for a game with no play-by-play, which is normal rather than
     # exceptional -- see the module docstring.
     points: list[CurvePoint]
@@ -158,6 +224,9 @@ def get_win_probability(
             log_loss=release.metrics.log_loss,
         ),
         control=None,
+        adjusted_control=None,
+        luck=None,
+        records_defended_passes=False,
         points=[],
         trained_on_this_season=game.season in release.trained_on.seasons,
     )
@@ -180,15 +249,32 @@ def get_win_probability(
         update={
             "home_team_id": curve.home_team_id,
             "away_team_id": curve.away_team_id,
-            "control": (
+            "control": _control(curve.control),
+            "adjusted_control": _control(curve.adjusted_control),
+            "luck": (
                 None
-                if curve.control is None
-                else GameControl(
-                    home=curve.control.home,
-                    away=curve.control.away,
-                    seconds=curve.control.seconds,
+                if curve.luck is None
+                else LuckyBounces(
+                    home=curve.luck.home,
+                    away=curve.luck.away,
+                    swings=[
+                        LuckySwing(
+                            play_id=swing.play_id,
+                            play_number=swing.play_number,
+                            kind=str(swing.kind),
+                            retained=swing.retained,
+                            realized=swing.realized,
+                            counterfactual=swing.counterfactual,
+                            home_delta=swing.home_delta,
+                        )
+                        for swing in curve.luck.swings
+                    ],
                 )
             ),
+            "records_defended_passes": curve.records_defended_passes,
+            # Zipped rather than sent as two series: upstream promises the
+            # adjusted curve is the same snaps in the same order, and this is
+            # the one place that promise is cheap to keep.
             "points": [
                 CurvePoint(
                     play_id=point.play_id,
@@ -199,8 +285,16 @@ def get_win_probability(
                     home_score=point.home_score,
                     away_score=point.away_score,
                     home_win_prob=point.home_win_probability,
+                    adjusted_win_prob=adjusted.home_win_probability,
                 )
-                for point in curve.points
+                for point, adjusted in zip(curve.points, curve.adjusted)
             ],
         }
     )
+
+
+def _control(control: LuckyOnesGameControl | None) -> GameControl | None:
+    """Upstream's tuple as this API's model, or None straight through."""
+    if control is None:
+        return None
+    return GameControl(home=control.home, away=control.away, seconds=control.seconds)

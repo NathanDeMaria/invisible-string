@@ -26,6 +26,8 @@ export type WinProbabilityResponse =
 export type WinProbabilityFit = components["schemas"]["WinProbabilityFit"];
 export type CurvePoint = components["schemas"]["CurvePoint"];
 export type GameControl = components["schemas"]["GameControl"];
+export type LuckyBounces = components["schemas"]["LuckyBounces"];
+export type LuckySwing = components["schemas"]["LuckySwing"];
 
 export interface RatingsArgs {
   league: string;
