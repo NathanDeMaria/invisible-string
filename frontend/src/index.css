@@ -698,6 +698,13 @@ table.ratings,
   font-weight: 600;
 }
 
+/* The word "dashed" in the caption, dashed -- so the sentence carries the
+   sample rather than asking a reader to go and match one. */
+.wp-key-dashed {
+  border-bottom: 1.5px dashed var(--fg);
+  opacity: 0.75;
+}
+
 .wp svg {
   width: 100%;
   height: auto;
@@ -710,6 +717,39 @@ table.ratings,
   stroke: var(--accent);
   stroke-width: 2;
   stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* The same game with its coin flips split evenly. Dashed rather than a second
+   hue: this app colours exactly two things for meaning -- a job that needs
+   looking at, and whether a number beat the line -- and a third would spend
+   that budget on a chart that reads fine without it. Solid is what happened;
+   dashed is a rewrite of it. */
+.wp-adjusted {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+/* The gap between the two lines, which is the reading: the win probability the
+   bounces are holding up. A wash rather than a fill with an edge -- it is the
+   space between two statements, not a third one. */
+.wp-gap {
+  fill: var(--fg);
+  fill-opacity: 0.08;
+  stroke: none;
+}
+
+/* One tick per play the game turned on a bounce, up for a break that went the
+   home team's way. Neutral, because the rail's direction already says whose it
+   was and this app doesn't colour a thing twice. */
+.wp-tick {
+  stroke: var(--muted);
+  stroke-width: 2;
   stroke-linecap: round;
 }
 
@@ -754,6 +794,15 @@ table.ratings,
   stroke-width: 2;
 }
 
+/* The same snap on the other line, hollow: it is the reading the crosshair
+   gives second, and two solid dots on one crosshair read as two series of
+   equal standing. */
+.wp-cursor circle.wp-cursor-adjusted {
+  fill: var(--bg);
+  stroke: var(--fg);
+  stroke-width: 1.5;
+}
+
 /* Held in the layout rather than floating over the chart, so the page can't
    change height under the pointer. */
 .wp-readout {
@@ -772,9 +821,26 @@ table.ratings,
   font-weight: 600;
 }
 
+.wp-readout .wp-prob-adjusted {
+  color: var(--muted);
+}
+
 .wp-readout .wp-hint {
   color: var(--muted);
   font-weight: 400;
+}
+
+/* The second of two numbers in a row -- the split one, and the branch that
+   didn't happen. Recessive because it is the counterfactual: the column
+   beside it is what the game did. */
+.wp-table .quiet {
+  color: var(--muted);
+}
+
+.wp-table .of {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: normal;
 }
 
 /* The chart's numbers, for a reader who can't hover one out of it -- and the

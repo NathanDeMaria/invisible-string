@@ -186,6 +186,8 @@ export interface components {
          *     which is the same quantity asked before the game rather than during it.
          */
         CurvePoint: {
+            /** Adjusted Win Prob */
+            adjusted_win_prob: number;
             /** Away Score */
             away_score: number;
             /** Clock Seconds */
@@ -439,6 +441,59 @@ export interface components {
             models: components["schemas"]["ModelSummary"][];
         };
         /**
+         * LuckyBounces
+         * @description What the bounces were worth to each team over the game.
+         *
+         *     The accounting beside `adjusted_control`'s rewrite, and deliberately not a
+         *     share of anything: **`home` and `away` do not sum to 1**. Each is a total
+         *     of win probability in the units the curve is drawn in, so 0.18 reads as
+         *     "the breaks that went their way were worth eighteen points of win
+         *     probability more than those same plays were worth before the ball
+         *     landed". Two totals rather than one signed number because "both teams got
+         *     a big break" and "neither got one" are different games.
+         */
+        LuckyBounces: {
+            /** Away */
+            away: number;
+            /** Home */
+            home: number;
+            /** Swings */
+            swings: components["schemas"]["LuckySwing"][];
+        };
+        /**
+         * LuckySwing
+         * @description One play whose result was decided by a bounce, priced both ways.
+         *
+         *     `realized` and `counterfactual` are the two branches as home win
+         *     probability: what the model made of the snap that followed, and what it
+         *     makes of the snap that would have followed had the ball gone the other
+         *     way. `retained` is how often the outcome that happened happens -- half a
+         *     fumble either way, a fifth of the contested passes -- so `home_delta` is
+         *     the part of the gap between the branches the *bounce* handed out rather
+         *     than the offense earning it.
+         *
+         *     `kind` is upstream's `LuckKind` on the wire: `fumble_lost`, `fumble_kept`,
+         *     `pass_defended_interception`, `pass_defended_incomplete`. Sent as its own
+         *     string rather than as prose so the page can name it in the page's own
+         *     words.
+         */
+        LuckySwing: {
+            /** Counterfactual */
+            counterfactual: number;
+            /** Home Delta */
+            home_delta: number;
+            /** Kind */
+            kind: string;
+            /** Play Id */
+            play_id: string;
+            /** Play Number */
+            play_number: number;
+            /** Realized */
+            realized: number;
+            /** Retained */
+            retained: number;
+        };
+        /**
          * Metrics
          * @description Evaluation metrics for a release.
          *
@@ -667,6 +722,7 @@ export interface components {
         };
         /** WinProbabilityResponse */
         WinProbabilityResponse: {
+            adjusted_control: components["schemas"]["GameControl"] | null;
             /** Away */
             away: string;
             /** Away Team Id */
@@ -681,8 +737,11 @@ export interface components {
             home_team_id: string | null;
             /** League */
             league: string;
+            luck: components["schemas"]["LuckyBounces"] | null;
             /** Points */
             points: components["schemas"]["CurvePoint"][];
+            /** Records Defended Passes */
+            records_defended_passes: boolean;
             /** Trained On This Season */
             trained_on_this_season: boolean;
         };

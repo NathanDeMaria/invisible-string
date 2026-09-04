@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
+import { winProbability } from "../../test/handlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { GamePage } from "./GamePage";
@@ -89,13 +90,53 @@ describe("GamePage", () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 
     // One row per change of score, which is the part of a game worth reading
-    // and the only way to get the numbers without a pointer.
-    const table = await screen.findByRole("table");
+    // and the only way to get the numbers without a pointer. The scoring
+    // table is the first of the two under the chart; the bounces are the
+    // second.
+    const [table] = await screen.findAllByRole("table");
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(4);
     expect(rows[0]).toHaveTextContent("Q1 1:36");
     expect(rows[0]).toHaveTextContent("7–0");
     expect(rows[0]).toHaveTextContent("31%");
+    // And the same snap on the other curve, so the table carries the pair the
+    // chart draws rather than half of it.
+    expect(rows[0]).toHaveTextContent("31%31%");
+  });
+
+  it("lists the plays the game turned on a bounce", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const tables = await screen.findAllByRole("table");
+    const rows = within(tables[1]).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(2);
+    // Both branches, so the number is checkable rather than asserted: what
+    // the model made of the snap that followed, and of the one that would
+    // have.
+    expect(rows[0]).toHaveTextContent("Fumble lost");
+    expect(rows[0]).toHaveTextContent("50%");
+    expect(rows[0]).toHaveTextContent("26%");
+    // Named rather than signed: a signed number on a two-team page is a
+    // convention the reader has to hold.
+    expect(rows[0]).toHaveTextContent("0.12 Chicago Bears");
+    expect(rows[1]).toHaveTextContent("0.03 Green Bay Packers");
+  });
+
+  it("draws a tick per bounce, on a rail under the plot", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const chart = await screen.findByRole("img", { name: /win probability/ });
+    const ticks = chart.querySelectorAll(".wp-tick");
+    expect(ticks).toHaveLength(2);
+    // Up for a break the home team got, down for one the away team got --
+    // the same direction the curve above means.
+    const [first, second] = Array.from(ticks);
+    expect(Number(first.getAttribute("y2"))).toBeLessThan(
+      Number(first.getAttribute("y1")),
+    );
+    expect(Number(second.getAttribute("y2"))).toBeGreaterThan(
+      Number(second.getAttribute("y1")),
+    );
   });
 
   it("reads out the snap under the pointer", async () => {
@@ -131,16 +172,71 @@ describe("GamePage", () => {
     expect(screen.getByText(/3 for Chicago Bears/)).toBeInTheDocument();
   });
 
-  it("says how much of the game each side held", async () => {
+  it("says how much of the game the home team held, both ways", async () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 
+    // Both numbers about the same team, because the pair is a comparison:
+    // what happened, and what happened on purpose.
     expect(
-      await screen.findByText(/Green Bay Packers held 58% of the game/),
+      await screen.findByText(
+        /Chicago Bears held 42% of the game, and 37% of it with the fifty-fifty balls split evenly/,
+      ),
     ).toBeInTheDocument();
     // Not a win probability, and the page has to say so: it's an average over
     // the minutes, not a reading the model ever took.
     expect(
       screen.getByText(/share of the game held, not as a win probability/),
+    ).toBeInTheDocument();
+  });
+
+  it("says what the bounces were worth, and that it isn't a share", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    expect(
+      await screen.findByText(
+        /worth 0.12 of win probability to Chicago Bears and 0.03 to Green Bay Packers/,
+      ),
+    ).toBeInTheDocument();
+    // The two totals don't sum to anything, and a page that let them read as
+    // a split would be claiming something the number doesn't say.
+    expect(
+      screen.getByText(/total of win probability rather than a share/),
+    ).toBeInTheDocument();
+  });
+
+  it("says when a game's feed only records half the coin", async () => {
+    // Which is most of an NCAAFB week: whether a broken-up pass is written
+    // down follows the venue. The fumbles are still split; the interceptions
+    // are left alone, and the page says which it did.
+    server.use(
+      http.get("/api/games/:league/:gameId/win-probability", () =>
+        HttpResponse.json({
+          ...winProbability,
+          records_defended_passes: false,
+        }),
+      ),
+    );
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    expect(
+      await screen.findByText(/only the fumbles are split here/),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when nothing in a game turned on a bounce", async () => {
+    server.use(
+      http.get("/api/games/:league/:gameId/win-probability", () =>
+        HttpResponse.json({
+          ...winProbability,
+          luck: { home: 0, away: 0, swings: [] },
+          adjusted_control: winProbability.control,
+        }),
+      ),
+    );
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    expect(
+      await screen.findByText(/Nothing in this game turned on a bounce/),
     ).toBeInTheDocument();
   });
 

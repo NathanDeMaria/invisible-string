@@ -2003,10 +2003,11 @@ it is the same change as giving `/api/games` a real `day=` parameter, which
 
 ### 16.6 Drawing it
 
-One series, so no legend, and the chart is small enough to say in a sentence:
-a 2px line on a dashed 50% rule, quarter separators, and a mark at every snap
-where the scoreboard had just moved. Five decisions in it are worth writing
-down.
+The chart is small enough to say in a sentence: a 2px line on a dashed 50%
+rule, quarter separators, and a mark at every snap where the scoreboard had
+just moved — plus the second line and the rail §16.7 adds to it. Five
+decisions in the first version are worth writing down, and §16.7 adds the ones
+that come with the second.
 
 **The x axis is elapsed regulation time, not play number.** Snaps aren't evenly
 spaced in time — a two-minute drill is fifteen of them and a quarter of
@@ -2041,6 +2042,117 @@ average of the curve weighted by the clock, so 0.58 says "averaged over the
 minutes, that's where the model had them", not "they were 58% to win". The page
 says so in those words, and states the minutes it covers, because regulation is
 all it covers.
+
+### 16.7 The bounces, and the game without them
+
+`game_control` measures what happened. That is the right thing for it to
+measure, and it is also what hands a team full credit for a fumble that
+bounced their way — an outcome nobody on the field decided. the-lucky-ones now
+answers the neighbouring question, in two numbers, and the game page shows
+both beside the one it already had:
+
+| | what it asks | units |
+|---|---|---|
+| `game_control` | who controlled this game | a share; the two sides sum to 1 |
+| `luck_adjusted_game_control` | who would have, with the fifty-fifty balls split evenly | the same share, so it reads next to the first |
+| `lucky_wp` | what the breaks were worth to each side | win probability; **the two sides sum to nothing** |
+
+The first pair is a *rewrite* of the game — each bounce is replaced by the
+average of its two branches and the difference is carried to the whistle — and
+the third is an *accounting* of it, where each bounce contributes once and the
+realized curve is left alone. They are meant to be read together: one says
+what the game looks like without the breaks, the other says how big they were.
+Upstream computes both off the same `find_lucky_plays` list, so the two can
+differ about what a bounce was worth and never about which plays bounced.
+
+**This is a reading of the fit, not a second model.** Both numbers come off the
+curve the same coefficients produce; the counterfactual branch is priced by
+asking that fit about a `GameState` it can build. Nothing is retrained, and
+the pin in `pyproject.toml` is still the whole answer to "which model is this".
+
+#### What the bump brought with it
+
+The rev this section is written against also gates the interception half of
+the adjustment, and the gate is the reason the pair is trustworthy at all.
+Whether a feed writes down a *defended* pass — one a defender got a hand on
+that fell incomplete — is a property of whoever entered the play-by-play:
+in NCAAFB it follows the home venue, and between 2019 and 2023 the venues
+doing it fell from 168 of 224 to 41, with none taking it up.
+
+A game where it isn't recorded still has all of its interceptions. Adjusting
+those alone would charge every defense for the picks it made and credit none
+for the balls it got a hand on, so upstream splits the pair only where the
+game records both sides of it, and this app carries that fact to the page as
+`records_defended_passes`. A game with the gate shut gets its fumbles split
+and its interceptions left alone — a smaller adjustment rather than a
+fabricated one — and the page says so in a sentence, because "no interception
+was adjusted here" and "nothing was intercepted" are different games.
+
+It also means the play-by-play read now includes ESPN's `text` column, which
+is where the manner of a play is recorded and the only place it is. Nothing
+the model sees is built from it.
+
+#### One walk of the game
+
+`curve_for` builds the states once and hands the same list to both metrics
+(`adjusted_curve_from_states`, `lucky_wp_from_states`) — the entry points
+upstream provides for exactly this. That is four `predict` calls over a few
+hundred rows rather than one per bounce, and it is the same trade §16.3 makes
+about reading one game out of one parquet object.
+
+#### Two numbers on one point, and one None that isn't a zero
+
+The adjusted curve is the same snaps in the same order, so a point on the wire
+carries both probabilities rather than the response carrying two series for
+the page to line up. Two arrays could come apart; one point can't.
+
+`luck` is null on a game with no snaps and a pair of zeroes on a game that had
+some and nothing bounced in them. The difference is the whole point: "nothing
+went either team's way" is a real reading of a game that was played, and a
+game with no play-by-play must not render as one. `control` and
+`adjusted_control` are null together, for the same reason `control` was null
+before: no elapsed regulation clock to average over.
+
+#### Drawing the second line
+
+**Dashed, not a second colour.** This app colours exactly two things for
+meaning — a job that needs looking at, and whether a number beat the line
+(§13.6) — and a third hue would spend that budget on a chart that reads fine
+without it. The realized curve is the solid one because it is what happened;
+the adjusted one is dashed because it is a rewrite. The word "dashed" in the
+caption is itself dashed, so the sentence carries the sample.
+
+**The gap gets the wash.** The fill under the line is gone: with two lines,
+the area worth shading is the space between them, which is the win probability
+the bounces are holding up. Drawn down one line and back along the other, so
+it closes cleanly however often they cross.
+
+**The bounces are a rail under the plot, not marks on the line.** A break is a
+thing that happened at a moment, not a value on the win probability axis, and
+a mark on the curve would read as one. Each tick sits at its snap, stands up
+for a break that went the home team's way and down for one that went the
+other, and is scaled against the biggest bounce *in that game* — a full
+turnover swing is worth wildly different amounts in the first quarter and the
+fourth, so an absolute axis would be a number nobody has a feel for. A floor
+under the scale is what stops a game of trivial bounces from drawing them at
+full height. The rail is drawn even when nothing is on it: "nothing here
+turned on a bounce" is a fact about the game, and it wants a place to be
+absent from.
+
+**And the second table is the first one's argument.** Every bounce gets a row
+with both branches on it — what the model made of the snap that followed, and
+of the one that would have followed — so the total above is checkable rather
+than asserted. The team is named in the last column rather than left to the
+sign of a number: a signed number on a two-team page is a convention the
+reader has to hold, and the column is four rows long.
+
+**Neither adjusted number is a win probability either.** The pair of shares
+gets the same sentence `game_control` already got, said about the home team
+both times so that it reads as a comparison rather than a swing between teams.
+The `lucky_wp` totals get the opposite warning: they are win probability, in
+the units the curve is drawn in, and they do not sum to anything — so the page
+says "worth 0.13 of win probability" rather than "13%", which would be read as
+a share of the game two lines up.
 
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
 [lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/pull/1

@@ -4,6 +4,10 @@
       "CurvePoint": {
         "description": "One snap of the curve.\n\nEverything an axis label or a tooltip needs, so the page never goes back\nto the plays: `period` and `clock_seconds` are what a point is *called*\n(\"Q3 7:22\"), `seconds_remaining` is where it sits on the time axis, and\nthe two scores are what makes a step in the line legible.\n\n`home_win_prob` is named for `GamePrediction.home_win_prob` beside it,\nwhich is the same quantity asked before the game rather than during it.",
         "properties": {
+          "adjusted_win_prob": {
+            "title": "Adjusted Win Prob",
+            "type": "number"
+          },
           "away_score": {
             "title": "Away Score",
             "type": "integer"
@@ -45,7 +49,8 @@
           "seconds_remaining",
           "home_score",
           "away_score",
-          "home_win_prob"
+          "home_win_prob",
+          "adjusted_win_prob"
         ],
         "title": "CurvePoint",
         "type": "object"
@@ -653,6 +658,77 @@
         "title": "LeagueSummary",
         "type": "object"
       },
+      "LuckyBounces": {
+        "description": "What the bounces were worth to each team over the game.\n\nThe accounting beside `adjusted_control`'s rewrite, and deliberately not a\nshare of anything: **`home` and `away` do not sum to 1**. Each is a total\nof win probability in the units the curve is drawn in, so 0.18 reads as\n\"the breaks that went their way were worth eighteen points of win\nprobability more than those same plays were worth before the ball\nlanded\". Two totals rather than one signed number because \"both teams got\na big break\" and \"neither got one\" are different games.",
+        "properties": {
+          "away": {
+            "title": "Away",
+            "type": "number"
+          },
+          "home": {
+            "title": "Home",
+            "type": "number"
+          },
+          "swings": {
+            "items": {
+              "$ref": "#/components/schemas/LuckySwing"
+            },
+            "title": "Swings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "home",
+          "away",
+          "swings"
+        ],
+        "title": "LuckyBounces",
+        "type": "object"
+      },
+      "LuckySwing": {
+        "description": "One play whose result was decided by a bounce, priced both ways.\n\n`realized` and `counterfactual` are the two branches as home win\nprobability: what the model made of the snap that followed, and what it\nmakes of the snap that would have followed had the ball gone the other\nway. `retained` is how often the outcome that happened happens -- half a\nfumble either way, a fifth of the contested passes -- so `home_delta` is\nthe part of the gap between the branches the *bounce* handed out rather\nthan the offense earning it.\n\n`kind` is upstream's `LuckKind` on the wire: `fumble_lost`, `fumble_kept`,\n`pass_defended_interception`, `pass_defended_incomplete`. Sent as its own\nstring rather than as prose so the page can name it in the page's own\nwords.",
+        "properties": {
+          "counterfactual": {
+            "title": "Counterfactual",
+            "type": "number"
+          },
+          "home_delta": {
+            "title": "Home Delta",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "play_id": {
+            "title": "Play Id",
+            "type": "string"
+          },
+          "play_number": {
+            "title": "Play Number",
+            "type": "integer"
+          },
+          "realized": {
+            "title": "Realized",
+            "type": "number"
+          },
+          "retained": {
+            "title": "Retained",
+            "type": "number"
+          }
+        },
+        "required": [
+          "play_id",
+          "play_number",
+          "kind",
+          "retained",
+          "realized",
+          "counterfactual",
+          "home_delta"
+        ],
+        "title": "LuckySwing",
+        "type": "object"
+      },
       "Metrics": {
         "description": "Evaluation metrics for a release.\n\n`brier_score` and the MAEs are error measures, so lower is better -- a\nconsumer picking a default model wants a min, not a max.\n\nThe optional fields are None for a league the odds database doesn't cover\nat all. They're None rather than nan on purpose: `score_predictions`\nreturns nan there, and nan survives json.dumps as the literal `NaN`, which\nis not valid JSON and which browsers reject.",
         "properties": {
@@ -1179,6 +1255,16 @@
       },
       "WinProbabilityResponse": {
         "properties": {
+          "adjusted_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "away": {
             "title": "Away",
             "type": "string"
@@ -1230,12 +1316,26 @@
             "title": "League",
             "type": "string"
           },
+          "luck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LuckyBounces"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "points": {
             "items": {
               "$ref": "#/components/schemas/CurvePoint"
             },
             "title": "Points",
             "type": "array"
+          },
+          "records_defended_passes": {
+            "title": "Records Defended Passes",
+            "type": "boolean"
           },
           "trained_on_this_season": {
             "title": "Trained On This Season",
@@ -1251,6 +1351,9 @@
           "away_team_id",
           "fit",
           "control",
+          "adjusted_control",
+          "luck",
+          "records_defended_passes",
           "points",
           "trained_on_this_season"
         ],
