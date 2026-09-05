@@ -2,6 +2,7 @@ import { HttpResponse, http } from "msw";
 
 import type {
   CurvePoint,
+  EpaPlay,
   GameDetail,
   GameRow,
   GamesResponse,
@@ -512,6 +513,28 @@ const snap = (
   adjusted_win_prob: adjusted,
 });
 
+/**
+ * One snap's EPA, written as (play, offense is home, worth, EPA) -- the four
+ * fields the table under the chart reads. `bounded` is the clip upstream
+ * applies, so a play worth more than three points here is one the page has to
+ * show being cut down.
+ */
+const epaPlay = (
+  playId: string,
+  offenseIsHome: boolean,
+  worth: number,
+  epa: number,
+  weight: number,
+): EpaPlay => ({
+  play_id: playId,
+  play_number: 0,
+  offense_is_home: offenseIsHome,
+  expected_points: worth,
+  epa,
+  bounded: Math.max(-3, Math.min(3, epa)),
+  weight,
+});
+
 export const winProbability: WinProbabilityResponse = {
   league: "nfl",
   game_id: "g-1",
@@ -570,6 +593,54 @@ export const winProbability: WinProbabilityResponse = {
     snap(4, 500, 14, 7, 0.78, 0.72),
     snap(4, 40, 17, 24, 0.04, 0.05),
   ],
+  /**
+   * A game the two averages disagree about, which is the case the pair is on
+   * the page for: the Bears were the better offense while it was still a
+   * game (+0.20 a snap) and the Packers over the whole thing (+0.80), because
+   * Chicago's last drive came with the result already settled and weighs
+   * almost nothing.
+   *
+   * The aggregates are the plays below, actually averaged -- a fixture whose
+   * totals contradicted its own rows would test the page against a game that
+   * couldn't happen.
+   */
+  epa: {
+    home: 0.3711,
+    away: 0.1713,
+    net: 0.1998,
+    home_unweighted: -0.3875,
+    away_unweighted: 0.41,
+    net_unweighted: -0.7975,
+    home_plays: 4,
+    away_plays: 5,
+    home_weight: 2.94,
+    away_weight: 3.92,
+    plays: [
+      epaPlay("p1-890", true, 1.15, 1.1, 1.0),
+      epaPlay("p1-402", false, 0.85, -0.2, 1.0),
+      // The Packers' touchdown, and the one play the bound bites on: worth
+      // 4.2 points, counted as 3.
+      epaPlay("p1-96", false, 4.05, 4.2, 0.92),
+      epaPlay("p2-700", false, 1.05, -0.85, 0.97),
+      epaPlay("p2-210", true, 2.35, 0.55, 0.98),
+      epaPlay("p3-640", false, 2.1, -1.1, 1.0),
+      epaPlay("p3-120", true, 5.85, -0.3, 0.86),
+      // Garbage time: a big negative play that the weighting all but ignores,
+      // which is what makes the two columns part company.
+      epaPlay("p4-500", true, 1.4, -2.9, 0.1),
+      epaPlay("p4-40", false, -1.2, 1.2, 0.03),
+    ],
+  },
+  expected_points_fit: {
+    league: "nfl",
+    run_id: "20260904-024017",
+    // A different range from the curve's fit, which is the point of the two
+    // being named separately: they are two files that move on their own.
+    seasons: [2022, 2023, 2024, 2025],
+    n_games: 2433,
+    log_loss: 1.319,
+    mean_absolute_error: 3.75,
+  },
   trained_on_this_season: false,
 };
 
@@ -645,6 +716,9 @@ export const handlers = [
       adjusted_control:
         params.gameId === "g-1" ? winProbability.adjusted_control : null,
       luck: params.gameId === "g-1" ? winProbability.luck : null,
+      // The fit is named on both, since "this league has no expected points
+      // model" and "this game had no snaps to score" are different states.
+      epa: params.gameId === "g-1" ? winProbability.epa : null,
       home_team_id: params.gameId === "g-1" ? "3" : null,
       away_team_id: params.gameId === "g-1" ? "9" : null,
     });

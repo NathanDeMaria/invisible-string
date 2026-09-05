@@ -13,13 +13,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from lucky_ones.bundled import BundledModel
 
 from app.games import GamesSource, GamesUnavailable, GameWindow, get_games_source
 from app.jobs import JobsSource, get_jobs_source
 from app.main import create_app
 from app.plays import FixturePlay, PlaysSource, PlaysUnavailable, get_plays_source
 from app.releases import ReleaseStore, get_release_store
-from app.win_probability import curve_for, fit_for
+from app.win_probability import curve_for, expected_points_for, fit_for
 
 GAME = "/api/games/nfl/401910101"
 
@@ -264,6 +265,105 @@ class TestSplittingTheBounces:
         assert "pass_defended_incomplete" in kinds
 
 
+class TestEpaPerPlay:
+    """The number that isn't about who won: what each offense did per snap.
+
+    DESIGN.md 16.8. It comes off the same states the curve does and a second
+    fit, so what these hold onto is the arithmetic being upstream's -- the
+    pair of averages, the bound, and the weighting -- and the degradations
+    being this app's.
+    """
+
+    def test_no_plays_is_no_number(self) -> None:
+        """Not a pair of zeroes. 0.00 is a real EPA per play -- a team that
+        played exactly to expectation -- and a game with nothing in it must
+        not render as one."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        assert curve_for(fit, []).epa is None
+
+    def test_both_offenses_get_a_number_and_a_denominator(self) -> None:
+        fit = fit_for("nfl")
+        assert fit is not None
+        epa = curve_for(fit, synthetic_game()).epa
+        assert epa is not None
+        assert epa.home is not None and epa.away is not None
+        # Twelve snaps in four-snap drives, the away team taking the first
+        # and the last -- so the denominators are the drives, not the halves.
+        assert (epa.home_plays, epa.away_plays) == (4, 8)
+        assert 0 < epa.home_weight <= epa.home_plays
+
+    def test_the_margin_is_the_difference_between_them(self) -> None:
+        """`net` is a subtraction the API does once rather than the page
+        doing it again, and it is the home team's side of it."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        epa = curve_for(fit, synthetic_game()).epa
+        assert epa is not None
+        home, away = epa.home, epa.away
+        flat_home, flat_away = epa.home_unweighted, epa.away_unweighted
+        assert home is not None and away is not None
+        assert flat_home is not None and flat_away is not None
+        assert epa.net == pytest.approx(home - away)
+        assert epa.net_unweighted == pytest.approx(flat_home - flat_away)
+
+    def test_the_two_averages_are_over_the_same_snaps(self) -> None:
+        """Weighted and flat differ in the weighting and nothing else, so
+        they run over one list of plays -- which is why having both costs a
+        division rather than a second pass."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        epa = curve_for(fit, synthetic_game()).epa
+        assert epa is not None
+        assert len(epa.plays) == epa.home_plays + epa.away_plays
+        bounded = [play.bounded for play in epa.plays if play.offense_is_home]
+        assert epa.home_unweighted == pytest.approx(sum(bounded) / len(bounded))
+
+    def test_the_snaps_it_averages_are_the_ones_the_curve_draws(self) -> None:
+        """Same states, one walk. A play priced here but not drawn above --
+        or the other way round -- would be two readings of one game."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        curve = curve_for(fit, synthetic_game())
+        assert curve.epa is not None
+        assert [play.play_id for play in curve.epa.plays] == [
+            point.play_id for point in curve.points
+        ]
+
+    def test_a_league_without_the_second_fit_still_gets_a_curve(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Upstream ships the two fits as two files so one can be missing
+        without taking the other down, and this is that promise from the
+        consumer's side: no number, and a chart that still draws."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        monkeypatch.setattr(
+            type(fit),
+            "expected_points_release",
+            property(_raise(FileNotFoundError("no train-ep fit"))),
+        )
+        curve = curve_for(fit, synthetic_game())
+        assert curve.epa is None
+        assert curve.points and curve.control is not None
+
+    def test_an_unfitted_league_has_no_second_fit_to_name(self) -> None:
+        assert expected_points_for(BundledModel("quidditch")) is None
+
+    def test_it_does_not_sum_to_anything(self) -> None:
+        """Unlike `game_control`, which is the thing to be careful about on a
+        page that shows them together: two averages over two disjoint sets of
+        snaps, in points, and both can be positive."""
+        fit = fit_for("nfl")
+        assert fit is not None
+        curve = curve_for(fit, synthetic_game())
+        assert curve.epa is not None and curve.control is not None
+        home, away = curve.epa.home, curve.epa.away
+        assert home is not None and away is not None
+        assert curve.control.home + curve.control.away == pytest.approx(1.0)
+        assert home + away != pytest.approx(1.0)
+
+
 class TestTheGameEndpoint:
     def test_serves_one_game(self, client: TestClient) -> None:
         body = client.get(GAME).json()
@@ -392,6 +492,57 @@ class TestTheWinProbabilityEndpoint:
         body = client.get(f"{GAME}/win-probability").json()
         assert body["records_defended_passes"] is False
 
+    def test_reports_what_each_offense_did_with_the_ball(
+        self, client: TestClient
+    ) -> None:
+        """The one number on the page that isn't about who won, and the four
+        it takes to read it honestly: both averages, and the sample behind
+        each."""
+        epa = client.get(f"{GAME}/win-probability").json()["epa"]
+        assert epa["net"] == pytest.approx(epa["home"] - epa["away"])
+        assert epa["net_unweighted"] == pytest.approx(
+            epa["home_unweighted"] - epa["away_unweighted"]
+        )
+        assert epa["home_plays"] == epa["away_plays"] == 8
+        assert 0 < epa["home_weight"] <= epa["home_plays"]
+
+    def test_sends_the_snaps_the_averages_are_over(self, client: TestClient) -> None:
+        """The argument behind the number, the way the swings are the argument
+        behind the luck totals -- including the raw EPA beside the bounded
+        one, so a reader can see which plays the bound bit on."""
+        epa = client.get(f"{GAME}/win-probability").json()["epa"]
+        assert len(epa["plays"]) == epa["home_plays"] + epa["away_plays"]
+        clipped = [p for p in epa["plays"] if p["bounded"] != p["epa"]]
+        assert clipped and all(abs(p["bounded"]) == 3.0 for p in clipped)
+
+    def test_a_play_joins_the_curve_by_its_id(self, client: TestClient) -> None:
+        """So the page reads the clock and the score off the point it already
+        has rather than being sent them twice."""
+        body = client.get(f"{GAME}/win-probability").json()
+        drawn = {point["play_id"] for point in body["points"]}
+        assert all(play["play_id"] in drawn for play in body["epa"]["plays"])
+
+    def test_names_the_fit_that_priced_the_snaps(self, client: TestClient) -> None:
+        """Its own provenance, not the curve's: two files that move
+        separately, so a retrain of one doesn't renumber the other."""
+        body = client.get(f"{GAME}/win-probability").json()
+        fit = body["expected_points_fit"]
+        assert fit["league"] == "nfl"
+        assert fit["run_id"] != body["fit"]["run_id"]
+        # log(7) = 1.95 is what guessing the base rates gets.
+        assert 0 < fit["log_loss"] < 1.95
+        assert fit["mean_absolute_error"] > 0
+
+    def test_a_game_with_no_plays_has_no_epa_but_still_names_the_fit(
+        self, client: TestClient
+    ) -> None:
+        """ "There is a fit and this game had nothing to score" and "this
+        league has no such fit" are different states, and the page can only
+        tell them apart if the fit says so on its own."""
+        body = client.get("/api/games/nfl/401910102/win-probability").json()
+        assert body["epa"] is None
+        assert body["expected_points_fit"]["league"] == "nfl"
+
     def test_says_whether_the_fit_has_seen_this_season(
         self, client: TestClient
     ) -> None:
@@ -431,6 +582,15 @@ class TestTheWinProbabilityEndpoint:
         """The one case that is ours rather than the game's."""
         client = client_over(plays=_raises(PlaysUnavailable("denied")))
         assert client.get(f"{GAME}/win-probability").status_code == 502
+
+
+def _raise(error: Exception) -> Callable[[Any], Any]:
+    """A property body that fails, for the fit that isn't in the install."""
+
+    def fail(self: Any) -> Any:
+        raise error
+
+    return fail
 
 
 def _raises(error: Exception) -> Any:

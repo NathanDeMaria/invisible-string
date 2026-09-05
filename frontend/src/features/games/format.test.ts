@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dayLabel,
   daysBetween,
+  perPlay,
   points,
   probability,
   score,
@@ -213,5 +214,33 @@ describe("statusLabel", () => {
 
   it("passes through anything not shaped like one of ESPN's names", () => {
     expect(statusLabel("weird")).toBe("weird");
+  });
+});
+
+describe("perPlay", () => {
+  it("keeps the sign, because the sign is the reading", () => {
+    // A negative EPA per play is an offense that lost ground on the average
+    // snap; dropping the sign would turn that into the opposite claim.
+    expect(perPlay(0.187)).toBe("+0.19");
+    expect(perPlay(-0.187)).toBe("-0.19");
+  });
+
+  it("holds two decimals, since the whole scale is a few tenths wide", () => {
+    expect(perPlay(0.4)).toBe("+0.40");
+    expect(perPlay(3)).toBe("+3.00");
+  });
+
+  it("leaves a number that rounds to nothing unsigned", () => {
+    // "+0.00" and "-0.00" are the same football, and only one of them looks
+    // like a typo.
+    expect(perPlay(0)).toBe("0.00");
+    expect(perPlay(-0.001)).toBe("0.00");
+  });
+
+  it("dashes a number that isn't there", () => {
+    // Which is a team with nothing to average, not a team that played
+    // exactly to expectation -- and 0.00 would say the second.
+    expect(perPlay(null)).toBe("—");
+    expect(perPlay(undefined)).toBe("—");
   });
 });

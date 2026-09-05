@@ -6,7 +6,13 @@ import {
   type GameDetail,
 } from "../../services/api";
 import { atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
-import { adjustedControlLabel, luckLabel, seasonRange } from "./curve";
+import {
+  adjustedControlLabel,
+  epaLabel,
+  luckLabel,
+  seasonRange,
+} from "./curve";
+import { BigPlaysTable, EpaTable } from "./Epa";
 import {
   points as pointsOf,
   probability,
@@ -272,6 +278,53 @@ export function GamePage() {
                     curve.data.home_team_id
                   } for {curve.data.home}.
                 </p>
+
+                {curve.data.epa && (
+                  <>
+                    <h3>EPA per play</h3>
+                    <p className="meta">
+                      {epaLabel(
+                        curve.data.epa,
+                        curve.data.home,
+                        curve.data.away,
+                      )}
+                      . Expected points added is what a snap did to the value of
+                      the situation &mdash; the one number here that
+                      doesn&rsquo;t care who won, which is why it can disagree
+                      with the shares above.
+                    </p>
+                    <EpaTable curve={curve.data} />
+                    <p className="meta">
+                      The first column weights each snap by how much the game
+                      was still in doubt, so it describes <em>this game</em>;
+                      the second counts every snap once, which is the one to add
+                      up across a season. Neither is a share: they are two
+                      averages over two different sets of snaps, in points, so
+                      they don&rsquo;t add up to anything and both offenses can
+                      be positive in a game where everybody moved the ball.
+                    </p>
+                    <BigPlaysTable curve={curve.data} />
+                    {curve.data.expected_points_fit && (
+                      <p className="meta">
+                        Priced by the-lucky-ones&rsquo;{" "}
+                        {curve.data.expected_points_fit.league} expected points
+                        fit, run {curve.data.expected_points_fit.run_id} &mdash;
+                        a second fit from the one that drew the curve, on{" "}
+                        {seasonRange(curve.data.expected_points_fit.seasons)} (
+                        {curve.data.expected_points_fit.n_games.toLocaleString()}{" "}
+                        games). It misses the next score by{" "}
+                        {curve.data.expected_points_fit.mean_absolute_error.toFixed(
+                          1,
+                        )}{" "}
+                        points on an average snap, which is large on purpose
+                        &mdash; the next score is 7 or 0 or &minus;3 and the fit
+                        says 2.1. That is why this is a per-play average and not
+                        a per-play claim. No single snap above should be read as
+                        one.
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             ))}
         </>

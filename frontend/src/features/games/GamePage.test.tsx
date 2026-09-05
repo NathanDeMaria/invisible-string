@@ -240,6 +240,73 @@ describe("GamePage", () => {
     ).toBeInTheDocument();
   });
 
+  it("says who played better, and that it can disagree with the shares", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // The fixture is a game the two averages disagree about, which is the
+    // case the pair is on the page for: Chicago while it was still a game,
+    // Green Bay over the whole thing.
+    expect(
+      await screen.findByText(
+        /While the game was still in doubt, Chicago Bears by 0.20 points a snap; over every snap, Green Bay Packers by 0.80 points a snap/,
+      ),
+    ).toBeInTheDocument();
+    // Neither number is a share, and the page has to say so with two shares
+    // sitting a paragraph above it.
+    expect(
+      screen.getByText(/they don’t add up to anything/),
+    ).toBeInTheDocument();
+  });
+
+  it("gives each offense both numbers and the snaps behind them", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const table = (await screen.findByText("While it mattered")).closest(
+      "table",
+    );
+    const bears = within(table!).getByRole("row", { name: /Chicago Bears/ });
+    // Weighted, flat, and what the weighted one is actually an average over.
+    expect(bears).toHaveTextContent("+0.37");
+    expect(bears).toHaveTextContent("-0.39");
+    expect(bears).toHaveTextContent("2.9 live");
+  });
+
+  it("shows the bound biting rather than asking for it on trust", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // The Packers' touchdown was worth 4.2 points and counts as 3, which is
+    // the whole argument for bounding at all.
+    const table = (await screen.findByText("Worth")).closest("table");
+    const rows = within(table!).getAllByRole("row");
+    // Biggest first, so the clipped play leads the list.
+    expect(rows[1]).toHaveTextContent("+3.00");
+    expect(rows[1]).toHaveTextContent("+4.20 unbounded");
+  });
+
+  it("names the second fit, and says not to read one snap off it", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // Its own provenance, not the curve's: two files that move separately.
+    const fit = (await screen.findByText(/expected points fit/)).closest("p");
+    expect(fit).toHaveTextContent("2022–2025");
+    expect(fit).toHaveTextContent(/misses the next score by 3.8 points/);
+    expect(fit).toHaveTextContent(/No single snap above should be read as one/);
+  });
+
+  it("says nothing about EPA for a game it has none for", async () => {
+    // A game with no play-by-play has no snaps to average, and a pair of
+    // zeroes would read as two offenses that played exactly to expectation.
+    server.use(
+      http.get("/api/games/:league/:gameId/win-probability", () =>
+        HttpResponse.json({ ...winProbability, epa: null }),
+      ),
+    );
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    await screen.findByText(/Win probability/);
+    expect(screen.queryByText("EPA per play")).toBeNull();
+  });
+
   it("asks for no curve at all for a league with no fit", async () => {
     let asked = 0;
     server.use(

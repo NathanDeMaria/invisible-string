@@ -46,6 +46,27 @@ export function points(value: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
+/**
+ * A per-play number in points, signed -- an EPA per play, or a margin between
+ * two of them.
+ *
+ * Two decimals rather than `points()`'s one, because the whole scale is
+ * smaller: the gap between a good offense and a bad one is a few tenths, so a
+ * number rounded to the tenth would put half the league on the same figure.
+ *
+ * Signed, unlike `points()`, because the sign is the reading: a negative EPA
+ * per play is an offense that lost ground on the average snap, and dropping
+ * the sign would turn that into the opposite claim. A number that rounds to
+ * zero gets no sign at all -- "+0.00" and "-0.00" are the same football, and
+ * only one of them looks like a typo.
+ */
+export function perPlay(value: number | null | undefined): string {
+  if (value == null) return "—";
+  const rounded = Math.round(value * 100) / 100;
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
+  return `${sign}${Math.abs(rounded).toFixed(2)}`;
+}
+
 /** A win probability, rounded to the point where the extra digits are noise. */
 export function probability(value: number | null | undefined): string {
   if (value == null) return "—";

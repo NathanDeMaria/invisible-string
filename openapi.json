@@ -55,6 +55,201 @@
         "title": "CurvePoint",
         "type": "object"
       },
+      "EpaPerPlay": {
+        "description": "What each offense did with the ball, in points per snap.\n\nThe number on this page that isn't about who won. Both control numbers\nmeasure the *game*; this measures the football, and the two genuinely\ndisagree about a team that keeps winning close ones.\n\n**Two numbers per offense, and they answer different questions.** Both\naverage the same bounded EPA over the same snaps and differ only in\nwhether the garbage time is weighted out, so they come off one pass:\n`home` is the better description of *this game* -- the closest a\nwhole-game number gets to what the team did while it was still in doubt --\nand `home_unweighted` is the better estimate of *the team*, which is the\none to add up across a season. The page shows both rather than picking,\nbecause upstream measured the split and found no setting that does both\njobs.\n\n**These do not sum to anything.** Unlike `GameControl` they are two\naverages over two disjoint sets of snaps, in points, and both are positive\nin a game where everybody moved the ball. `net` is the home team's margin,\nand it is null when either side has nothing to average -- a margin against\na missing number isn't a margin.\n\nA null `home` means there was nothing to average, not 0.0: no snaps for\nthat offense, or (only reachable with the weighting on) a team whose every\nsnap came with the game already decided. 0.0 is a real EPA per play -- a\nteam that played exactly to expectation -- and a metric that says that\nabout a game it couldn't measure is worse than one that says nothing.",
+        "properties": {
+          "away": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away"
+          },
+          "away_plays": {
+            "title": "Away Plays",
+            "type": "integer"
+          },
+          "away_unweighted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Unweighted"
+          },
+          "away_weight": {
+            "title": "Away Weight",
+            "type": "number"
+          },
+          "home": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home"
+          },
+          "home_plays": {
+            "title": "Home Plays",
+            "type": "integer"
+          },
+          "home_unweighted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Unweighted"
+          },
+          "home_weight": {
+            "title": "Home Weight",
+            "type": "number"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "net_unweighted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Unweighted"
+          },
+          "plays": {
+            "items": {
+              "$ref": "#/components/schemas/EpaPlay"
+            },
+            "title": "Plays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "home",
+          "away",
+          "net",
+          "home_unweighted",
+          "away_unweighted",
+          "net_unweighted",
+          "home_plays",
+          "away_plays",
+          "home_weight",
+          "away_weight",
+          "plays"
+        ],
+        "title": "EpaPerPlay",
+        "type": "object"
+      },
+      "EpaPlay": {
+        "description": "One snap's expected points added, and what it counted for.\n\nThe argument behind the averages above it, in the way `LuckySwing` is the\nargument behind `LuckyBounces`: a number nobody can check is a number the\npage is asserting. Joined to the curve by `play_id`, so the page reads the\nclock and the score off the point it already has rather than being sent\nthem twice.\n\n`epa` is the raw difference and `bounded` is what the average is actually\nover -- both, because which plays the bound bit on is a fact about the\ngame. A 70-yard touchdown and a red-zone pick-six are both worth three\npoints here, and a reader looking at a number built that way should be\nable to see it happen.\n\nEvery regulation snap is here, not the interesting ones: which of them\nare interesting is a question about how the page is laid out, and the wire\nhas no business answering it.",
+        "properties": {
+          "bounded": {
+            "title": "Bounded",
+            "type": "number"
+          },
+          "epa": {
+            "title": "Epa",
+            "type": "number"
+          },
+          "expected_points": {
+            "title": "Expected Points",
+            "type": "number"
+          },
+          "offense_is_home": {
+            "title": "Offense Is Home",
+            "type": "boolean"
+          },
+          "play_id": {
+            "title": "Play Id",
+            "type": "string"
+          },
+          "play_number": {
+            "title": "Play Number",
+            "type": "integer"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "play_id",
+          "play_number",
+          "offense_is_home",
+          "expected_points",
+          "epa",
+          "bounded",
+          "weight"
+        ],
+        "title": "EpaPlay",
+        "type": "object"
+      },
+      "ExpectedPointsFit": {
+        "description": "Which fit priced the snaps, and how much to trust it.\n\nThe second of the two the-lucky-ones ships for a league, and a separate\nfile from the first because the two are fit separately and move\nseparately. So it gets its own provenance rather than borrowing the\ncurve's: a retrain of one doesn't renumber the other.\n\n`log_loss` is over the seven things that can score next -- log(7) = 1.95\nis what guessing the base rates gets, so a fit near it has learned\nnothing. `mean_absolute_error` is the expected value against the points\nthat actually came next, in points, and it is large by construction: the\nnext score is 7 or 0 or -3 and the fit says 2.1. Its size is exactly why\nEPA is a per-play *average* rather than a per-play claim, and the page\nsays so.",
+        "properties": {
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "log_loss": {
+            "title": "Log Loss",
+            "type": "number"
+          },
+          "mean_absolute_error": {
+            "title": "Mean Absolute Error",
+            "type": "number"
+          },
+          "n_games": {
+            "title": "N Games",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Seasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "run_id",
+          "seasons",
+          "n_games",
+          "log_loss",
+          "mean_absolute_error"
+        ],
+        "title": "ExpectedPointsFit",
+        "type": "object"
+      },
       "GameControl": {
         "description": "Share of the game each team spent winning it, weighted by the clock.\n\nNot a win probability: 0.68 doesn't say the home team was ever 68% to\nwin, it says that averaged over the minutes, that's where the model had\nthem. `seconds` is what the average covers -- regulation only, since\ncollege overtime has no clock to weight by -- and is on the wire so the\npage can say so rather than implying a full sixty minutes.",
         "properties": {
@@ -1290,6 +1485,26 @@
               }
             ]
           },
+          "epa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EpaPerPlay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_points_fit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExpectedPointsFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fit": {
             "$ref": "#/components/schemas/WinProbabilityFit"
           },
@@ -1353,6 +1568,8 @@
           "control",
           "adjusted_control",
           "luck",
+          "epa",
+          "expected_points_fit",
           "records_defended_passes",
           "points",
           "trained_on_this_season"
