@@ -13,6 +13,7 @@ import {
   seasonRange,
 } from "./curve";
 import { EpaTable } from "./Epa";
+import { Explainer } from "./Explainer";
 import {
   points as pointsOf,
   probability,
@@ -224,27 +225,39 @@ export function GamePage() {
             ) : (
               <>
                 <WinProbabilityChart curve={curve.data} />
-                <p className="meta">
-                  {adjustedControlLabel(
-                    curve.data.control,
-                    curve.data.adjusted_control,
-                    curve.data.home,
-                  )}
-                  . Read either as a share of the game held, not as a win
+                <Explainer
+                  summary={
+                    <>
+                      {adjustedControlLabel(
+                        curve.data.control,
+                        curve.data.adjusted_control,
+                        curve.data.home,
+                      )}
+                      .
+                    </>
+                  }
+                >
+                  Read either as a share of the game held, not as a win
                   probability: they are the average of the lines above, weighted
                   by how long each reading stood.
-                </p>
-                <p className="meta">
-                  {luckLabel(
-                    curve.data.luck,
-                    curve.data.home,
-                    curve.data.away,
-                  ) ??
-                    "Nothing in this game turned on a bounce the model can price"}
-                  . That is a total of win probability rather than a share, so
-                  the two sides don&rsquo;t add up to anything &mdash; it says
-                  how big the breaks were, where the pair above says what the
-                  game looks like without them.
+                </Explainer>
+                <Explainer
+                  summary={
+                    <>
+                      {luckLabel(
+                        curve.data.luck,
+                        curve.data.home,
+                        curve.data.away,
+                      ) ??
+                        "Nothing in this game turned on a bounce the model can price"}
+                      .
+                    </>
+                  }
+                >
+                  That is a total of win probability rather than a share, so the
+                  two sides don&rsquo;t add up to anything &mdash; it says how
+                  big the breaks were, where the pair above says what the game
+                  looks like without them.
                   {!curve.data.records_defended_passes && (
                     <>
                       {" "}
@@ -255,10 +268,10 @@ export function GamePage() {
                       worse than leaving them both alone.
                     </>
                   )}
-                </p>
+                </Explainer>
                 <ScoringTable curve={curve.data} />
                 <LuckyPlaysTable curve={curve.data} />
-                <p className="meta">
+                <Explainer summary="Which fit drew this">
                   Drawn by the-lucky-ones&rsquo; {curve.data.fit.league} fit,
                   run {curve.data.fit.run_id} &mdash; fit on{" "}
                   {seasonRange(curve.data.fit.seasons)} (
@@ -277,36 +290,42 @@ export function GamePage() {
                   nothing in the play data says: {
                     curve.data.home_team_id
                   } for {curve.data.home}.
-                </p>
+                </Explainer>
 
                 {curve.data.epa && (
                   <>
                     <h3>EPA per play</h3>
-                    <p className="meta">
-                      {epaLabel(
-                        curve.data.epa,
-                        curve.data.home,
-                        curve.data.away,
-                      )}
-                      . Expected points added is what a snap did to the value of
+                    <Explainer
+                      summary={
+                        <>
+                          {epaLabel(
+                            curve.data.epa,
+                            curve.data.home,
+                            curve.data.away,
+                          )}
+                          .
+                        </>
+                      }
+                    >
+                      Expected points added is what a snap did to the value of
                       the situation &mdash; the one number here that
                       doesn&rsquo;t care who won, which is why it can disagree
                       with the shares above.
-                    </p>
+                    </Explainer>
                     <EpaTable curve={curve.data} />
-                    <p className="meta">
-                      The first column weights each snap by how much the game
-                      was still in doubt, so it describes <em>this game</em>;
-                      the second counts every snap once, which is the one to add
-                      up across a season. Both cap a single snap at three points
-                      either way, so a pick-six is the biggest play of the game
-                      rather than five of them. Neither is a share: they are two
+                    <Explainer summary="How to read the two columns">
+                      The first weights each snap by how much the game was still
+                      in doubt, so it describes <em>this game</em>; the second
+                      counts every snap once, which is the one to add up across
+                      a season. Both cap a single snap at three points either
+                      way, so a pick-six is the biggest play of the game rather
+                      than five of them. Neither is a share: they are two
                       averages over two different sets of snaps, in points, so
                       they don&rsquo;t add up to anything and both offenses can
                       be positive in a game where everybody moved the ball.
-                    </p>
+                    </Explainer>
                     {curve.data.expected_points_fit && (
-                      <p className="meta">
+                      <Explainer summary="Which fit priced these">
                         Priced by the-lucky-ones&rsquo;{" "}
                         {curve.data.expected_points_fit.league} expected points
                         fit, run {curve.data.expected_points_fit.run_id} &mdash;
@@ -321,7 +340,7 @@ export function GamePage() {
                         &mdash; the next score is 7 or 0 or &minus;3 and the fit
                         says 2.1. That is why the numbers above are per-play
                         averages and not per-play claims.
-                      </p>
+                      </Explainer>
                     )}
                   </>
                 )}

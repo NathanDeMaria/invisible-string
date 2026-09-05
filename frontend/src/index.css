@@ -676,6 +676,70 @@ table.ratings,
   font-variant-numeric: normal;
 }
 
+/* The caveats, folded away ------------------------------------------------
+
+   Every number under the chart comes with one and every one of them is true,
+   so none of this is cut -- it is one click from the number it is about. The
+   summary is that number, which is why it keeps `.meta`'s exact size and
+   colour: nothing on the page moves when a paragraph goes behind a triangle,
+   and the line a reader was reading is still the line they see. */
+.explainer {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+.explainer > summary {
+  cursor: pointer;
+  /* The default marker sits on its own baseline and can't be styled across
+     browsers, so it goes and the ::before below takes the job. */
+  list-style: none;
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.explainer > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A triangle rather than a "why?" link: it is the one affordance a reader
+   already knows means "there is more of this", and it costs no words on a
+   page whose problem was words. */
+.explainer > summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transform: translateY(-0.1em);
+  transition: transform 120ms ease;
+}
+
+.explainer[open] > summary::before {
+  transform: translateY(-0.1em) rotate(90deg);
+}
+
+.explainer > summary:hover,
+.explainer > summary:focus-visible {
+  color: var(--fg);
+}
+
+/* Indented to the summary's text rather than to its triangle, so an open
+   paragraph reads as hanging off the sentence above it instead of starting a
+   new one. */
+.explainer-body {
+  margin: 0.4rem 0 0 0.8rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explainer > summary::before {
+    transition: none;
+  }
+}
+
 /* The win probability chart ----------------------------------------------
 
    One series, so no legend: the y axis is labelled with the two team names,
@@ -859,6 +923,15 @@ table.ratings,
   font-weight: 500;
 }
 
+/* Three-word column headings, which `.ratings .num` would otherwise hold on
+   one line: "While it mattered" is 163px of nowrap, and on a 390px viewport
+   that was enough to give the document a horizontal scrollbar. The numbers
+   under them still never wrap -- that rule is about "24-5" splitting across
+   an en dash, and a heading has no en dash to split on. */
+.epa-table thead .num {
+  white-space: normal;
+}
+
 /* The sample under the snap count rather than beside it. In the tables above,
    the small print is a different *thing* -- which team a bounce fell to -- and
    reads as an aside. Here it is the same number said again: how many of those
@@ -899,6 +972,16 @@ table.ratings,
   .games th,
   .games td {
     padding: 0.45rem 0.25rem;
+  }
+
+  /* A team name beside a number is one nowrap cell -- "0.13 Green Bay
+     Packers" is 163px, which is what gave a 390px viewport a horizontal
+     scrollbar under the chart. On a phone the name drops under its number
+     and is allowed to break; on anything wider the pair still reads across,
+     which is the point of naming the team rather than signing the number. */
+  .wp-table .num .of {
+    display: block;
+    white-space: normal;
   }
 
   /* Its own row rather than squeezed against the right edge next to the
