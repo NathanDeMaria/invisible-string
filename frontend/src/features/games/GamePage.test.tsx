@@ -271,26 +271,16 @@ describe("GamePage", () => {
     expect(bears).toHaveTextContent("2.9 live");
   });
 
-  it("shows the bound biting rather than asking for it on trust", async () => {
-    renderApp(<GamePage />, at("nfl", "g-1"));
-
-    // The Packers' touchdown was worth 4.2 points and counts as 3, which is
-    // the whole argument for bounding at all.
-    const table = (await screen.findByText("Worth")).closest("table");
-    const rows = within(table!).getAllByRole("row");
-    // Biggest first, so the clipped play leads the list.
-    expect(rows[1]).toHaveTextContent("+3.00");
-    expect(rows[1]).toHaveTextContent("+4.20 unbounded");
-  });
-
-  it("names the second fit, and says not to read one snap off it", async () => {
+  it("names the second fit, and says what its size means", async () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 
     // Its own provenance, not the curve's: two files that move separately.
     const fit = (await screen.findByText(/expected points fit/)).closest("p");
     expect(fit).toHaveTextContent("2022–2025");
+    // The error is large by construction, and saying so is what stops the
+    // averages above from being read as a claim about any one snap.
     expect(fit).toHaveTextContent(/misses the next score by 3.8 points/);
-    expect(fit).toHaveTextContent(/No single snap above should be read as one/);
+    expect(fit).toHaveTextContent(/per-play averages and not per-play claims/);
   });
 
   it("says nothing about EPA for a game it has none for", async () => {

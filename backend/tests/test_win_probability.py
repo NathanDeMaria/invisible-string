@@ -307,10 +307,11 @@ class TestEpaPerPlay:
         assert epa.net == pytest.approx(home - away)
         assert epa.net_unweighted == pytest.approx(flat_home - flat_away)
 
-    def test_the_two_averages_are_over_the_same_snaps(self) -> None:
-        """Weighted and flat differ in the weighting and nothing else, so
-        they run over one list of plays -- which is why having both costs a
-        division rather than a second pass."""
+    def test_the_flat_average_is_the_snaps_it_counted(self) -> None:
+        """Weighted and flat differ in the weighting and nothing else, so they
+        run over one list of plays -- which is why having both costs a division
+        rather than a second pass. The flat one is the half that can be
+        checked against the snaps by hand."""
         fit = fit_for("nfl")
         assert fit is not None
         epa = curve_for(fit, synthetic_game()).epa
@@ -506,21 +507,12 @@ class TestTheWinProbabilityEndpoint:
         assert epa["home_plays"] == epa["away_plays"] == 8
         assert 0 < epa["home_weight"] <= epa["home_plays"]
 
-    def test_sends_the_snaps_the_averages_are_over(self, client: TestClient) -> None:
-        """The argument behind the number, the way the swings are the argument
-        behind the luck totals -- including the raw EPA beside the bounded
-        one, so a reader can see which plays the bound bit on."""
+    def test_keeps_the_snaps_themselves_off_the_wire(self, client: TestClient) -> None:
+        """The page reports two averages, and a game's worth of per-play rows
+        nobody renders is a few hundred objects on every response. Upstream
+        still has them."""
         epa = client.get(f"{GAME}/win-probability").json()["epa"]
-        assert len(epa["plays"]) == epa["home_plays"] + epa["away_plays"]
-        clipped = [p for p in epa["plays"] if p["bounded"] != p["epa"]]
-        assert clipped and all(abs(p["bounded"]) == 3.0 for p in clipped)
-
-    def test_a_play_joins_the_curve_by_its_id(self, client: TestClient) -> None:
-        """So the page reads the clock and the score off the point it already
-        has rather than being sent them twice."""
-        body = client.get(f"{GAME}/win-probability").json()
-        drawn = {point["play_id"] for point in body["points"]}
-        assert all(play["play_id"] in drawn for play in body["epa"]["plays"])
+        assert "plays" not in epa
 
     def test_names_the_fit_that_priced_the_snaps(self, client: TestClient) -> None:
         """Its own provenance, not the curve's: two files that move

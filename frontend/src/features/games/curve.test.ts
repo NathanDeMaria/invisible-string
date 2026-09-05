@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type {
   CurvePoint,
   EpaPerPlay,
-  EpaPlay,
   GameControl,
   LuckyBounces,
   LuckySwing,
@@ -14,7 +13,6 @@ import {
   acrossTheGame,
   adjustedControlLabel,
   adjustedLinePath,
-  biggestPlays,
   clockLabel,
   elapsed,
   epaLabel,
@@ -46,17 +44,6 @@ const snap = (over: Partial<CurvePoint> = {}): CurvePoint => ({
   ...over,
 });
 
-const epaPlay = (over: Partial<EpaPlay> = {}): EpaPlay => ({
-  play_id: "p1",
-  play_number: 1,
-  offense_is_home: true,
-  expected_points: 1.1,
-  epa: 0.2,
-  bounded: 0.2,
-  weight: 1,
-  ...over,
-});
-
 const epa = (over: Partial<EpaPerPlay> = {}): EpaPerPlay => ({
   home: 0.2,
   away: 0.1,
@@ -68,7 +55,6 @@ const epa = (over: Partial<EpaPerPlay> = {}): EpaPerPlay => ({
   away_plays: 62,
   home_weight: 40,
   away_weight: 41,
-  plays: [],
   ...over,
 });
 
@@ -325,56 +311,6 @@ describe("seasonRange", () => {
 
   it("says one season as one season", () => {
     expect(seasonRange([2025])).toBe("2025");
-  });
-});
-
-describe("biggestPlays", () => {
-  const points = [
-    snap({ play_id: "a", seconds_remaining: 3000 }),
-    snap({ play_id: "b", seconds_remaining: 2000 }),
-    snap({ play_id: "c", seconds_remaining: 1000 }),
-  ];
-
-  it("ranks on the number the averages are made of, not the raw one", () => {
-    // The clipped play contributed 3.00 and the other 2.40, so the bound is
-    // what decides the order -- ranking on the raw EPA would put a play at
-    // the top of the list for a contribution it didn't make.
-    const plays = [
-      epaPlay({ play_id: "a", epa: 2.4, bounded: 2.4 }),
-      epaPlay({ play_id: "b", epa: 9.9, bounded: 3 }),
-      epaPlay({ play_id: "c", epa: 0.1, bounded: 0.1 }),
-    ];
-    expect(biggestPlays(points, plays).map(({ play }) => play.play_id)).toEqual(
-      ["b", "a", "c"],
-    );
-  });
-
-  it("ranks a loss beside a gain, since both moved the game", () => {
-    const plays = [
-      epaPlay({ play_id: "a", epa: 0.5, bounded: 0.5 }),
-      epaPlay({ play_id: "b", epa: -4, bounded: -3 }),
-    ];
-    expect(biggestPlays(points, plays)[0].play.play_id).toBe("b");
-  });
-
-  it("keeps only as many as the table has room for", () => {
-    const plays = points.map((point, index) =>
-      epaPlay({ play_id: point.play_id, bounded: index }),
-    );
-    expect(biggestPlays(points, plays, 2)).toHaveLength(2);
-  });
-
-  it("carries the snap each play happened at, for the clock", () => {
-    const [first] = biggestPlays(points, [epaPlay({ play_id: "b" })]);
-    expect(first.point.seconds_remaining).toBe(2000);
-  });
-
-  it("drops a play that isn't on the curve rather than placing it nowhere", () => {
-    // It shouldn't happen -- both come off one walk of one game -- and a row
-    // with no clock on it would be a play at no moment.
-    expect(biggestPlays(points, [epaPlay({ play_id: "elsewhere" })])).toEqual(
-      [],
-    );
   });
 });
 

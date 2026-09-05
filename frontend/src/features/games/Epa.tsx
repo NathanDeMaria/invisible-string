@@ -1,5 +1,4 @@
 import type { WinProbabilityResponse } from "../../services/api";
-import { biggestPlays, clockLabel } from "./curve";
 import { perPlay } from "./format";
 
 interface Props {
@@ -83,64 +82,6 @@ export function EpaTable({ curve }: Props) {
                   a whole number, because a snap in a decided game counts for
                   a fraction of one rather than for none. */}
               <span className="of">{row.weight.toFixed(1)} live</span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-/**
- * The snaps that moved expected points the most, which is the argument behind
- * the averages.
- *
- * The same job the scoring table does for the curve: a number nobody can
- * check is a number the page is asserting, and a game's worth of snaps is far
- * too many rows to be that check. So it is the short list, ranked on the
- * bounded number the averages are actually made of.
- *
- * **The bound is shown biting, not hidden.** A play the clip moved carries
- * its raw number underneath, so a reader looking at "+3.00" can see it was a
- * 70-yard touchdown worth five and a bit -- which is the whole argument for
- * bounding at all, and not something to make them take on trust.
- *
- * "Worth" is what the situation was worth to the offense before the snap, in
- * points on the scoreboard -- a first and ten at your own 25 is about a
- * point, first and goal at the 2 is about six -- and the EPA beside it is what
- * the snap did to that number.
- */
-export function BigPlaysTable({ curve }: Props) {
-  const plays = biggestPlays(curve.points, curve.epa?.plays ?? []);
-  if (plays.length === 0) return null;
-  return (
-    <table className="ratings wp-table epa-table">
-      <caption className="sr-only">
-        The snaps that moved expected points the most, biggest first
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">When</th>
-          <th scope="col">Offense</th>
-          <th scope="col" className="num">
-            Worth
-          </th>
-          <th scope="col" className="num">
-            EPA
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {plays.map(({ play, point }) => (
-          <tr key={play.play_id}>
-            <td>{clockLabel(point)}</td>
-            <td>{play.offense_is_home ? curve.home : curve.away}</td>
-            <td className="num quiet">{perPlay(play.expected_points)}</td>
-            <td className="num">
-              {perPlay(play.bounded)}
-              {play.bounded !== play.epa && (
-                <span className="of">{perPlay(play.epa)} unbounded</span>
-              )}
             </td>
           </tr>
         ))}

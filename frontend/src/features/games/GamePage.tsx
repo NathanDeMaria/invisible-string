@@ -12,7 +12,7 @@ import {
   luckLabel,
   seasonRange,
 } from "./curve";
-import { BigPlaysTable, EpaTable } from "./Epa";
+import { EpaTable } from "./Epa";
 import {
   points as pointsOf,
   probability,
@@ -298,12 +298,13 @@ export function GamePage() {
                       The first column weights each snap by how much the game
                       was still in doubt, so it describes <em>this game</em>;
                       the second counts every snap once, which is the one to add
-                      up across a season. Neither is a share: they are two
+                      up across a season. Both cap a single snap at three points
+                      either way, so a pick-six is the biggest play of the game
+                      rather than five of them. Neither is a share: they are two
                       averages over two different sets of snaps, in points, so
                       they don&rsquo;t add up to anything and both offenses can
                       be positive in a game where everybody moved the ball.
                     </p>
-                    <BigPlaysTable curve={curve.data} />
                     {curve.data.expected_points_fit && (
                       <p className="meta">
                         Priced by the-lucky-ones&rsquo;{" "}
@@ -318,9 +319,8 @@ export function GamePage() {
                         )}{" "}
                         points on an average snap, which is large on purpose
                         &mdash; the next score is 7 or 0 or &minus;3 and the fit
-                        says 2.1. That is why this is a per-play average and not
-                        a per-play claim. No single snap above should be read as
-                        one.
+                        says 2.1. That is why the numbers above are per-play
+                        averages and not per-play claims.
                       </p>
                     )}
                   </>

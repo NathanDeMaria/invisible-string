@@ -2,7 +2,6 @@ import { HttpResponse, http } from "msw";
 
 import type {
   CurvePoint,
-  EpaPlay,
   GameDetail,
   GameRow,
   GamesResponse,
@@ -513,28 +512,6 @@ const snap = (
   adjusted_win_prob: adjusted,
 });
 
-/**
- * One snap's EPA, written as (play, offense is home, worth, EPA) -- the four
- * fields the table under the chart reads. `bounded` is the clip upstream
- * applies, so a play worth more than three points here is one the page has to
- * show being cut down.
- */
-const epaPlay = (
-  playId: string,
-  offenseIsHome: boolean,
-  worth: number,
-  epa: number,
-  weight: number,
-): EpaPlay => ({
-  play_id: playId,
-  play_number: 0,
-  offense_is_home: offenseIsHome,
-  expected_points: worth,
-  epa,
-  bounded: Math.max(-3, Math.min(3, epa)),
-  weight,
-});
-
 export const winProbability: WinProbabilityResponse = {
   league: "nfl",
   game_id: "g-1",
@@ -600,9 +577,9 @@ export const winProbability: WinProbabilityResponse = {
    * Chicago's last drive came with the result already settled and weighs
    * almost nothing.
    *
-   * The aggregates are the plays below, actually averaged -- a fixture whose
-   * totals contradicted its own rows would test the page against a game that
-   * couldn't happen.
+   * The weights are the honest part and the fixture keeps them so: Chicago's
+   * four snaps are worth 2.9 of a live game and Green Bay's five are worth
+   * 3.9, which is what the sample column has to be able to say.
    */
   epa: {
     home: 0.3711,
@@ -615,21 +592,6 @@ export const winProbability: WinProbabilityResponse = {
     away_plays: 5,
     home_weight: 2.94,
     away_weight: 3.92,
-    plays: [
-      epaPlay("p1-890", true, 1.15, 1.1, 1.0),
-      epaPlay("p1-402", false, 0.85, -0.2, 1.0),
-      // The Packers' touchdown, and the one play the bound bites on: worth
-      // 4.2 points, counted as 3.
-      epaPlay("p1-96", false, 4.05, 4.2, 0.92),
-      epaPlay("p2-700", false, 1.05, -0.85, 0.97),
-      epaPlay("p2-210", true, 2.35, 0.55, 0.98),
-      epaPlay("p3-640", false, 2.1, -1.1, 1.0),
-      epaPlay("p3-120", true, 5.85, -0.3, 0.86),
-      // Garbage time: a big negative play that the weighting all but ignores,
-      // which is what makes the two columns part company.
-      epaPlay("p4-500", true, 1.4, -2.9, 0.1),
-      epaPlay("p4-40", false, -1.2, 1.2, 0.03),
-    ],
   },
   expected_points_fit: {
     league: "nfl",
