@@ -163,51 +163,57 @@ describe("GamePage", () => {
   });
 
   it("says which fit drew it, and what it was fit on", async () => {
+    const user = userEvent.setup();
     renderApp(<GamePage />, at("nfl", "g-1"));
 
-    expect(await screen.findByText(/2023–2025/)).toBeInTheDocument();
-    expect(screen.getByText(/Brier 0.159/)).toBeInTheDocument();
+    await user.click(await screen.findByText("Which fit drew this"));
+    expect(screen.getByText(/2023–2025/)).toBeVisible();
+    expect(screen.getByText(/Brier 0.159/)).toBeVisible();
     // Which team id it took for home, since nothing in the play data says --
     // it is inferred from the scoring drives, and the page shows its work.
-    expect(screen.getByText(/3 for Chicago Bears/)).toBeInTheDocument();
+    expect(screen.getByText(/3 for Chicago Bears/)).toBeVisible();
   });
 
   it("says how much of the game the home team held, both ways", async () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 
     // Both numbers about the same team, because the pair is a comparison:
-    // what happened, and what happened on purpose.
+    // what happened, and what happened on purpose. The number is the line
+    // that stays on the page; the caveat is what folds away.
     expect(
       await screen.findByText(
         /Chicago Bears held 42% of the game, and 37% of it with the fifty-fifty balls split evenly/,
       ),
-    ).toBeInTheDocument();
-    // Not a win probability, and the page has to say so: it's an average over
-    // the minutes, not a reading the model ever took.
+    ).toBeVisible();
+    // Not a win probability, and the page still has to say so -- a click
+    // away, on the sentence it is about.
     expect(
       screen.getByText(/share of the game held, not as a win probability/),
-    ).toBeInTheDocument();
+    ).not.toBeVisible();
   });
 
   it("says what the bounces were worth, and that it isn't a share", async () => {
+    const user = userEvent.setup();
     renderApp(<GamePage />, at("nfl", "g-1"));
 
-    expect(
-      await screen.findByText(
-        /worth 0.12 of win probability to Chicago Bears and 0.03 to Green Bay Packers/,
-      ),
-    ).toBeInTheDocument();
+    const total = await screen.findByText(
+      /worth 0.12 of win probability to Chicago Bears and 0.03 to Green Bay Packers/,
+    );
+    expect(total).toBeVisible();
     // The two totals don't sum to anything, and a page that let them read as
     // a split would be claiming something the number doesn't say.
+    await user.click(total);
     expect(
       screen.getByText(/total of win probability rather than a share/),
-    ).toBeInTheDocument();
+    ).toBeVisible();
   });
 
   it("says when a game's feed only records half the coin", async () => {
     // Which is most of an NCAAFB week: whether a broken-up pass is written
     // down follows the venue. The fumbles are still split; the interceptions
-    // are left alone, and the page says which it did.
+    // are left alone, and the page says which it did -- under the total the
+    // caveat is about.
+    const user = userEvent.setup();
     server.use(
       http.get("/api/games/:league/:gameId/win-probability", () =>
         HttpResponse.json({
@@ -218,9 +224,8 @@ describe("GamePage", () => {
     );
     renderApp(<GamePage />, at("nfl", "g-1"));
 
-    expect(
-      await screen.findByText(/only the fumbles are split here/),
-    ).toBeInTheDocument();
+    await user.click(await screen.findByText(/worth 0.12 of win probability/));
+    expect(screen.getByText(/only the fumbles are split here/)).toBeVisible();
   });
 
   it("says so when nothing in a game turned on a bounce", async () => {
@@ -250,12 +255,11 @@ describe("GamePage", () => {
       await screen.findByText(
         /While the game was still in doubt, Chicago Bears by 0.20 points a snap; over every snap, Green Bay Packers by 0.80 points a snap/,
       ),
-    ).toBeInTheDocument();
+    ).toBeVisible();
     // Neither number is a share, and the page has to say so with two shares
-    // sitting a paragraph above it.
-    expect(
-      screen.getByText(/they don’t add up to anything/),
-    ).toBeInTheDocument();
+    // sitting a paragraph above it -- which is exactly the caveat worth a
+    // click rather than a paragraph.
+    expect(screen.getByText(/they don’t add up to anything/)).not.toBeVisible();
   });
 
   it("gives each offense both numbers and the snaps behind them", async () => {
@@ -272,15 +276,50 @@ describe("GamePage", () => {
   });
 
   it("names the second fit, and says what its size means", async () => {
+    const user = userEvent.setup();
     renderApp(<GamePage />, at("nfl", "g-1"));
 
     // Its own provenance, not the curve's: two files that move separately.
-    const fit = (await screen.findByText(/expected points fit/)).closest("p");
-    expect(fit).toHaveTextContent("2022–2025");
+    await user.click(await screen.findByText("Which fit priced these"));
+    expect(screen.getByText(/2022–2025/)).toBeVisible();
     // The error is large by construction, and saying so is what stops the
     // averages above from being read as a claim about any one snap.
-    expect(fit).toHaveTextContent(/misses the next score by 3.8 points/);
-    expect(fit).toHaveTextContent(/per-play averages and not per-play claims/);
+    expect(
+      screen.getByText(/misses the next score by 3.8 points/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/per-play averages and not per-play claims/),
+    ).toBeVisible();
+  });
+
+  it("folds every caveat away, and opens the one that was asked for", async () => {
+    // The page is a scoreboard first. Every number under the chart needs a
+    // warning and every warning is true, so none of them is cut -- they are
+    // one click from the number they are about, and the numbers themselves
+    // never move.
+    const user = userEvent.setup();
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    await screen.findByText(/Chicago Bears held 42%/);
+    const hidden = [
+      /share of the game held, not as a win probability/,
+      /total of win probability rather than a share/,
+      /Brier 0.159/,
+      /doesn’t care who won/,
+      /Both cap a single snap at three points/,
+      /misses the next score by 3.8 points/,
+    ];
+    for (const caveat of hidden) {
+      expect(screen.getByText(caveat)).not.toBeVisible();
+    }
+
+    // Opening one leaves the rest folded: this is five disclosures, not an
+    // accordion with a single slot.
+    await user.click(screen.getByText("How to read the two columns"));
+    expect(
+      screen.getByText(/Both cap a single snap at three points/),
+    ).toBeVisible();
+    expect(screen.getByText(/Brier 0.159/)).not.toBeVisible();
   });
 
   it("says nothing about EPA for a game it has none for", async () => {

@@ -2285,5 +2285,44 @@ your own 35 with the possession stale, and gets labelled with a next score
 belonging to the other team. And a timeout has no business in a per-play
 denominator at all.
 
+### 16.9 The caveats, folded away
+
+Every number under the chart arrived with a paragraph, and every one of those
+paragraphs is load-bearing. A share of the game is not a win probability
+(§16.6). Two totals of win probability do not sum to anything (§16.7). An EPA
+per play is neither, and the two columns of it answer different questions
+(§16.8). A page that drops those is a page that misleads, which is why each was
+written in the first place.
+
+Written out, though, they are five paragraphs of prose standing between a
+reader and four numbers, and the page had become something you read rather than
+something you scan. The scoreboard is what the page is *for*.
+
+So the prose is behind a `<details>`, one per number, closed on arrival. Three
+decisions in that:
+
+**The summary is the number, not a "learn more".** The line that carries the
+reading stays in the page — "Chicago Bears held 43% of the game, and 47% of it
+with the fifty-fifty balls split evenly, over 60 minutes of regulation clock."
+— and clicking it opens the caveat about it. Nothing moves when a paragraph
+folds away, because the sentence a reader was reading is still the sentence
+they see. The two provenance notes are the exception and get a label instead
+("Which fit drew this"), since there is no number in them to be the summary.
+
+**`<details>`, not state.** It opens with no JavaScript, keyboard and screen
+readers already know what it is, and browser find-in-page opens one to show a
+match inside it. A `useState` toggle would be those three behaviours written
+again, worse. A triangle rather than a word, because it is the one affordance
+that costs nothing on a page whose problem was words.
+
+**Five disclosures, not one accordion.** Each caveat is about the number above
+it and opening one has no business closing another — a reader comparing the
+control pair against the EPA pair wants both open, and an accordion with a
+single slot would be a widget deciding what they can hold in view.
+
+The line this draws is between a *number* and a *caveat about how to read it*.
+Numbers, tables and the chart are never folded: the scoring plays, the bounces
+and the EPA table are the page, not commentary on it.
+
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
 [lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/pull/1
