@@ -4,7 +4,7 @@ A webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
 results: current ratings per league, win probability / predicted spread for a
 hypothetical matchup, and the games around today with the best model's number
 beside the book's. A football game gets a page of its own, with its in-game win
-probability drawn from
+probability and its EPA per play drawn from
 [the-lucky-ones](https://github.com/NathanDeMaria/the-lucky-ones). See
 [DESIGN.md](./DESIGN.md).
 

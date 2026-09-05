@@ -25,20 +25,21 @@ for a week the transform hasn't run over. All of those come back as a curve
 with no points rather than as a 404: the game page still has a game on it.
 
 **A game is read once.** Everything below -- the curve, the same curve with
-the bounces split, the share of the game each side held either way, and what
-the bounces were worth -- comes off one walk of the plays and the states it
-builds. That is what upstream's `*_from_states` entry points are for
-(DESIGN.md 16.7), and it is the difference between four passes over a game and
-one.
+the bounces split, the share of the game each side held either way, what the
+bounces were worth, and what each offense did with the ball -- comes off one
+walk of the plays and the states it builds. That is what upstream's
+`*_from_states` entry points are for (DESIGN.md 16.7), and it is the
+difference between five passes over a game and one.
 """
 
 import logging
 from dataclasses import dataclass
 from typing import Sequence
 
-from lucky_ones import MODELS, CurvePoint, GameControl, group_by_game
+from lucky_ones import MODELS, CurvePoint, EpaPerPlay, GameControl, group_by_game
 from lucky_ones.bundled import BundledModel
 from lucky_ones.curve import game_control
+from lucky_ones.epa import epa_per_play_from_states
 from lucky_ones.luck import (
     LuckyWP,
     adjusted_curve_from_states,
@@ -47,6 +48,8 @@ from lucky_ones.luck import (
     records_defended_passes,
 )
 from lucky_ones.plays import Play
+from lucky_ones.points import scoring_plays
+from lucky_ones.release import ExpectedPointsRelease
 from lucky_ones.state import iter_states
 
 log = logging.getLogger(__name__)
@@ -79,6 +82,20 @@ class Curve:
     control: GameControl | None
     adjusted_control: GameControl | None
     luck: LuckyWP | None
+    epa: EpaPerPlay | None
+    """What each offense did with the ball, in points per snap.
+
+    The number on this page that isn't about who won. `game_control` and its
+    adjusted twin both measure the *game*; this measures the football, and the
+    two genuinely disagree about a team that keeps winning close ones.
+
+    None on a game with no snaps to average -- and, for the same reason
+    `fit_for` answers None, on a league whose expected points fit isn't in
+    this install. Upstream ships the two fits as two files precisely so one
+    can be missing without taking the other down, and a curve is worth
+    drawing without a number under it.
+    """
+
     records_defended_passes: bool
     """Whether this game's feed writes down the passes a defender got to.
 
@@ -100,6 +117,7 @@ EMPTY = Curve(
     control=None,
     adjusted_control=None,
     luck=None,
+    epa=None,
     records_defended_passes=False,
 )
 """A game with nothing to draw. See `curve_for` for the three ways to get one."""
@@ -128,6 +146,23 @@ def fit_for(league: str) -> BundledModel | None:
     return model
 
 
+def expected_points_for(fit: BundledModel) -> ExpectedPointsRelease | None:
+    """The league's expected points release, or None if it isn't shipped.
+
+    The second fit, and the second file: upstream keeps `{league}.json` and
+    `{league}-ep.json` apart because they are fit separately and move
+    separately, which means a build can have one and not the other. So this
+    gets the same treatment `fit_for` gives the first -- a warning and a None,
+    not a 500. EPA per play is the only thing downstream of it, and a game
+    page without that number is still a game page.
+    """
+    try:
+        return fit.expected_points_release
+    except Exception:  # noqa: BLE001 - a missing or unreadable data file
+        log.warning("no expected points fit for %s", fit.league, exc_info=True)
+        return None
+
+
 def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
     """The curve for the one game `plays` belongs to, both ways.
 
@@ -142,12 +177,18 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
     - plays that are all kickoffs and clock stoppages, which `iter_states`
       drops -- so a game whose play-by-play is a stub scores no snaps.
 
-    Otherwise it is one walk of the game and four questions of the fit:
-    `find_lucky_plays` reads the play text once, and both metrics are handed
-    that same list, so they can differ about what a bounce was worth but never
-    about which plays bounced. The `*_from_states` pair each re-score the
-    realized curve, which is a matrix multiply over a few hundred rows and is
-    the price of upstream's two entry points staying independent.
+    Otherwise it is one walk of the game and five questions of the fit:
+    `find_lucky_plays` reads the play text once, and both luck metrics are
+    handed that same list, so they can differ about what a bounce was worth
+    but never about which plays bounced. The `*_from_states` trio each
+    re-score the realized curve, which is a matrix multiply over a few hundred
+    rows and is the price of upstream's entry points staying independent.
+
+    The fifth is EPA per play, and it is the one that reads the *other* fit:
+    expected points to price each snap, the win probability already in hand to
+    say how much the game it happened in was still in doubt. Same states, one
+    more pass over the plays to find which of them put points on the board --
+    a snap that scored has no next snap to be priced against.
     """
     games = group_by_game(plays)
     if not games:
@@ -165,6 +206,7 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
     states = list(iter_states(game))
     lucky = find_lucky_plays(game.plays)
     adjusted = adjusted_curve_from_states(fit.model, states, lucky)
+    points = expected_points_for(fit)
     return Curve(
         home_team_id=game.home_team_id,
         away_team_id=game.away_team_id,
@@ -176,5 +218,24 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
         # bounced" is a real reading of a game that was played, and a stub
         # play-by-play must not render as one.
         luck=lucky_wp_from_states(fit.model, states, lucky) if states else None,
+        # None on the same games `luck` is None on, and on a league whose
+        # second fit isn't in the install. Upstream's own None -- an offense
+        # with nothing to average -- is inside the tuple rather than instead
+        # of it, since "the home team never had the ball" is a fact about the
+        # game worth carrying.
+        epa=(
+            epa_per_play_from_states(
+                # `fit.expected_points` rather than `points.to_model()`: it is
+                # the same fit off the same release, cached on the model the
+                # way `fit.model` is, so serving a second game doesn't rebuild
+                # it.
+                fit.expected_points,
+                fit.model,
+                states,
+                scoring_plays(list(game.plays)),
+            )
+            if states and points is not None
+            else None
+        ),
         records_defended_passes=records_defended_passes(game.plays),
     )

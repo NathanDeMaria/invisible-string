@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type {
   CurvePoint,
+  EpaPerPlay,
+  EpaPlay,
   GameControl,
   LuckyBounces,
   LuckySwing,
@@ -12,8 +14,11 @@ import {
   acrossTheGame,
   adjustedControlLabel,
   adjustedLinePath,
+  biggestPlays,
   clockLabel,
   elapsed,
+  epaLabel,
+  epaMargin,
   gapPath,
   kindLabel,
   linePath,
@@ -38,6 +43,32 @@ const snap = (over: Partial<CurvePoint> = {}): CurvePoint => ({
   away_score: 0,
   home_win_prob: 0.5,
   adjusted_win_prob: 0.5,
+  ...over,
+});
+
+const epaPlay = (over: Partial<EpaPlay> = {}): EpaPlay => ({
+  play_id: "p1",
+  play_number: 1,
+  offense_is_home: true,
+  expected_points: 1.1,
+  epa: 0.2,
+  bounded: 0.2,
+  weight: 1,
+  ...over,
+});
+
+const epa = (over: Partial<EpaPerPlay> = {}): EpaPerPlay => ({
+  home: 0.2,
+  away: 0.1,
+  net: 0.1,
+  home_unweighted: 0.15,
+  away_unweighted: 0.2,
+  net_unweighted: -0.05,
+  home_plays: 60,
+  away_plays: 62,
+  home_weight: 40,
+  away_weight: 41,
+  plays: [],
   ...over,
 });
 
@@ -294,5 +325,120 @@ describe("seasonRange", () => {
 
   it("says one season as one season", () => {
     expect(seasonRange([2025])).toBe("2025");
+  });
+});
+
+describe("biggestPlays", () => {
+  const points = [
+    snap({ play_id: "a", seconds_remaining: 3000 }),
+    snap({ play_id: "b", seconds_remaining: 2000 }),
+    snap({ play_id: "c", seconds_remaining: 1000 }),
+  ];
+
+  it("ranks on the number the averages are made of, not the raw one", () => {
+    // The clipped play contributed 3.00 and the other 2.40, so the bound is
+    // what decides the order -- ranking on the raw EPA would put a play at
+    // the top of the list for a contribution it didn't make.
+    const plays = [
+      epaPlay({ play_id: "a", epa: 2.4, bounded: 2.4 }),
+      epaPlay({ play_id: "b", epa: 9.9, bounded: 3 }),
+      epaPlay({ play_id: "c", epa: 0.1, bounded: 0.1 }),
+    ];
+    expect(biggestPlays(points, plays).map(({ play }) => play.play_id)).toEqual(
+      ["b", "a", "c"],
+    );
+  });
+
+  it("ranks a loss beside a gain, since both moved the game", () => {
+    const plays = [
+      epaPlay({ play_id: "a", epa: 0.5, bounded: 0.5 }),
+      epaPlay({ play_id: "b", epa: -4, bounded: -3 }),
+    ];
+    expect(biggestPlays(points, plays)[0].play.play_id).toBe("b");
+  });
+
+  it("keeps only as many as the table has room for", () => {
+    const plays = points.map((point, index) =>
+      epaPlay({ play_id: point.play_id, bounded: index }),
+    );
+    expect(biggestPlays(points, plays, 2)).toHaveLength(2);
+  });
+
+  it("carries the snap each play happened at, for the clock", () => {
+    const [first] = biggestPlays(points, [epaPlay({ play_id: "b" })]);
+    expect(first.point.seconds_remaining).toBe(2000);
+  });
+
+  it("drops a play that isn't on the curve rather than placing it nowhere", () => {
+    // It shouldn't happen -- both come off one walk of one game -- and a row
+    // with no clock on it would be a play at no moment.
+    expect(biggestPlays(points, [epaPlay({ play_id: "elsewhere" })])).toEqual(
+      [],
+    );
+  });
+});
+
+describe("epaMargin", () => {
+  it("names the better offense rather than leaving it to a sign", () => {
+    expect(epaMargin(0.23, "Bears", "Packers")).toBe(
+      "Bears by 0.23 points a snap",
+    );
+    expect(epaMargin(-0.23, "Bears", "Packers")).toBe(
+      "Packers by 0.23 points a snap",
+    );
+  });
+
+  it("calls a gap below what the page prints level", () => {
+    // "by 0.00" is not a lead, and printing one would invent a winner out of
+    // a rounding error.
+    expect(epaMargin(0.001, "Bears", "Packers")).toBe(
+      "the two offenses were level",
+    );
+  });
+
+  it("says nothing when a side has nothing to average", () => {
+    expect(epaMargin(null, "Bears", "Packers")).toBeNull();
+  });
+});
+
+describe("epaLabel", () => {
+  it("says both margins, because the two can disagree", () => {
+    const label = epaLabel(
+      epa({ net: 0.2, net_unweighted: -0.8 }),
+      "Bears",
+      "Packers",
+    );
+    expect(label).toBe(
+      "While the game was still in doubt, Bears by 0.20 points a snap; " +
+        "over every snap, Packers by 0.80 points a snap",
+    );
+  });
+
+  it("says one clause when the two agree, not the same one twice", () => {
+    expect(
+      epaLabel(epa({ net: 0.13, net_unweighted: 0.134 }), "Bears", "Packers"),
+    ).toBe(
+      "Whether or not the garbage time is weighted out, " +
+        "Bears by 0.13 points a snap",
+    );
+  });
+
+  it("drops the clause it can't fill rather than the sentence", () => {
+    // A game so decided that one offense has no weight left has no weighted
+    // margin, and "there was nothing to measure while it mattered" is what
+    // that honestly looks like.
+    const label = epaLabel(
+      epa({ net: null, net_unweighted: 0.4 }),
+      "Bears",
+      "Packers",
+    );
+    expect(label).toBe("Over every snap, Bears by 0.40 points a snap");
+  });
+
+  it("says nothing about a game with no number at all", () => {
+    expect(epaLabel(null, "Bears", "Packers")).toBeNull();
+    expect(
+      epaLabel(epa({ net: null, net_unweighted: null }), "B", "P"),
+    ).toBeNull();
   });
 });

@@ -206,6 +206,127 @@ export interface components {
             seconds_remaining: number;
         };
         /**
+         * EpaPerPlay
+         * @description What each offense did with the ball, in points per snap.
+         *
+         *     The number on this page that isn't about who won. Both control numbers
+         *     measure the *game*; this measures the football, and the two genuinely
+         *     disagree about a team that keeps winning close ones.
+         *
+         *     **Two numbers per offense, and they answer different questions.** Both
+         *     average the same bounded EPA over the same snaps and differ only in
+         *     whether the garbage time is weighted out, so they come off one pass:
+         *     `home` is the better description of *this game* -- the closest a
+         *     whole-game number gets to what the team did while it was still in doubt --
+         *     and `home_unweighted` is the better estimate of *the team*, which is the
+         *     one to add up across a season. The page shows both rather than picking,
+         *     because upstream measured the split and found no setting that does both
+         *     jobs.
+         *
+         *     **These do not sum to anything.** Unlike `GameControl` they are two
+         *     averages over two disjoint sets of snaps, in points, and both are positive
+         *     in a game where everybody moved the ball. `net` is the home team's margin,
+         *     and it is null when either side has nothing to average -- a margin against
+         *     a missing number isn't a margin.
+         *
+         *     A null `home` means there was nothing to average, not 0.0: no snaps for
+         *     that offense, or (only reachable with the weighting on) a team whose every
+         *     snap came with the game already decided. 0.0 is a real EPA per play -- a
+         *     team that played exactly to expectation -- and a metric that says that
+         *     about a game it couldn't measure is worse than one that says nothing.
+         */
+        EpaPerPlay: {
+            /** Away */
+            away: number | null;
+            /** Away Plays */
+            away_plays: number;
+            /** Away Unweighted */
+            away_unweighted: number | null;
+            /** Away Weight */
+            away_weight: number;
+            /** Home */
+            home: number | null;
+            /** Home Plays */
+            home_plays: number;
+            /** Home Unweighted */
+            home_unweighted: number | null;
+            /** Home Weight */
+            home_weight: number;
+            /** Net */
+            net: number | null;
+            /** Net Unweighted */
+            net_unweighted: number | null;
+            /** Plays */
+            plays: components["schemas"]["EpaPlay"][];
+        };
+        /**
+         * EpaPlay
+         * @description One snap's expected points added, and what it counted for.
+         *
+         *     The argument behind the averages above it, in the way `LuckySwing` is the
+         *     argument behind `LuckyBounces`: a number nobody can check is a number the
+         *     page is asserting. Joined to the curve by `play_id`, so the page reads the
+         *     clock and the score off the point it already has rather than being sent
+         *     them twice.
+         *
+         *     `epa` is the raw difference and `bounded` is what the average is actually
+         *     over -- both, because which plays the bound bit on is a fact about the
+         *     game. A 70-yard touchdown and a red-zone pick-six are both worth three
+         *     points here, and a reader looking at a number built that way should be
+         *     able to see it happen.
+         *
+         *     Every regulation snap is here, not the interesting ones: which of them
+         *     are interesting is a question about how the page is laid out, and the wire
+         *     has no business answering it.
+         */
+        EpaPlay: {
+            /** Bounded */
+            bounded: number;
+            /** Epa */
+            epa: number;
+            /** Expected Points */
+            expected_points: number;
+            /** Offense Is Home */
+            offense_is_home: boolean;
+            /** Play Id */
+            play_id: string;
+            /** Play Number */
+            play_number: number;
+            /** Weight */
+            weight: number;
+        };
+        /**
+         * ExpectedPointsFit
+         * @description Which fit priced the snaps, and how much to trust it.
+         *
+         *     The second of the two the-lucky-ones ships for a league, and a separate
+         *     file from the first because the two are fit separately and move
+         *     separately. So it gets its own provenance rather than borrowing the
+         *     curve's: a retrain of one doesn't renumber the other.
+         *
+         *     `log_loss` is over the seven things that can score next -- log(7) = 1.95
+         *     is what guessing the base rates gets, so a fit near it has learned
+         *     nothing. `mean_absolute_error` is the expected value against the points
+         *     that actually came next, in points, and it is large by construction: the
+         *     next score is 7 or 0 or -3 and the fit says 2.1. Its size is exactly why
+         *     EPA is a per-play *average* rather than a per-play claim, and the page
+         *     says so.
+         */
+        ExpectedPointsFit: {
+            /** League */
+            league: string;
+            /** Log Loss */
+            log_loss: number;
+            /** Mean Absolute Error */
+            mean_absolute_error: number;
+            /** N Games */
+            n_games: number;
+            /** Run Id */
+            run_id: string;
+            /** Seasons */
+            seasons: number[];
+        };
+        /**
          * GameControl
          * @description Share of the game each team spent winning it, weighted by the clock.
          *
@@ -728,6 +849,8 @@ export interface components {
             /** Away Team Id */
             away_team_id: string | null;
             control: components["schemas"]["GameControl"] | null;
+            epa: components["schemas"]["EpaPerPlay"] | null;
+            expected_points_fit: components["schemas"]["ExpectedPointsFit"] | null;
             fit: components["schemas"]["WinProbabilityFit"];
             /** Game Id */
             game_id: string;

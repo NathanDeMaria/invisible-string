@@ -28,6 +28,9 @@ export type CurvePoint = components["schemas"]["CurvePoint"];
 export type GameControl = components["schemas"]["GameControl"];
 export type LuckyBounces = components["schemas"]["LuckyBounces"];
 export type LuckySwing = components["schemas"]["LuckySwing"];
+export type EpaPerPlay = components["schemas"]["EpaPerPlay"];
+export type EpaPlay = components["schemas"]["EpaPlay"];
+export type ExpectedPointsFit = components["schemas"]["ExpectedPointsFit"];
 
 export interface RatingsArgs {
   league: string;

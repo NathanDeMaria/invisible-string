@@ -849,6 +849,25 @@ table.ratings,
   margin-bottom: 1rem;
 }
 
+/* EPA per play ------------------------------------------------------------
+
+   Team names are row headers here, the way the matchup page's pair are, but
+   at the weight of the rows around them: this table sits between two others
+   whose first column is ordinary text, and a bold column would read as a
+   heading for them too. */
+.epa-table tbody th {
+  font-weight: 500;
+}
+
+/* The second number in an EPA cell goes under the first rather than beside
+   it. In the tables above, the small print is a different *thing* -- which
+   team a bounce fell to -- and reads as an aside. Here it is the same number
+   said again: the snaps a per-play average is over, and the raw EPA the bound
+   cut down. Under it is where a denominator goes. */
+.epa-table .num .of {
+  display: block;
+}
+
 /* Narrow screens: buy the table horizontal room back from its padding, and
    let a long team name wrap rather than widen the column. */
 @media (max-width: 30rem) {

@@ -25,11 +25,12 @@ boto3 = "^1.41.0"
 # to add sklearn here.
 cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "785f888d230dae7f94865174adc097e5bb15cda1" }
 
-# In-game win probability for football, pinned by rev the way cassandra is
-# (DESIGN.md section 16). The fits ship *inside* this package, so the pin is
-# the model: "which curve is this drawing?" has one answer -- the rev -- and a
-# retrain arrives here as a bump rather than as a file that changed in a
-# bucket.
+# In-game win probability and EPA per play for football, pinned by rev the way
+# cassandra is (DESIGN.md sections 16 and 16.8). The fits ship *inside* this
+# package -- two per league now, win probability and expected points, in two
+# files because they are fit separately -- so the pin is the model: "which
+# curve is this drawing?" has one answer, the rev, and a retrain arrives here
+# as a bump rather than as a file that changed in a bucket.
 #
 # The `data` extra and not `fit`. Upstream keeps them apart precisely so a
 # consumer can say which half it means: `data` is pyarrow, for turning
@@ -43,7 +44,7 @@ cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "785
 # parquet, one object per league-week, and reading one game out of one is
 # what makes a curve affordable at all. The solver behind `fit` buys nothing
 # here, and this is how the dependency says so.
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "e12179e2f1d33b2f90293be7e4df4150ed381eb7", extras = ["data"] }
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "87073d1f9e8d0a72c36a98efb66f9ca7ee3d590b", extras = ["data"] }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"

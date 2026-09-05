@@ -1851,7 +1851,8 @@ So `/games/{league}/{game_id}` is a page about one game. It lists everything
 this app has on it — schedule, status, score, the book's number, the model's
 number and the two ratings behind it, which release said so, and which week of
 which season endgame filed it under — and for a football game with play-by-play
-behind it, it draws the win probability over time.
+behind it, it draws the win probability over time and says what each offense
+did with the ball while that was going on.
 
 ### 16.1 The curve comes from a package, not a bucket
 
@@ -2153,6 +2154,129 @@ The `lucky_wp` totals get the opposite warning: they are win probability, in
 the units the curve is drawn in, and they do not sum to anything — so the page
 says "worth 0.13 of win probability" rather than "13%", which would be read as
 a share of the game two lines up.
+
+### 16.8 Who played better, which is a different question
+
+Everything above is about the game. `game_control` says who was ahead of it,
+the adjusted twin says who would have been with the fifty-fifty balls split,
+and `lucky_wp` says how big the breaks were — three readings of one curve, all
+of them downstream of the scoreboard. None of them answers the other thing a
+reader wants from a game page: *who played better?*
+
+**EPA per play does, and it doesn't care who won.** Expected points added is
+the difference between what a situation was worth before a snap and what it is
+worth after it, signed for the team with the ball — a 3-yard gain on third and
+8 is negative, an interception is worth about as much as a touchdown in the
+other direction. Averaged over a game it is the closest play-by-play gets to
+"how well did this team play", and a team can control 0.70 of a game it played
+worse in. That gap is most of what there is to say about a team that keeps
+winning close ones, and it is the reason this sits next to the pair rather
+than instead of them.
+
+| | what it asks | units |
+|---|---|---|
+| `game_control` | who controlled this game | a share; the two sides sum to 1 |
+| `luck_adjusted_game_control` | who would have, with the bounces split | the same share |
+| `lucky_wp` | what the breaks were worth to each side | win probability; the sides sum to nothing |
+| `epa_per_play` | who moved the ball, a snap at a time | **points**; the sides sum to nothing either |
+
+#### A second fit, and the pin still answers for it
+
+the-lucky-ones now ships two fits per league: `{league}.json` is the win
+probability model and `{league}-ep.json` is a multinomial over the seven
+things that can score next, whose expectation is what a snap is worth. They
+are two files because they are fit separately and move separately — a retrain
+of one should be a diff of one — and `epa_per_play` is the one call that reads
+both.
+
+Nothing about §16.1's trade changes. Both fits are data files inside the
+wheel, so the rev in `pyproject.toml` is still the whole answer to "which
+model is this", and this app still reads and never fits. What does change is
+that a build can now have one fit and not the other, so `expected_points_for`
+gives the second fit the same treatment `fit_for` gives the first: a warning
+and a None, never a 500. A curve is worth drawing without a number under it.
+
+#### Two numbers per offense, and the page shows both
+
+`EpaPerPlay` reports each side weighted and flat. Both average the same
+bounded EPA over the same snaps and differ only in whether garbage time is
+weighted out, so they come off one pass and having both costs two divisions.
+
+- **Weighted** — each snap counted by `4p(1-p)` squared on the win probability
+  at the time — is the better *description of one game*: the closest a
+  whole-game number gets to what a team did while the game was still in doubt.
+- **Flat** is the better *estimate of a team*: measured over every snap, so it
+  is the one to rank on and the one to add up across a season.
+
+Upstream measured the split rather than guessing it, and found no middle
+setting that does both jobs — garbage time moves a game's number by 0.11 and
+almost all of that is noise, which is the whole error on one game and averages
+away over a season. So the page shows both columns rather than picking one and
+hiding the other, and says in a line which is which.
+
+**Neither is a share, and that is the trap on this particular page.** Two
+shares sit a paragraph above them, so the sentence under the table has to say
+out loud that these two are averages over two *disjoint* sets of snaps, in
+points, and that both offenses can be positive in a game where everybody moved
+the ball. `net` is on the wire rather than left to the page to subtract, for
+the reason `GameControl.seconds` is: a number the API already computed
+shouldn't get a second chance to be wrong in the browser.
+
+A null is not a zero, the same rule §16.7 states about `luck`. None means
+there was nothing to average — no snaps for that offense, or (only reachable
+with the weighting on) a team whose every snap came with the game decided.
+0.00 is a real EPA per play, a team that played exactly to expectation, and a
+metric that says that about a game it couldn't measure is worse than one that
+says nothing.
+
+#### The bound, shown biting
+
+EPA has fat tails — most snaps are worth a fraction of a point and a red-zone
+pick-six is worth eleven — so upstream clips each play's contribution at 3
+points either way, which is measured rather than tidy. A game is only ~130
+snaps, and at its full value one such play moves a team's average by most of
+the gap between a good offense and a bad one.
+
+That is a real thing to do to a number, so the page does not ask for it on
+trust: the short list of the biggest snaps carries the raw EPA under the
+bounded one wherever the clip moved a play, and it is *ranked* on the bounded
+number — the one the averages are actually made of. Ranking on the raw number
+would put a play at the top of the list for a contribution it didn't make.
+
+#### Where it lives, and what it costs
+
+**On the same endpoint as the curve, not one of its own.** §16.2 splits the
+game and the curve into two requests because they read two upstreams, and that
+is the rule rather than "one response per idea": this reads the same plays,
+walked once, so it rides along. `curve_for` hands `epa_per_play_from_states`
+the states it already built plus one more pass over the plays to find which of
+them put points on the board — a scoring snap has no next snap to be priced
+against, so the points are the answer and no model is consulted.
+
+**A table, not a chart.** The game already has one chart and the thing worth
+seeing here is a comparison of four numbers, which a table does better than
+anything drawn. The per-snap EPA is on the wire — every priced snap, since
+which ones are interesting is a question about page layout that the API has no
+business answering — and the page takes the eight biggest.
+
+#### What the bump brought with it
+
+The rev this section is written against also fixes a filter upstream, and it
+moves the chart §16.6 draws. `iter_states` promised one state per scrimmage
+play and tested for it on the columns — no down, no clock, no possession team,
+not a snap. Timeouts pass every one of those tests: the feed carries the
+situation of the snap around them, or a placeholder first and ten at the 35.
+The two-minute warning is the same thing under another name, and in NCAAFB
+kickoffs usually do carry a down. Together they were 7% of NFL states and 9.5%
+of college ones.
+
+So both leagues' win probability fits were retrained without them and the
+curve here moves slightly — the run id on the page is what says which. It
+matters more to expected points than to the curve, which is why it arrived
+with it: a timeout on the kickoff after a score is priced as first and ten at
+your own 35 with the possession stale, and gets labelled with a next score
+belonging to the other team. And a timeout has no business in a per-play
+denominator at all.
 
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
 [lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/pull/1

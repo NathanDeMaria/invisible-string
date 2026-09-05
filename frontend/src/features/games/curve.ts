@@ -29,6 +29,8 @@
 
 import type {
   CurvePoint,
+  EpaPerPlay,
+  EpaPlay,
   GameControl,
   LuckyBounces,
   LuckySwing,
@@ -395,4 +397,105 @@ export function luckLabel(
 /** A share of the game, rounded the way the sentences above read it. */
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
+}
+
+/**
+ * How many of the biggest snaps get a row under the EPA table.
+ *
+ * A game is ~130 of them and nobody reads 130 rows, so this table is the
+ * short list rather than the ledger -- the same job the scoring table does
+ * for the curve. Eight is about where a reader stops recognising the plays.
+ */
+export const BIG_PLAYS = 8;
+
+/** One snap on the short list, joined to the point that says when it was. */
+export interface BigPlay {
+  play: EpaPlay;
+  point: CurvePoint;
+}
+
+/**
+ * The snaps that moved expected points the most, biggest first.
+ *
+ * Ranked on `bounded` rather than on `epa`, which is the one decision here
+ * worth arguing about: the bounded number is what the averages above are
+ * made of, so ranking on the raw one would put a play at the top of the list
+ * for a contribution it didn't make. The raw number is still on the row --
+ * that is how a reader sees the bound bite.
+ *
+ * A play whose snap isn't on the curve is dropped rather than placed without
+ * one. It shouldn't happen -- both come off the same walk of the same game --
+ * and a row with no clock on it would be a play at no moment.
+ */
+export function biggestPlays(
+  points: CurvePoint[],
+  plays: EpaPlay[],
+  limit: number = BIG_PLAYS,
+): BigPlay[] {
+  const byPlay = new Map(points.map((point) => [point.play_id, point]));
+  return plays
+    .flatMap((play) => {
+      const point = byPlay.get(play.play_id);
+      return point ? [{ play, point }] : [];
+    })
+    .sort((a, b) => Math.abs(b.play.bounded) - Math.abs(a.play.bounded))
+    .slice(0, limit);
+}
+
+/**
+ * Which offense was better per snap, and by how much -- or that they were
+ * level.
+ *
+ * Named rather than signed, for the reason the lucky plays table names its
+ * team: a signed number on a two-team page is a convention the reader has to
+ * hold, and this sentence is read once.
+ *
+ * Null when either side has nothing to average, which is the same rule
+ * `net` follows on the wire: a margin against a missing number isn't a
+ * margin. A gap that rounds to nothing is "level" rather than "by 0.00",
+ * since the page prints two decimals and a number below them is not a lead.
+ */
+export function epaMargin(
+  net: number | null | undefined,
+  home: string,
+  away: string,
+): string | null {
+  if (net == null) return null;
+  if (Math.abs(net) < 0.005) return "the two offenses were level";
+  return `${net > 0 ? home : away} by ${Math.abs(net).toFixed(2)} points a snap`;
+}
+
+/**
+ * The two margins as a sentence, or null when there's nothing to compare.
+ *
+ * Both, because they are the sentence's point: the weighted margin is who was
+ * better while the game was live and the flat one is who was better over the
+ * whole thing, and a game where those two disagree is a game the page should
+ * say so about rather than average into silence.
+ *
+ * The weighted half can be missing on its own -- a game so decided that one
+ * offense has no weight left -- and the sentence drops that clause rather
+ * than the number, which is what "there was nothing to measure while it
+ * mattered" honestly looks like.
+ */
+export function epaLabel(
+  epa: EpaPerPlay | null | undefined,
+  home: string,
+  away: string,
+): string | null {
+  if (!epa) return null;
+  const live = epaMargin(epa.net, home, away);
+  const flat = epaMargin(epa.net_unweighted, home, away);
+  if (live && flat) {
+    // Said once when they agree. The sentence exists because the two can
+    // disagree, and printing the same clause twice would spend the reader's
+    // attention on a difference that isn't there.
+    if (live === flat) {
+      return `Whether or not the garbage time is weighted out, ${live}`;
+    }
+    return `While the game was still in doubt, ${live}; over every snap, ${flat}`;
+  }
+  if (flat) return `Over every snap, ${flat}`;
+  if (live) return `While the game was still in doubt, ${live}`;
+  return null;
 }
