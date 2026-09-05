@@ -56,7 +56,7 @@
         "type": "object"
       },
       "EpaPerPlay": {
-        "description": "What each offense did with the ball, in points per snap.\n\nThe number on this page that isn't about who won. Both control numbers\nmeasure the *game*; this measures the football, and the two genuinely\ndisagree about a team that keeps winning close ones.\n\n**Two numbers per offense, and they answer different questions.** Both\naverage the same bounded EPA over the same snaps and differ only in\nwhether the garbage time is weighted out, so they come off one pass:\n`home` is the better description of *this game* -- the closest a\nwhole-game number gets to what the team did while it was still in doubt --\nand `home_unweighted` is the better estimate of *the team*, which is the\none to add up across a season. The page shows both rather than picking,\nbecause upstream measured the split and found no setting that does both\njobs.\n\n**These do not sum to anything.** Unlike `GameControl` they are two\naverages over two disjoint sets of snaps, in points, and both are positive\nin a game where everybody moved the ball. `net` is the home team's margin,\nand it is null when either side has nothing to average -- a margin against\na missing number isn't a margin.\n\nA null `home` means there was nothing to average, not 0.0: no snaps for\nthat offense, or (only reachable with the weighting on) a team whose every\nsnap came with the game already decided. 0.0 is a real EPA per play -- a\nteam that played exactly to expectation -- and a metric that says that\nabout a game it couldn't measure is worse than one that says nothing.",
+        "description": "What each offense did with the ball, in points per snap.\n\nThe number on this page that isn't about who won. Both control numbers\nmeasure the *game*; this measures the football, and the two genuinely\ndisagree about a team that keeps winning close ones.\n\n**Two numbers per offense, and they answer different questions.** Both\naverage the same bounded EPA over the same snaps and differ only in\nwhether the garbage time is weighted out, so they come off one pass:\n`home` is the better description of *this game* -- the closest a\nwhole-game number gets to what the team did while it was still in doubt --\nand `home_unweighted` is the better estimate of *the team*, which is the\none to add up across a season. The page shows both rather than picking,\nbecause upstream measured the split and found no setting that does both\njobs.\n\n**These do not sum to anything.** Unlike `GameControl` they are two\naverages over two disjoint sets of snaps, in points, and both are positive\nin a game where everybody moved the ball. `net` is the home team's margin,\nand it is null when either side has nothing to average -- a margin against\na missing number isn't a margin.\n\nA null `home` means there was nothing to average, not 0.0: no snaps for\nthat offense, or (only reachable with the weighting on) a team whose every\nsnap came with the game already decided. 0.0 is a real EPA per play -- a\nteam that played exactly to expectation -- and a metric that says that\nabout a game it couldn't measure is worse than one that says nothing.\n\n**The snaps themselves stay upstream.** `EpaPerPlay.plays` holds every\npriced play with its raw and bounded number, and none of it is on the\nwire: what the page reports is the two averages, and a game's worth of\nrows nobody renders is a few hundred objects on every response. It is\nupstream's tuple, so a page that wants to show its work later is a field\nhere rather than a second pass over the game.",
         "properties": {
           "away": {
             "anyOf": [
@@ -139,13 +139,6 @@
               }
             ],
             "title": "Net Unweighted"
-          },
-          "plays": {
-            "items": {
-              "$ref": "#/components/schemas/EpaPlay"
-            },
-            "title": "Plays",
-            "type": "array"
           }
         },
         "required": [
@@ -158,54 +151,9 @@
           "home_plays",
           "away_plays",
           "home_weight",
-          "away_weight",
-          "plays"
+          "away_weight"
         ],
         "title": "EpaPerPlay",
-        "type": "object"
-      },
-      "EpaPlay": {
-        "description": "One snap's expected points added, and what it counted for.\n\nThe argument behind the averages above it, in the way `LuckySwing` is the\nargument behind `LuckyBounces`: a number nobody can check is a number the\npage is asserting. Joined to the curve by `play_id`, so the page reads the\nclock and the score off the point it already has rather than being sent\nthem twice.\n\n`epa` is the raw difference and `bounded` is what the average is actually\nover -- both, because which plays the bound bit on is a fact about the\ngame. A 70-yard touchdown and a red-zone pick-six are both worth three\npoints here, and a reader looking at a number built that way should be\nable to see it happen.\n\nEvery regulation snap is here, not the interesting ones: which of them\nare interesting is a question about how the page is laid out, and the wire\nhas no business answering it.",
-        "properties": {
-          "bounded": {
-            "title": "Bounded",
-            "type": "number"
-          },
-          "epa": {
-            "title": "Epa",
-            "type": "number"
-          },
-          "expected_points": {
-            "title": "Expected Points",
-            "type": "number"
-          },
-          "offense_is_home": {
-            "title": "Offense Is Home",
-            "type": "boolean"
-          },
-          "play_id": {
-            "title": "Play Id",
-            "type": "string"
-          },
-          "play_number": {
-            "title": "Play Number",
-            "type": "integer"
-          },
-          "weight": {
-            "title": "Weight",
-            "type": "number"
-          }
-        },
-        "required": [
-          "play_id",
-          "play_number",
-          "offense_is_home",
-          "expected_points",
-          "epa",
-          "bounded",
-          "weight"
-        ],
-        "title": "EpaPlay",
         "type": "object"
       },
       "ExpectedPointsFit": {

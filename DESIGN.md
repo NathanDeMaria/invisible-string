@@ -2229,7 +2229,7 @@ with the weighting on) a team whose every snap came with the game decided.
 metric that says that about a game it couldn't measure is worse than one that
 says nothing.
 
-#### The bound, shown biting
+#### The bound, said rather than shown
 
 EPA has fat tails — most snaps are worth a fraction of a point and a red-zone
 pick-six is worth eleven — so upstream clips each play's contribution at 3
@@ -2237,11 +2237,16 @@ points either way, which is measured rather than tidy. A game is only ~130
 snaps, and at its full value one such play moves a team's average by most of
 the gap between a good offense and a bad one.
 
-That is a real thing to do to a number, so the page does not ask for it on
-trust: the short list of the biggest snaps carries the raw EPA under the
-bounded one wherever the clip moved a play, and it is *ranked* on the bounded
-number — the one the averages are actually made of. Ranking on the raw number
-would put a play at the top of the list for a contribution it didn't make.
+That is a real thing to do to a number, so the page says it was done: one
+clause under the table, in the units a reader can check against the football
+they watched. It does not *show* it — the first version put the eight biggest
+snaps under the averages, each carrying its raw EPA wherever the clip had
+moved it, and the table came back out. Two reasons, and the second is the
+one that decides it: a per-snap EPA invites exactly the reading the number
+can't support (the expected points fit misses the next score by ~3.75 points
+on any one play — see below), and the game page already has two tables of
+plays under the chart. A third would make the interesting ones harder to find,
+not easier.
 
 #### Where it lives, and what it costs
 
@@ -2253,11 +2258,13 @@ the states it already built plus one more pass over the plays to find which of
 them put points on the board — a scoring snap has no next snap to be priced
 against, so the points are the answer and no model is consulted.
 
-**A table, not a chart.** The game already has one chart and the thing worth
-seeing here is a comparison of four numbers, which a table does better than
-anything drawn. The per-snap EPA is on the wire — every priced snap, since
-which ones are interesting is a question about page layout that the API has no
-business answering — and the page takes the eight biggest.
+**A table of four numbers, and nothing per-snap on the wire.** What is worth
+seeing is a comparison — two offenses, weighted and flat, over a sample each —
+which a table does better than anything drawn, and the game already has a
+chart. `EpaPerPlay.plays` holds every priced snap upstream and none of it is
+sent: a few hundred objects on every response that no page renders is the same
+cost §16.3 spends a section refusing elsewhere. It is one field here if a page
+ever wants to show its work.
 
 #### What the bump brought with it
 

@@ -234,6 +234,13 @@ export interface components {
          *     snap came with the game already decided. 0.0 is a real EPA per play -- a
          *     team that played exactly to expectation -- and a metric that says that
          *     about a game it couldn't measure is worse than one that says nothing.
+         *
+         *     **The snaps themselves stay upstream.** `EpaPerPlay.plays` holds every
+         *     priced play with its raw and bounded number, and none of it is on the
+         *     wire: what the page reports is the two averages, and a game's worth of
+         *     rows nobody renders is a few hundred objects on every response. It is
+         *     upstream's tuple, so a page that wants to show its work later is a field
+         *     here rather than a second pass over the game.
          */
         EpaPerPlay: {
             /** Away */
@@ -256,44 +263,6 @@ export interface components {
             net: number | null;
             /** Net Unweighted */
             net_unweighted: number | null;
-            /** Plays */
-            plays: components["schemas"]["EpaPlay"][];
-        };
-        /**
-         * EpaPlay
-         * @description One snap's expected points added, and what it counted for.
-         *
-         *     The argument behind the averages above it, in the way `LuckySwing` is the
-         *     argument behind `LuckyBounces`: a number nobody can check is a number the
-         *     page is asserting. Joined to the curve by `play_id`, so the page reads the
-         *     clock and the score off the point it already has rather than being sent
-         *     them twice.
-         *
-         *     `epa` is the raw difference and `bounded` is what the average is actually
-         *     over -- both, because which plays the bound bit on is a fact about the
-         *     game. A 70-yard touchdown and a red-zone pick-six are both worth three
-         *     points here, and a reader looking at a number built that way should be
-         *     able to see it happen.
-         *
-         *     Every regulation snap is here, not the interesting ones: which of them
-         *     are interesting is a question about how the page is laid out, and the wire
-         *     has no business answering it.
-         */
-        EpaPlay: {
-            /** Bounded */
-            bounded: number;
-            /** Epa */
-            epa: number;
-            /** Expected Points */
-            expected_points: number;
-            /** Offense Is Home */
-            offense_is_home: boolean;
-            /** Play Id */
-            play_id: string;
-            /** Play Number */
-            play_number: number;
-            /** Weight */
-            weight: number;
         };
         /**
          * ExpectedPointsFit

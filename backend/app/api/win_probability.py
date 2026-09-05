@@ -135,42 +135,6 @@ class LuckyBounces(BaseModel):
     swings: list[LuckySwing]
 
 
-class EpaPlay(BaseModel):
-    """One snap's expected points added, and what it counted for.
-
-    The argument behind the averages above it, in the way `LuckySwing` is the
-    argument behind `LuckyBounces`: a number nobody can check is a number the
-    page is asserting. Joined to the curve by `play_id`, so the page reads the
-    clock and the score off the point it already has rather than being sent
-    them twice.
-
-    `epa` is the raw difference and `bounded` is what the average is actually
-    over -- both, because which plays the bound bit on is a fact about the
-    game. A 70-yard touchdown and a red-zone pick-six are both worth three
-    points here, and a reader looking at a number built that way should be
-    able to see it happen.
-
-    Every regulation snap is here, not the interesting ones: which of them
-    are interesting is a question about how the page is laid out, and the wire
-    has no business answering it.
-    """
-
-    play_id: str
-    play_number: int
-    # Which offense the number belongs to. EPA is always the offense's, so
-    # this is the sign convention rather than a filter -- there is no
-    # "defense's EPA" on the wire, only the other side of the same pair.
-    offense_is_home: bool
-    # What the situation was worth to the offense at the snap, in points.
-    expected_points: float
-    epa: float
-    bounded: float
-    # `4p(1-p)` on the home win probability at the snap, squared: how much the
-    # weighted average counted this play. A snap in a decided game weighs
-    # thousandths of a live one.
-    weight: float
-
-
 class EpaPerPlay(BaseModel):
     """What each offense did with the ball, in points per snap.
 
@@ -199,6 +163,13 @@ class EpaPerPlay(BaseModel):
     snap came with the game already decided. 0.0 is a real EPA per play -- a
     team that played exactly to expectation -- and a metric that says that
     about a game it couldn't measure is worse than one that says nothing.
+
+    **The snaps themselves stay upstream.** `EpaPerPlay.plays` holds every
+    priced play with its raw and bounded number, and none of it is on the
+    wire: what the page reports is the two averages, and a game's worth of
+    rows nobody renders is a few hundred objects on every response. It is
+    upstream's tuple, so a page that wants to show its work later is a field
+    here rather than a second pass over the game.
     """
 
     home: float | None
@@ -217,7 +188,6 @@ class EpaPerPlay(BaseModel):
     # page says which.
     home_weight: float
     away_weight: float
-    plays: list[EpaPlay]
 
 
 class ExpectedPointsFit(BaseModel):
@@ -455,18 +425,6 @@ def _epa(epa: LuckyOnesEpaPerPlay | None) -> EpaPerPlay | None:
         away_plays=epa.away_plays,
         home_weight=epa.home_weight,
         away_weight=epa.away_weight,
-        plays=[
-            EpaPlay(
-                play_id=play.play_id,
-                play_number=play.play_number,
-                offense_is_home=play.offense_is_home,
-                expected_points=play.expected_points,
-                epa=play.epa,
-                bounded=play.bounded,
-                weight=play.weight,
-            )
-            for play in epa.plays
-        ],
     )
 
 

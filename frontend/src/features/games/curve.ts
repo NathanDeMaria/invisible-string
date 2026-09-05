@@ -30,7 +30,6 @@
 import type {
   CurvePoint,
   EpaPerPlay,
-  EpaPlay,
   GameControl,
   LuckyBounces,
   LuckySwing,
@@ -397,49 +396,6 @@ export function luckLabel(
 /** A share of the game, rounded the way the sentences above read it. */
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
-}
-
-/**
- * How many of the biggest snaps get a row under the EPA table.
- *
- * A game is ~130 of them and nobody reads 130 rows, so this table is the
- * short list rather than the ledger -- the same job the scoring table does
- * for the curve. Eight is about where a reader stops recognising the plays.
- */
-export const BIG_PLAYS = 8;
-
-/** One snap on the short list, joined to the point that says when it was. */
-export interface BigPlay {
-  play: EpaPlay;
-  point: CurvePoint;
-}
-
-/**
- * The snaps that moved expected points the most, biggest first.
- *
- * Ranked on `bounded` rather than on `epa`, which is the one decision here
- * worth arguing about: the bounded number is what the averages above are
- * made of, so ranking on the raw one would put a play at the top of the list
- * for a contribution it didn't make. The raw number is still on the row --
- * that is how a reader sees the bound bite.
- *
- * A play whose snap isn't on the curve is dropped rather than placed without
- * one. It shouldn't happen -- both come off the same walk of the same game --
- * and a row with no clock on it would be a play at no moment.
- */
-export function biggestPlays(
-  points: CurvePoint[],
-  plays: EpaPlay[],
-  limit: number = BIG_PLAYS,
-): BigPlay[] {
-  const byPlay = new Map(points.map((point) => [point.play_id, point]));
-  return plays
-    .flatMap((play) => {
-      const point = byPlay.get(play.play_id);
-      return point ? [{ play, point }] : [];
-    })
-    .sort((a, b) => Math.abs(b.play.bounded) - Math.abs(a.play.bounded))
-    .slice(0, limit);
 }
 
 /**

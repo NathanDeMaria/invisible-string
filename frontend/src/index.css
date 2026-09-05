@@ -859,11 +859,11 @@ table.ratings,
   font-weight: 500;
 }
 
-/* The second number in an EPA cell goes under the first rather than beside
-   it. In the tables above, the small print is a different *thing* -- which
-   team a bounce fell to -- and reads as an aside. Here it is the same number
-   said again: the snaps a per-play average is over, and the raw EPA the bound
-   cut down. Under it is where a denominator goes. */
+/* The sample under the snap count rather than beside it. In the tables above,
+   the small print is a different *thing* -- which team a bounce fell to -- and
+   reads as an aside. Here it is the same number said again: how many of those
+   snaps the weighting kept, which is what the first column is an average over.
+   Under it is where a denominator goes. */
 .epa-table .num .of {
   display: block;
 }
