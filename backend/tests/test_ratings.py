@@ -1,12 +1,20 @@
+import logging
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app import releases as releases_module
 from app.releases import (
+    LocalReleaseStore,
     ReleaseNotFound,
     ReleaseStore,
     latest_releases,
     pick_default,
 )
+from app.schema import ModelRelease
+
+from .conftest import FIXTURES
 
 
 def test_healthz(client: TestClient) -> None:
@@ -35,6 +43,106 @@ class TestPickDefault:
     def test_empty_raises(self) -> None:
         with pytest.raises(ReleaseNotFound):
             pick_default([])
+
+
+@pytest.fixture
+def unwarned() -> Iterator[None]:
+    """A clean warning ledger, so these don't depend on each other's order.
+
+    `pick_default` remembers which run_ids it has already complained about --
+    see `_skipped` -- and a test asserting the log line would otherwise pass
+    or fail depending on whether an earlier one had already used up the
+    warning for that run.
+    """
+    releases_module._skipped.clear()
+    yield
+    releases_module._skipped.clear()
+
+
+def _fixture_release(league: str = "mens", model: str = "glicko_tuned") -> ModelRelease:
+    return LocalReleaseStore(FIXTURES).get_latest(league, model)
+
+
+def _from_the_future(release: ModelRelease) -> ModelRelease:
+    """The same release, written by a cassandra this build isn't."""
+    return release.model_copy(update={"predictor_class": "NeuralPredictor9000"})
+
+
+@pytest.mark.usefixtures("unwarned")
+class TestSkipsWhatThisBuildCannotRun:
+    """The 2026-09-05 ncaafb outage, in miniature.
+
+    cassandra publishes a new predictor class, the nightly job rewrites
+    `latest.json` before this image is rebuilt against it, and that release
+    wins the Brier comparison by a rounding error. Every consumer downstream
+    then asks for a predictor that cannot be constructed, and the league loses
+    its whole slate -- for a model that was 0.00013 better than one sitting
+    right there.
+    """
+
+    def test_passes_over_a_class_this_build_lacks(self, store: ReleaseStore) -> None:
+        releases = latest_releases(store, "mens")
+        assert pick_default(releases).model == "glicko_tuned"
+
+        # The same comparison, with the winner written by a newer cassandra.
+        future = [
+            _from_the_future(r) if r.model == "glicko_tuned" else r for r in releases
+        ]
+        assert pick_default(future).model == "elo"
+
+    def test_the_skipped_release_is_still_the_better_one(
+        self, store: ReleaseStore
+    ) -> None:
+        """The point of the trade: what's given up is the Brier gap, and the
+        gap is bounded by the fact that the skipped release won on it."""
+        releases = latest_releases(store, "mens")
+        best, fallback = (
+            next(r for r in releases if r.model == "glicko_tuned"),
+            next(r for r in releases if r.model == "elo"),
+        )
+        assert best.metrics.brier_score < fallback.metrics.brier_score
+
+    def test_falls_back_to_the_best_when_none_are_buildable(
+        self, store: ReleaseStore
+    ) -> None:
+        """No downgrade available, so no downgrade is invented.
+
+        `/leagues` and `/ratings` read the artifact's own ratings and do not
+        need a predictor at all -- raising here would take a working
+        leaderboard down over a model nobody asked it to run.
+        """
+        future = [_from_the_future(r) for r in latest_releases(store, "mens")]
+        assert pick_default(future).model == "glicko_tuned"
+
+    def test_only_the_unbuildable_ones(self, store: ReleaseStore) -> None:
+        """Narrow on purpose. A release whose constructor signature has moved
+        under it names a class this build *does* have, and is left to the
+        layer that can say which params disagreed."""
+        releases = latest_releases(store, "mens")
+        odd = [
+            r.model_copy(update={"params": {"nonsense": 1.0}})
+            if r.model == "glicko_tuned"
+            else r
+            for r in releases
+        ]
+        assert pick_default(odd).model == "glicko_tuned"
+
+    def test_warns_once_per_release(
+        self, store: ReleaseStore, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A league can sit in this state for days, and it is the count that
+        made the first outage slow to place. One line, not one per request."""
+        future = [
+            _from_the_future(r) if r.model == "glicko_tuned" else r
+            for r in latest_releases(store, "mens")
+        ]
+        with caplog.at_level(logging.WARNING, logger="app.releases"):
+            for _ in range(3):
+                pick_default(future)
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "NeuralPredictor9000" in warnings[0].getMessage()
 
 
 class TestListLeagues:

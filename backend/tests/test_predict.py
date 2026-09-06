@@ -51,6 +51,32 @@ def _fixture_release(league: str = "mens", model: str = "glicko_tuned"):
     return LocalReleaseStore(FIXTURES).get_latest(league, model)
 
 
+class _FutureBestStore:
+    """A real store, with one model rewritten by a newer cassandra.
+
+    The shape the outage actually had: not a league that lost its releases,
+    but a league whose *best* release names a predictor class this build has
+    never heard of, alongside others it can run.
+    """
+
+    def __init__(self, inner: ReleaseStore, league: str, model: str) -> None:
+        self._inner = inner
+        self._league = league
+        self._model = model
+
+    def list_leagues(self) -> list[str]:
+        return self._inner.list_leagues()
+
+    def list_models(self, league: str) -> list[str]:
+        return self._inner.list_models(league)
+
+    def get_latest(self, league: str, model: str) -> ModelRelease:
+        release = self._inner.get_latest(league, model)
+        if league == self._league and model == self._model:
+            return release.model_copy(update={"predictor_class": "NeuralPredictor9000"})
+        return release
+
+
 def predict(client: TestClient, **params: str | int | float) -> httpx.Response:
     return client.get("/api/predict", params=params)
 
@@ -257,8 +283,14 @@ class TestDegradedReleases:
         assert body["home_win_prob"] > 0.5
 
     def test_a_predictor_class_this_build_lacks_is_a_502(self) -> None:
-        """The expected outcome for a release written by a newer cassandra.
-        Upstream data this build can't read, same as a schema mismatch."""
+        """The expected outcome for a release written by a newer cassandra,
+        when it is the *only* release there is. Upstream data this build can't
+        read, same as a schema mismatch.
+
+        Note the store: one release, so `pick_default` has nothing to fall
+        back to. With a second, buildable model in the league it would not
+        come to this -- see the test below.
+        """
         release = _fixture_release().model_copy(
             update={"predictor_class": "NeuralPredictor9000"}
         )
@@ -269,6 +301,23 @@ class TestDegradedReleases:
             away="Kansas",
         )
         assert response.status_code == 502
+
+    def test_a_league_with_a_buildable_model_answers_from_it(
+        self, store: ReleaseStore
+    ) -> None:
+        """The 2026-09-05 outage, end to end.
+
+        A newer cassandra's predictor class wins the league's Brier
+        comparison, and before `pick_default` learned to decline it that was a
+        502 here and an empty prediction column on every one of the league's
+        games -- with a release this build could serve sitting one line down
+        the list. The answer now comes from that one.
+        """
+        client = _client(_FutureBestStore(store, "mens", "glicko_tuned"))
+        body = predict(client, league="mens", home="Duke", away="Kansas").json()
+
+        assert body["model"] == "elo"
+        assert body["home_win_prob"] > 0.5
 
     def test_unknown_league_is_a_404(self, client: TestClient) -> None:
         assert (

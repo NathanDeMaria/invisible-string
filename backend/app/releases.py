@@ -12,6 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
+from cassandra.predictor import UnknownPredictorClass, load_predictor_class
 from pydantic import ValidationError
 
 from app.schema import ModelRelease
@@ -61,7 +62,8 @@ class ReleaseStore(Protocol):
 
 
 def pick_default(releases: Sequence[ModelRelease]) -> ModelRelease:
-    """The release a league shows by default: the lowest Brier score.
+    """The release a league shows by default: the lowest Brier score, among
+    the releases this build can actually rebuild a predictor from.
 
     Brier is an *error* measure, so this is a min, not a max. Worth being
     deliberate about, because getting it backwards surfaces the worst model on
@@ -71,10 +73,80 @@ def pick_default(releases: Sequence[ModelRelease]) -> ModelRelease:
     `metrics.brier_score`, which is the un-negated value.
 
     Ties break on run_id so the choice is stable across calls.
+
+    **A release naming a predictor class this build doesn't have is passed
+    over.** cassandra ships new predictor classes before this image is
+    rebuilt against them, and `latest.json` is rewritten nightly by whichever
+    cassandra ran -- so a class that is one deploy newer than this build can
+    win the Brier comparison and take the league's whole slate down with it.
+    That is not hypothetical: it is what emptied every ncaafb prediction on
+    2026-09-05, on a margin of 0.00013 Brier over a release this build could
+    have served perfectly well.
+
+    The alternative to declining is the one the consumer had before, which was
+    no choice at all: `rating_predictor()` raises, and every caller downstream
+    degrades to "no model for this league" -- a games page with no numbers on
+    it, and a `/predict` that 502s. Falling back to the next-best release
+    costs whatever the Brier gap is, and that gap is bounded by the fact that
+    the skipped release won on it. A silent four-decimal-place downgrade is a
+    much better failure than a league-wide outage.
+
+    Only the *unbuildable* ones are skipped, and only for that reason. A
+    release whose predictor rates nobody (`RatingsUnsupported` -- FlatPredictor
+    is the case) is a real modelling result rather than version skew, and
+    demoting it would be this function lying about which model scored best.
     """
     if not releases:
         raise ReleaseNotFound("no releases to pick a default from")
-    return min(releases, key=lambda r: (r.metrics.brier_score, r.run_id))
+
+    ordered = sorted(releases, key=lambda r: (r.metrics.brier_score, r.run_id))
+    for release in ordered:
+        if _has_predictor_class(release):
+            return release
+
+    # Nothing here is buildable, so there is no downgrade to make and the
+    # honest answer is the one the rule asks for. Every caller that needs a
+    # predictor already handles this -- `/games` drops the league's
+    # predictions, `/predict` 502s -- and the two that don't, `/leagues` and
+    # `/ratings`, read the artifact's own ratings and are unaffected. Raising
+    # instead would take a working leaderboard down over a model nobody asked
+    # it to run.
+    return ordered[0]
+
+
+# The run_ids already warned about, so a league stuck in this state costs one
+# log line rather than one per request. Same reason `_Models` in
+# `app.api.games` keeps its own: the count is what made the first outage here
+# slow to place, and a warning per request buries it just as well as silence.
+_skipped: set[str] = set()
+
+
+def _has_predictor_class(release: ModelRelease) -> bool:
+    """Whether this build has the class `release` names, and can rebuild it.
+
+    The class lookup rather than the full `rating_predictor()`: this runs on
+    the way to serving a request, and rehydrating every candidate's ratings to
+    find out is real work in front of every page. The lookup catches the case
+    that actually happens -- a name this build has never heard of -- and the
+    rarer "same class, different constructor signature" stays where it is
+    already handled, one layer down, with the params in the log line.
+    """
+    try:
+        load_predictor_class(release.predictor_class)
+    except UnknownPredictorClass:
+        if release.run_id not in _skipped:
+            _skipped.add(release.run_id)
+            log.warning(
+                "passing over %s/%s (run %s): this build has no predictor "
+                "class %r. Serving the next-best release instead; rebuild "
+                "against a newer cassandra to get this one back.",
+                release.league,
+                release.model,
+                release.run_id,
+                release.predictor_class,
+            )
+        return False
+    return True
 
 
 class LocalReleaseStore:
