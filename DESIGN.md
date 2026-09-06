@@ -254,7 +254,8 @@ backend/
 ```
 GET  /api/leagues
        -> [{league, models: [{name, is_default, run_id, created_at, metrics}]}]
-       # is_default = lowest metrics.brier_score for the league (§11.1)
+       # is_default = lowest metrics.brier_score among the releases this
+       #              build can rebuild a predictor from (§11.1)
 
 GET  /api/leagues/{league}/ratings?model=&limit=&offset=
        -> {run_id, created_at, trained_through, metrics,
@@ -971,6 +972,29 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    the pipeline was actually trying to produce. The cost is that the default moves on
    its own when a new run lands; if that ever surprises you, an explicit
    `default_model` override field is a small addition.
+
+   **Amended: lowest Brier _among the releases this build can run_.** The cost above
+   turned out to have a sharper edge than "the default moves on its own". cassandra
+   ships new predictor classes, `latest.json` is rewritten nightly by whichever
+   cassandra ran, and this image is rebuilt against a pinned rev on its own schedule
+   — so for the window between those two, a release can name a `predictor_class`
+   that doesn't exist here. On 2026-09-05 one did, won ncaafb's Brier comparison by
+   0.00013, and emptied the prediction column for all 231 of that day's games:
+   `rating_predictor()` raised for every one of them, and the games page fell back to
+   listing them in tip-off order with nothing to sort by.
+
+   So `pick_default` now walks the Brier order and skips releases whose predictor
+   class this build lacks, taking the next one instead. The trade is a silent
+   four-decimal-place downgrade in place of a league-wide outage, which is the right
+   way round: the skipped release won by that gap, so the gap bounds what declining
+   costs. If *nothing* in the league is buildable there is no downgrade to make and
+   the original rule stands — `/leagues` and `/ratings` read the artifact's own
+   `ratings` and never needed a predictor, so raising there would take a working
+   leaderboard down over a model nobody asked it to run.
+
+   Only version skew is skipped. A predictor that rates nobody (`RatingsUnsupported`
+   — `FlatPredictor`) is a real result, and demoting it would be the selection rule
+   lying about which model scored best.
 
 2. **Separate bucket for model artifacts**, owned by this repo's terraform rather
    than endgame's. Its own versioning, lifecycle and retention, independent of the
