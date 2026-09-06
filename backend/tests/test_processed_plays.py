@@ -128,6 +128,23 @@ class TestReadingAGame:
         write_week(tmp_path, [row("1", 3), row("1", 1), row("1", 2)])
         assert [p.play_number for p in source.game("nfl", 2026, 3, "1")] == [1, 2, 3]
 
+    def test_orders_by_the_clock_where_the_feed_disagrees(
+        self, source: AwsPlaysSource, tmp_path: Path
+    ) -> None:
+        """`play_number` is the order ESPN sent the *drives*, which is usually
+        the order the game happened in and occasionally isn't. Play 2 here is
+        one ESPN sent late; the clock is the axis, so the clock wins. See
+        `app.plays.in_game_order`."""
+        write_week(
+            tmp_path,
+            [
+                {**row("1", 1), "period": 1, "clock_seconds": 900},
+                {**row("1", 2), "period": 2, "clock_seconds": 800},
+                {**row("1", 3), "period": 1, "clock_seconds": 400},
+            ],
+        )
+        assert [p.play_number for p in source.game("nfl", 2026, 3, "1")] == [1, 3, 2]
+
     def test_a_game_not_in_the_week_is_empty(
         self, source: AwsPlaysSource, tmp_path: Path
     ) -> None:
