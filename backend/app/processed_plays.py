@@ -110,9 +110,9 @@ class AwsPlaysSource:
         self, league: str, season: int, week: int, game_id: str
     ) -> Sequence[Play]:
         import pyarrow.dataset as ds
-        from lucky_ones.arrow import PLAY_COLUMNS, sort_plays, table_to_plays
+        from lucky_ones.arrow import PLAY_COLUMNS, table_to_plays
 
-        from app.plays import PlaysUnavailable
+        from app.plays import PlaysUnavailable, in_game_order
 
         path = f"{self._bucket}/{week_key(league, season, week)}"
         try:
@@ -142,7 +142,10 @@ class AwsPlaysSource:
             raise PlaysUnavailable(f"could not read play-by-play: {exc}") from exc
 
         try:
-            return sort_plays(table_to_plays(table))
+            # `in_game_order` rather than upstream's `sort_plays`: the filter
+            # above already left one game, and what this needs beyond that is
+            # the clock's order rather than the feed's -- see `app.plays`.
+            return in_game_order(table_to_plays(table))
         except KeyError as exc:
             # The week exists and doesn't carry the columns a play has, which
             # is what a raw (drive JSON) object under the processed prefix

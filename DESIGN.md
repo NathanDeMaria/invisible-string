@@ -1981,6 +1981,28 @@ to be known *before* the read, and nothing in the bucket ties a game id to
 them. So `ScheduledGame` carries them out of the season file, and the awkward
 part is which number `week` is.
 
+**The order a game comes back in is the clock's, not the feed's.** Both
+sources end in `app.plays.in_game_order` rather than upstream's `sort_plays`,
+which is the same list sorted by `play_number` — and `play_number` is
+endgame's "1-based position in the game, in the order ESPN sent the drives".
+That is a different claim from "in the order the game happened", and ESPN
+occasionally makes the difference real: a drive lands out of place in the
+feed and its whole block of plays lands with it. Nothing a model reads
+notices — down, distance and field position are all still true of the snap —
+and §16.6's chart notices immediately, because its x axis is
+`seconds_remaining`. A misplaced drive draws a line that runs forward, jumps
+back across a quarter of the plot and runs forward again, over a game nobody
+played that way. So it is fixed at the source rather than in the chart: the
+same order is what carries the score into each snap, what `game_control`
+weights by the clock, and what both luck totals walk.
+
+The key is (period, clock counting down, `play_number`), and the tiebreak is
+the load-bearing part. A drive is full of snaps recorded at the same clock — a
+penalty and its replay, a spike, two plays inside one tick — and the feed's
+order is the only thing that knows which of those came first. So a game whose
+drives are in order comes back untouched, and only a genuinely misplaced block
+moves.
+
 ### 16.4 The week number is a key, and getting it wrong is silent
 
 endgame writes plays under "the week numbers `iter_weeks` walks" — the source's

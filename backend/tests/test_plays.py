@@ -14,7 +14,12 @@ from pathlib import Path
 import pytest
 from lucky_ones.plays import Play
 
-from app.plays import FixturePlay, LocalPlaysSource, PlaysUnavailable
+from app.plays import (
+    FixturePlay,
+    LocalPlaysSource,
+    PlaysUnavailable,
+    in_game_order,
+)
 
 GAME = ("nfl", 2026, 3, "401910101")
 
@@ -65,10 +70,10 @@ class TestTheFixtureSource:
         write(tmp_path, [play(1), play(2)])
         assert [p.play_number for p in source.game(*GAME)] == [1, 2]
 
-    def test_sorts_by_play_number(
+    def test_puts_the_game_back_in_order(
         self, source: LocalPlaysSource, tmp_path: Path
     ) -> None:
-        """`PlaySource` promises play order upstream and this promises it
+        """`PlaySource` promises game order upstream and this promises it
         here: `iter_states` walks the plays in the order it gets them, so a
         file written out of order would score a game that never happened."""
         write(tmp_path, [play(3), play(1), play(2)])
@@ -105,3 +110,80 @@ class TestTheFixtureSource:
         write(tmp_path, [{"league": "nfl", "game_id": "401910101"}])
         with pytest.raises(PlaysUnavailable):
             source.game(*GAME)
+
+
+def snap(number: int, period: int, clock: int) -> FixturePlay:
+    return FixturePlay(**play(number, period=period, clock_seconds=clock))
+
+
+class TestTheOrderAGameIsWalkedIn:
+    """`play_number` is ESPN's drive order, and the x axis is the clock.
+
+    They agree in almost every game, which is why the difference went
+    unnoticed until a chart drew a drive a quarter away from where it
+    happened. These are the cases where they don't.
+    """
+
+    def test_a_game_in_order_is_left_alone(self) -> None:
+        """The common case, and the one worth stating: nothing about a
+        well-formed feed is rearranged."""
+        game = [snap(1, 1, 900), snap(2, 1, 880), snap(3, 2, 700)]
+        assert [p.play_number for p in in_game_order(game)] == [1, 2, 3]
+
+    def test_a_drive_the_feed_misplaced_moves_back_to_its_clock(self) -> None:
+        """The bug this exists for. Plays 3 and 4 are a Q1 drive that arrived
+        after the Q2 ones; walked as sent they draw a line that runs into the
+        second quarter, jumps back across the plot and runs forward again."""
+        game = [
+            snap(1, 1, 900),
+            snap(2, 2, 700),
+            snap(3, 1, 600),
+            snap(4, 1, 560),
+            snap(5, 2, 400),
+        ]
+        assert [p.play_number for p in in_game_order(game)] == [1, 3, 4, 2, 5]
+
+    def test_the_clock_only_ever_runs_down(self) -> None:
+        """The property the chart actually depends on, said as the chart
+        reads it: seconds left in regulation, never increasing."""
+        game = [snap(1, 2, 700), snap(2, 1, 900), snap(3, 4, 30), snap(4, 3, 500)]
+        assert [(p.period, p.clock_seconds) for p in in_game_order(game)] == [
+            (1, 900),
+            (2, 700),
+            (3, 500),
+            (4, 30),
+        ]
+
+    def test_plays_sharing_a_clock_keep_the_feed_s_order(self) -> None:
+        """A penalty and its replay, or two snaps inside one tick, land on the
+        same clock -- and then `play_number` is the only thing that knows
+        which came first. Sorting them by anything else would scramble a
+        drive to fix a defect that isn't in it."""
+        game = [snap(3, 1, 700), snap(1, 1, 700), snap(2, 1, 700)]
+        assert [p.play_number for p in in_game_order(game)] == [1, 2, 3]
+
+    def test_overtime_stays_after_regulation(self) -> None:
+        """`seconds_remaining` is pinned to zero for every overtime snap
+        upstream, so the period has to carry the order -- otherwise a fifth
+        quarter sorts in among the fourth's two-minute drill."""
+        game = [snap(1, 4, 60), snap(2, 5, 0), snap(3, 6, 0)]
+        assert [p.play_number for p in in_game_order(game)] == [1, 2, 3]
+
+    def test_a_play_with_no_clock_stays_with_the_one_it_followed(self) -> None:
+        """`iter_states` drops it from the curve and still reads its score,
+        so where it sits between its neighbours matters. The feed's order is
+        the only evidence of that, so it inherits the last clock seen rather
+        than sorting to an edge."""
+        game = [
+            snap(1, 1, 900),
+            snap(2, 2, 700),
+            FixturePlay(**play(3)),
+            snap(4, 1, 600),
+        ]
+        assert [p.play_number for p in in_game_order(game)] == [1, 4, 2, 3]
+
+    def test_a_game_that_opens_with_no_clock_keeps_those_plays_first(self) -> None:
+        """There is nothing to inherit before the first clocked play, and the
+        front is where they already were."""
+        game = [FixturePlay(**play(1)), snap(2, 1, 900), snap(3, 1, 880)]
+        assert [p.play_number for p in in_game_order(game)] == [1, 2, 3]

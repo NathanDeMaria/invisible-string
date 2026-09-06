@@ -8,7 +8,9 @@ chart, a game with no play-by-play gets an empty one, and only an upstream
 that refused to be read is an error.
 """
 
+import json
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,9 +20,17 @@ from lucky_ones.bundled import BundledModel
 from app.games import GamesSource, GamesUnavailable, GameWindow, get_games_source
 from app.jobs import JobsSource, get_jobs_source
 from app.main import create_app
-from app.plays import FixturePlay, PlaysSource, PlaysUnavailable, get_plays_source
+from app.plays import (
+    FixturePlay,
+    LocalPlaysSource,
+    PlaysSource,
+    PlaysUnavailable,
+    get_plays_source,
+)
 from app.releases import ReleaseStore, get_release_store
 from app.win_probability import curve_for, expected_points_for, fit_for
+
+from .conftest import FIXTURES
 
 GAME = "/api/games/nfl/401910101"
 
@@ -574,6 +584,66 @@ class TestTheWinProbabilityEndpoint:
         """The one case that is ours rather than the game's."""
         client = client_over(plays=_raises(PlaysUnavailable("denied")))
         assert client.get(f"{GAME}/win-probability").status_code == 502
+
+    def test_a_drive_the_feed_sent_late_draws_the_same_game(
+        self, client: TestClient, client_over: Any, tmp_path: Path
+    ) -> None:
+        """`play_number` is the order ESPN sent the drives, and the x axis is
+        the clock. A drive that arrives out of place is the one way those two
+        come apart, and walked as sent it draws a curve that runs into the
+        fourth quarter, jumps back to the third and runs forward again.
+
+        The whole response rather than just the points: the same order is read
+        by `game_control`'s clock weights, by the score carried into each snap
+        and by both luck totals, so the claim worth making is that where a
+        drive sat in the feed changes nothing about the game. Everything but
+        `play_number` itself, which is the thing that moved.
+        """
+        source = LocalPlaysSource(_feed_with_a_drive_sent_late(tmp_path, drive=5))
+        shuffled = client_over(plays=source).get(f"{GAME}/win-probability")
+        assert _without_play_numbers(shuffled.json()) == _without_play_numbers(
+            client.get(f"{GAME}/win-probability").json()
+        )
+
+
+def _feed_with_a_drive_sent_late(root: Path, drive: int) -> Path:
+    """The fixture game rewritten with one drive numbered as if ESPN had sent
+    it last, under a fixture root of its own.
+
+    Renumbered rather than shuffled in the file: `play_number` is what every
+    reader downstream orders by, so a list merely written out of order tests
+    the sort that was always there. What has to survive is a number that
+    disagrees with the clock.
+    """
+    game = FIXTURES / "plays" / "nfl" / "2026" / "3" / "401910101.json"
+    plays = json.loads(game.read_text())
+    late = [play for play in plays if play["drive_number"] == drive]
+    assert late, f"the fixture has no drive {drive} to misplace"
+    rest = [play for play in plays if play["drive_number"] != drive]
+    moved = [
+        {**play, "play_number": number}
+        for number, play in enumerate(rest + late, start=1)
+    ]
+    written = root / "plays" / "nfl" / "2026" / "3"
+    written.mkdir(parents=True)
+    (written / "401910101.json").write_text(json.dumps(moved))
+    return root
+
+
+def _without_play_numbers(body: Mapping[str, Any]) -> dict[str, Any]:
+    """The response with the one field a renumbered feed is entitled to
+    change dropped, so the comparison is about the game rather than about the
+    labels on it."""
+    strip = lambda rows: [  # noqa: E731 - reads better than a def here
+        {key: value for key, value in row.items() if key != "play_number"}
+        for row in rows
+    ]
+    luck = body["luck"]
+    return {
+        **body,
+        "points": strip(body["points"]),
+        "luck": luck and {**luck, "swings": strip(luck["swings"])},
+    }
 
 
 def _raise(error: Exception) -> Callable[[Any], Any]:

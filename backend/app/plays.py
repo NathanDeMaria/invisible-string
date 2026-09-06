@@ -29,6 +29,10 @@ kept apart from an empty window.
 **The source is a Protocol**, like `ReleaseStore`, `JobsSource` and
 `GamesSource`: tests and local dev get a fixture-backed implementation, and
 neither needs AWS -- nor, for the local one, pyarrow.
+
+**The order a source hands plays back in is the clock's, not the feed's.**
+`in_game_order` is the whole of that rule and the reason it isn't upstream's
+`sort_plays`; see its docstring.
 """
 
 import json
@@ -102,6 +106,51 @@ class FixturePlay(BaseModel):
     drive_is_score: bool | None = None
 
 
+def in_game_order(plays: Sequence[Play]) -> list[Play]:
+    """One game's plays in the order the clock says they happened.
+
+    Not upstream's `sort_plays`, which orders by `play_number` -- and
+    `play_number` is "1-based position in the game, in the order ESPN sent the
+    drives", which is a different claim than "in the order the game happened".
+    ESPN's drive list is *usually* chronological and occasionally isn't: a
+    drive lands out of place and its whole block of plays lands with it.
+
+    That is invisible to a model reading down and distance, and it is not
+    invisible to the chart. §16.6's x axis is `seconds_remaining`, so a block
+    of plays sitting a quarter away from where its clock puts it draws a line
+    that runs forward, jumps back across the plot and runs forward again --
+    two long diagonals crossing, over a game nobody played that way. The
+    curve, `game_control`'s clock weights and the score carried into each snap
+    are all read in this order, so it is worth fixing once here rather than
+    papering over in the one place it happens to show.
+
+    The key is (period, clock counting down, `play_number`). Two things about
+    it matter:
+
+    - **`play_number` is the tiebreak, not the sort.** A drive is a handful of
+      snaps that ESPN records at the same clock -- a penalty and its replay, a
+      spike, plays inside the same tick -- and the feed's order within one is
+      the only thing that knows which came first. So a game whose drives are
+      in order comes back exactly as it went in, and only a genuinely
+      misplaced block moves.
+    - **A play with no clock inherits the last one that had a clock**, rather
+      than sorting to an edge. `iter_states` drops such a play from the curve
+      but still reads its score, so where it sits relative to its neighbours
+      is not nothing -- and the feed's order is the best evidence of that.
+      Before the first clocked play there is nothing to inherit, and those
+      sort to the front, which is where they already were.
+    """
+    by_number = sorted(plays, key=lambda play: play.play_number)
+    keyed: list[tuple[tuple[int, int, int], Play]] = []
+    period, clock = 0, 0
+    for play in by_number:
+        if play.period is not None and play.clock_seconds is not None:
+            period, clock = play.period, play.clock_seconds
+        keyed.append(((period, -clock, play.play_number), play))
+    keyed.sort(key=lambda pair: pair[0])
+    return [play for _, play in keyed]
+
+
 class PlaysSource(Protocol):
     def game(
         self, league: str, season: int, week: int, game_id: str
@@ -145,7 +194,7 @@ class LocalPlaysSource:
         # The order `lucky_ones.state` walks them in, promised by `PlaySource`
         # upstream and by this one for the same reason: a fixture written out
         # of order would score a game that never happened.
-        return sorted(plays, key=lambda play: play.play_number)
+        return in_game_order(plays)
 
 
 @lru_cache(maxsize=1)
