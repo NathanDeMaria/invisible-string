@@ -1,8 +1,12 @@
+import { Link } from "react-router-dom";
+
 import type { TeamRow } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
 
 interface Props {
   rows: TeamRow[];
+  /** Which league's team pages the names link to. */
+  league: string;
   /** Glicko has a rating deviation; Elo doesn't, so the column is dropped. */
   showRd: boolean;
   /**
@@ -13,7 +17,7 @@ interface Props {
   since: string | null;
 }
 
-export function RatingsTable({ rows, showRd, since }: Props) {
+export function RatingsTable({ rows, league, showRd, since }: Props) {
   if (rows.length === 0) {
     return <p className="empty">No teams match that search.</p>;
   }
@@ -48,7 +52,18 @@ export function RatingsTable({ rows, showRd, since }: Props) {
         {rows.map((row) => (
           <tr key={row.team}>
             <td className="num rank">{row.rank}</td>
-            <td>{row.team}</td>
+            <td>
+              {/* The name is the way into the team's own page, the same way a
+                  matchup is the way into a game's. Coloured like text rather
+                  than like a link: a table whose every second cell is blue
+                  reads as a page of links rather than as a leaderboard. */}
+              <Link
+                className="job-name"
+                to={`/${league}/teams/${encodeURIComponent(row.team)}`}
+              >
+                {row.team}
+              </Link>
+            </td>
             <td className="num">{row.rating.toFixed(1)}</td>
             {showRd && <td className="num">{row.rd?.toFixed(1) ?? "—"}</td>}
             <td className="num">

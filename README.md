@@ -1,7 +1,8 @@
 # invisible-string
 
 A webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
-results: current ratings per league and what the last week did to them, win
+results: current ratings per league and what the last week did to them, a page
+per team with its rating over every week the model has rated it, win
 probability / predicted spread for a hypothetical matchup, and the games around
 today with the best model's number beside the book's -- for a finished game,
 the number it published *before* the game. A football game gets a page of its own, with its in-game win

@@ -45,7 +45,9 @@ class TestReadingWhatWasPublished:
     ) -> None:
         frame = local.history("mens", "glicko_tuned")
         assert list(frame.columns) == list(HISTORY_COLUMNS)
-        assert len(frame) == 8
+        # Four teams over two seasons -- six weeks of 2025 and two of 2026.
+        assert len(frame) == 32
+        assert set(frame["year"]) == {2025, 2026}
 
     def test_predictions_come_back_in_the_published_schema(
         self, local: LocalArtifactStore

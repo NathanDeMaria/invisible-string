@@ -78,6 +78,7 @@ export function RatingsPage() {
       ) : (
         <RatingsTable
           rows={rows}
+          league={league}
           showRd={showRd}
           since={ratings.data?.movement_since?.date ?? null}
         />

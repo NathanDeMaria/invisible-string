@@ -548,9 +548,8 @@ the ratings table (select rows → chart them). Include a real `date` per week
 alongside `(year, week)` so the x-axis is time rather than an integer that resets
 every November.
 
-**Not built, and the column below is why.** The first thing worth building on
-this file isn't the chart — it's the question a reader has before they want a
-line, which is what the last week did:
+The column came first. Before a reader wants a line they want the question the
+line is an answer to — what the last week did:
 
 ```
 GET /api/leagues/{league}/ratings
@@ -573,8 +572,40 @@ Three decisions inside that, each a choice about what "since last week" means:
   teams the current leaderboard shows, so "up four places" is four places *on
   this page* rather than four among whoever happened to have a row back then.
 
-The history endpoint waits on a team detail route to put it on: an endpoint
-with no page is a contract maintained for nobody.
+### The team page
+
+`/{league}/teams/{team}`, reached by clicking a name on the leaderboard, and
+the reason the history endpoint exists. It carries the standing the leaderboard
+printed — rank, rating, record, and the same movement, out of the same
+`/ratings` response, so arriving here costs one request rather than two and the
+rank can't disagree with the one it was clicked from — then the line, then the
+seasons as a table.
+
+Three decisions in the chart, and they are the same three the data forces:
+
+- **The offseason is a gap, not a slope.** Each season is its own path. The
+  jump between a team's last week and its first is `pass_season` regressing the
+  rating toward its anchor; a segment across it would draw a slide no game
+  produced, and a reader taking a slope off it would be reading a rollover
+  rule. The dashed separator and the year under it say the gap is a summer
+  rather than missing data.
+- **The x axis is snapshots, evenly spaced, not clock time.** Inside a season
+  those are the same axis — weeks are a week apart. Across an offseason they
+  are not, and eight months of nothing would take half the width.
+- **The y axis doesn't start at zero.** A rating scale has no meaningful zero;
+  1500 is the middle of it by construction. A zero baseline would compress
+  every season into a band at the top, so this is the case where a truncated
+  axis is the honest one — and every gridline is labelled, which is what says
+  so.
+
+One line, no legend, and no second hue: there is one series and the heading
+names it. The season table under the chart is the same data as rows, which is
+the version a screen reader and a copy-paste can both use, and it is by season
+rather than by week because 300 rows is a dump rather than a reading.
+
+Overlaying two to five teams is what the endpoint's `teams` list is already
+for; the "compare" affordance on the leaderboard that would fill it is not
+built.
 
 ## 6a. Stored predictions
 

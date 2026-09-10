@@ -516,17 +516,20 @@ table.ratings,
   display: block;
 }
 
-/* The matchup is the way into the game's own page. Coloured like text rather
-   than like a link: a table whose every first cell is blue reads as a page of
-   links rather than as a scoreboard, and the underline on hover is enough to
-   say it's one. */
-.games a.job-name {
+/* The way into a row's own page -- the matchup into the game's, the team name
+   into the team's. Coloured like text rather than like a link: a table whose
+   every first cell is blue reads as a page of links rather than as a
+   scoreboard, and the underline on hover is enough to say it's one.
+
+   Scoped to `.ratings`, which the games table also carries, so both tables get
+   one definition of it rather than two that drift. */
+.ratings a.job-name {
   color: inherit;
   text-decoration: none;
 }
 
-.games a.job-name:hover,
-.games a.job-name:focus-visible {
+.ratings a.job-name:hover,
+.ratings a.job-name:focus-visible {
   text-decoration: underline;
   text-decoration-color: var(--accent);
 }
@@ -1023,4 +1026,118 @@ table.ratings,
   .controls label.toggle {
     flex: 0 0 100%;
   }
+}
+
+/* One team ---------------------------------------------------------------
+
+   Reached from a row of the leaderboard, so it keeps that page's heading
+   scale the way the game page keeps the games table's. */
+.team-page > h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.75rem;
+}
+
+.team-page h3 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 1.75rem 0 0.5rem;
+}
+
+.team-page table.ratings {
+  margin-top: 1rem;
+}
+
+.team-page caption {
+  text-align: left;
+  margin-bottom: 0.4rem;
+}
+
+/* One picker on this page, so it sizes to its own control rather than
+   stretching the width of the chart under it -- the same call the jobs page
+   makes about its single field. */
+.team-page .controls .field {
+  flex: 0 0 10rem;
+}
+
+.timeline {
+  margin: 0 0 0.25rem;
+}
+
+.timeline svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: pan-y;
+}
+
+/* One series, so it wears the accent the win probability curve does rather
+   than a hue of its own: this app colours two things for meaning, and a chart
+   with a single line has no identity to encode. */
+.timeline-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* Weeks, when there are few enough of them to see. Same colour as the line
+   they sit on -- they are the line's own points, not a second statement. */
+.timeline-dot {
+  fill: var(--accent);
+  stroke: none;
+}
+
+/* Rating levels. A rating scale has no meaningful zero, so the axis is
+   truncated and these are what say where it starts -- which makes them part
+   of the reading rather than decoration, and is why they are labelled. */
+.timeline-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+/* The offseason. Drawn where the line isn't, so the gap reads as a summer
+   rather than as missing data. */
+.timeline-break {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.timeline-axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.timeline-cursor line {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.timeline-cursor circle {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+/* The week under the pointer. Always rendered, even with nothing hovered, so
+   the figure doesn't change height as the pointer crosses it. */
+.timeline-readout {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+  min-height: 1.4em;
+}
+
+.timeline-readout strong {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-readout .quiet {
+  color: var(--muted);
 }

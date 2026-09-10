@@ -553,6 +553,89 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoryPoint": {
+        "description": "One week, as the team finished it.\n\n`date` is the last game played that week (cassandra's `WeekSnapshot`), so\nit is a day something actually happened on -- which is what lets a chart\nlabel its axis with time rather than with a week number that resets every\nNovember.\n\n`wins` and `losses` are season-to-date at that point, not the week's own.\nA reader hovering week 9 wants the record the team carried into it.",
+        "properties": {
+          "date": {
+            "format": "date-time",
+            "title": "Date",
+            "type": "string"
+          },
+          "losses": {
+            "title": "Losses",
+            "type": "integer"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "number"
+          },
+          "rd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rd"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "week",
+          "date",
+          "rating",
+          "rd",
+          "wins",
+          "losses"
+        ],
+        "title": "HistoryPoint",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "properties": {
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/TeamSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "model",
+          "run_id",
+          "series"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
       "JobHealth": {
         "description": "One job definition's runs over the window, rolled up.",
         "properties": {
@@ -1322,6 +1405,27 @@
         "title": "TeamRow",
         "type": "object"
       },
+      "TeamSeries": {
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "team": {
+            "title": "Team",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team",
+          "points"
+        ],
+        "title": "TeamSeries",
+        "type": "object"
+      },
       "TrainedThrough": {
         "description": "Watermark for the incremental refresh job.\n\n`processed_game_ids` is a set of ids rather than a timestamp because games\nget re-fetched and scores corrected; ids are what make the refresh\nidempotent. Current season only -- it's a resume marker, not an audit log.",
         "properties": {
@@ -1865,6 +1969,110 @@
           }
         },
         "summary": "List Leagues"
+      }
+    },
+    "/api/leagues/{league}/history": {
+      "get": {
+        "operationId": "get_history_api_leagues__league__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated team names, at most 5. Named exactly as the ratings table spells them.",
+            "in": "query",
+            "name": "teams",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated team names, at most 5. Named exactly as the ratings table spells them.",
+              "title": "Teams",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the league's lowest-Brier model.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the league's lowest-Brier model.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "First season year to include. Defaults to all of them.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "First season year to include. Defaults to all of them.",
+              "title": "From"
+            }
+          },
+          {
+            "description": "Last season year to include. Defaults to all of them.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last season year to include. Defaults to all of them.",
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History"
       }
     },
     "/api/leagues/{league}/ratings": {

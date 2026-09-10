@@ -12,6 +12,9 @@ export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
 export type Movement = components["schemas"]["Movement"];
 export type MovementWindow = components["schemas"]["MovementWindow"];
+export type HistoryResponse = components["schemas"]["HistoryResponse"];
+export type TeamSeries = components["schemas"]["TeamSeries"];
+export type HistoryPoint = components["schemas"]["HistoryPoint"];
 export type PredictResponse = components["schemas"]["PredictResponse"];
 export type JobsResponse = components["schemas"]["JobsResponse"];
 export type JobHealth = components["schemas"]["JobHealth"];
@@ -35,6 +38,16 @@ export type ExpectedPointsFit = components["schemas"]["ExpectedPointsFit"];
 
 export interface RatingsArgs {
   league: string;
+  model?: string;
+}
+
+/**
+ * A team's rating over time. `teams` is comma-separated and capped at five by
+ * the API -- the chart is one to a handful of lines, never a league.
+ */
+export interface HistoryArgs {
+  league: string;
+  teams: string;
   model?: string;
 }
 
@@ -85,6 +98,15 @@ export const api = createApi({
         params: model ? { model } : undefined,
       }),
     }),
+    // The whole of a team's history in one request: a few hundred points, and
+    // smaller than the ratings table the page was reached from. The season
+    // range picker filters what came back rather than asking again.
+    getHistory: builder.query<HistoryResponse, HistoryArgs>({
+      query: ({ league, teams, model }) => ({
+        url: `leagues/${league}/history`,
+        params: model ? { teams, model } : { teams },
+      }),
+    }),
     // Job health and data volume are separate queries against separate
     // endpoints because they read separate upstreams: Batch being slow
     // shouldn't blank the volume tables, or the other way round.
@@ -131,6 +153,7 @@ export const api = createApi({
 export const {
   useGetLeaguesQuery,
   useGetRatingsQuery,
+  useGetHistoryQuery,
   usePredictQuery,
   useGetJobsQuery,
   useGetJobVolumeQuery,

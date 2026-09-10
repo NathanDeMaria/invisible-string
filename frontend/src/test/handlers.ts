@@ -5,6 +5,7 @@ import type {
   GameDetail,
   GameRow,
   GamesResponse,
+  HistoryResponse,
   JobHealth,
   JobRun,
   JobsResponse,
@@ -100,6 +101,17 @@ export const glicko: RatingsResponse = {
       wins: 26,
       losses: 4,
       movement: { rating: -8.5, rank: -1, wins: 1, losses: 1 },
+    },
+    // A name with a space in it, which is most of them -- and what the team
+    // page's link has to survive encoding and decoding.
+    {
+      rank: 3,
+      team: "North Carolina",
+      rating: 1790.0,
+      rd: 74.1,
+      wins: 22,
+      losses: 8,
+      movement: { rating: -10.5, rank: 0, wins: 1, losses: 1 },
     },
   ],
 };
@@ -629,6 +641,44 @@ export const winProbability: WinProbabilityResponse = {
   trained_on_this_season: false,
 };
 
+/**
+ * Duke's rating over two seasons: six weeks of 2025 and two of 2026.
+ *
+ * Two seasons rather than one because the offseason between them is the case
+ * the chart has to get right -- the line breaks there, and the jump is
+ * `pass_season` rather than a game.
+ */
+const dukeWeeks: [number, number, string, number, number, number][] = [
+  [2025, 1, "2025-11-14T23:00:00Z", 1702.0, 2, 1],
+  [2025, 2, "2025-11-21T23:30:00Z", 1718.4, 4, 1],
+  [2025, 3, "2025-11-28T22:45:00Z", 1709.9, 5, 2],
+  [2025, 4, "2025-12-05T23:15:00Z", 1735.2, 7, 2],
+  [2025, 5, "2025-12-12T23:00:00Z", 1751.8, 9, 2],
+  [2025, 6, "2025-12-19T23:45:00Z", 1766.3, 11, 2],
+  [2026, 1, "2026-07-31T23:00:00Z", 1810.0, 22, 5],
+  [2026, 2, "2026-08-07T23:15:00Z", 1834.2, 24, 5],
+];
+
+export const dukeHistory: HistoryResponse = {
+  league: "mens",
+  model: "glicko_tuned",
+  run_id: "r1",
+  series: [
+    {
+      team: "Duke",
+      points: dukeWeeks.map(([year, week, date, rating, wins, losses]) => ({
+        year,
+        week,
+        date,
+        rating,
+        rd: 71.4,
+        wins,
+        losses,
+      })),
+    },
+  ],
+};
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
   http.get("/api/predict", ({ request }) => {
@@ -718,5 +768,24 @@ export const handlers = [
     }
     const model = new URL(request.url).searchParams.get("model");
     return HttpResponse.json(model === "elo" ? elo : glicko);
+  }),
+  http.get("/api/leagues/:league/history", ({ params, request }) => {
+    if (params.league !== "mens") {
+      return HttpResponse.json({ detail: "not found" }, { status: 404 });
+    }
+    const q = new URL(request.url).searchParams;
+    // A team with no rows is an empty series rather than a 404, exactly as
+    // the API answers: the file can't tell an unrated team from a
+    // nonexistent one, and elo has no history published at all.
+    const asked = (q.get("teams") ?? "").split(",").map((t) => t.trim());
+    const known = q.get("model") === "elo" ? [] : dukeHistory.series;
+    return HttpResponse.json({
+      ...dukeHistory,
+      model: q.get("model") ?? "glicko_tuned",
+      series: asked.map(
+        (team) =>
+          known.find((entry) => entry.team === team) ?? { team, points: [] },
+      ),
+    });
   }),
 ];
