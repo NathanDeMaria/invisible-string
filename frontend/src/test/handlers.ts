@@ -77,9 +77,30 @@ export const glicko: RatingsResponse = {
     processed_game_ids: [],
   },
   metrics,
+  // The week the movement column is measured from -- the last game of the
+  // snapshot before this release's own.
+  movement_since: { year: 2026, week: 1, date: "2026-07-31T23:00:00Z" },
   ratings: [
-    { rank: 1, team: "Duke", rating: 1834.2, rd: 71.4, wins: 24, losses: 5 },
-    { rank: 2, team: "Houston", rating: 1810.0, rd: 68.0, wins: 26, losses: 4 },
+    {
+      rank: 1,
+      team: "Duke",
+      rating: 1834.2,
+      rd: 71.4,
+      wins: 24,
+      losses: 5,
+      // Held its place while gaining ground, which is the case a table of
+      // arrows alone would render as nothing at all.
+      movement: { rating: 24.2, rank: 0, wins: 2, losses: 0 },
+    },
+    {
+      rank: 2,
+      team: "Houston",
+      rating: 1810.0,
+      rd: 68.0,
+      wins: 26,
+      losses: 4,
+      movement: { rating: -8.5, rank: -1, wins: 1, losses: 1 },
+    },
   ],
 };
 
@@ -97,6 +118,10 @@ const elo: RatingsResponse = {
     spread_game_margin_mae: 8.6,
     market_margin_mae: 8.8,
   },
+  // Published before the history artifact existed, which is every model in the
+  // bucket until it is republished: the column goes rather than filling with
+  // dashes.
+  movement_since: null,
   ratings: [
     { rank: 1, team: "Duke", rating: 1801.0, rd: null, wins: 24, losses: 5 },
     { rank: 2, team: "Houston", rating: 1799.5, rd: null, wins: 26, losses: 4 },
@@ -372,7 +397,6 @@ const gameRow = (
 const predicted = (
   spread: number,
   homeWinProb: number,
-  inSample = false,
   homeRating = 1600,
   awayRating = 1500,
 ): GameRow["prediction"] => ({
@@ -380,7 +404,6 @@ const predicted = (
   run_id: "r1",
   home_win_prob: homeWinProb,
   predicted_spread: spread,
-  in_sample: inSample,
   home_rating: homeRating,
   away_rating: awayRating,
 });
@@ -391,8 +414,8 @@ export const games: GamesResponse = {
   since: isoDay(-2),
   until: isoDay(1),
   games: [
-    // Two days back, finished. The model has already trained on it, which is
-    // what the dagger in the table is for.
+    // Two days back, finished. Its number is the forecast the run made
+    // before it was played, which is what the mark beside it grades.
     gameRow(-2, {
       game_id: "g-2",
       home: "Duke",
@@ -402,7 +425,7 @@ export const games: GamesResponse = {
       home_score: 78,
       away_score: 71,
       market_spread: -4.5,
-      prediction: predicted(-5.3, 0.69, true),
+      prediction: predicted(-5.3, 0.69),
     }),
     // Two days back, and called off. A row the dash can't explain: without a
     // status a reader waits all evening for a score that isn't coming.

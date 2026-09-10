@@ -379,8 +379,6 @@ export interface components {
             home_rating: number;
             /** Home Win Prob */
             home_win_prob: number;
-            /** In Sample */
-            in_sample: boolean;
             /** Model */
             model: string;
             /** Predicted Spread */
@@ -630,6 +628,46 @@ export interface components {
             run_id: string;
         };
         /**
+         * Movement
+         * @description What changed for one team since the comparison week.
+         *
+         *     `rank` is positive when a team moved *up*, which is the opposite sign to
+         *     the rank itself: 4th from 8th is +4, and the arrow beside it points the
+         *     way the team went rather than the way the number did.
+         *
+         *     `wins` and `losses` are what the team went in between, from the records
+         *     the history carries season-to-date.
+         */
+        Movement: {
+            /** Losses */
+            losses: number;
+            /** Rank */
+            rank: number;
+            /** Rating */
+            rating: number;
+            /** Wins */
+            wins: number;
+        };
+        /**
+         * MovementWindow
+         * @description The snapshot everything is measured against.
+         *
+         *     Published so the page can name the day rather than say "last week" and
+         *     hope. `date` is the last game played in that week (cassandra's
+         *     `WeekSnapshot.date`), so it is a day something actually happened on.
+         */
+        MovementWindow: {
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /** Week */
+            week: number;
+            /** Year */
+            year: number;
+        };
+        /**
          * OddsDay
          * @description One league's odds pulls on one day.
          *
@@ -691,6 +729,7 @@ export interface components {
             metrics: components["schemas"]["Metrics"];
             /** Model */
             model: string;
+            movement_since?: components["schemas"]["MovementWindow"] | null;
             /** Ratings */
             ratings: components["schemas"]["TeamRow"][];
             /** Run Id */
@@ -738,6 +777,7 @@ export interface components {
         TeamRow: {
             /** Losses */
             losses: number;
+            movement?: components["schemas"]["Movement"] | null;
             /** Rank */
             rank: number;
             /** Rating */

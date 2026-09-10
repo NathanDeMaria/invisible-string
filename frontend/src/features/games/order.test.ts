@@ -41,7 +41,6 @@ const game = ({
         run_id: "r1",
         home_win_prob: 0.6,
         predicted_spread: -3,
-        in_sample: false,
         home_rating: home,
         away_rating: away,
       }
