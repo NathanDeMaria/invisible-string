@@ -20,7 +20,7 @@ describe("RatingsPage", () => {
   it("renders ranked teams from the API", async () => {
     renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
     await screen.findByText("Duke");
-    expect(rowsInBody()).toHaveLength(2);
+    expect(rowsInBody()).toHaveLength(3);
     expect(rowsInBody()[0]).toHaveTextContent("Duke");
   });
 

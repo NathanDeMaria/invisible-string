@@ -13,6 +13,7 @@ import { JobsPage } from "./features/jobs/JobsPage";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
+import { TeamPage } from "./features/team/TeamPage";
 import { useGetLeaguesQuery } from "./services/api";
 
 export function App() {
@@ -76,6 +77,11 @@ export function App() {
             <Route index element={<Navigate to="ratings" replace />} />
             <Route path="ratings" element={<RatingsPage />} />
             <Route path="matchup" element={<MatchupPage />} />
+            {/* A team is a detail of its league, so it sits under the league's
+                layout and keeps the panel nav that leads back to the
+                leaderboard it was reached from. Encoded in the path rather
+                than a query param: it names the page. */}
+            <Route path="teams/:team" element={<TeamPage />} />
           </Route>
         </Routes>
       </main>

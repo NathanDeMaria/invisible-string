@@ -118,6 +118,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/leagues/{league}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_leagues__league__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/leagues/{league}/ratings": {
         parameters: {
             query?: never;
@@ -443,6 +460,48 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HistoryPoint
+         * @description One week, as the team finished it.
+         *
+         *     `date` is the last game played that week (cassandra's `WeekSnapshot`), so
+         *     it is a day something actually happened on -- which is what lets a chart
+         *     label its axis with time rather than with a week number that resets every
+         *     November.
+         *
+         *     `wins` and `losses` are season-to-date at that point, not the week's own.
+         *     A reader hovering week 9 wants the record the team carried into it.
+         */
+        HistoryPoint: {
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /** Losses */
+            losses: number;
+            /** Rating */
+            rating: number;
+            /** Rd */
+            rd: number | null;
+            /** Week */
+            week: number;
+            /** Wins */
+            wins: number;
+            /** Year */
+            year: number;
+        };
+        /** HistoryResponse */
+        HistoryResponse: {
+            /** League */
+            league: string;
+            /** Model */
+            model: string;
+            /** Run Id */
+            run_id: string;
+            /** Series */
+            series: components["schemas"]["TeamSeries"][];
         };
         /**
          * JobHealth
@@ -789,6 +848,13 @@ export interface components {
             /** Wins */
             wins: number;
         };
+        /** TeamSeries */
+        TeamSeries: {
+            /** Points */
+            points: components["schemas"]["HistoryPoint"][];
+            /** Team */
+            team: string;
+        };
         /**
          * TrainedThrough
          * @description Watermark for the incremental refresh job.
@@ -1064,6 +1130,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeagueSummary"][];
+                };
+            };
+        };
+    };
+    get_history_api_leagues__league__history_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated team names, at most 5. Named exactly as the ratings table spells them. */
+                teams: string;
+                /** @description Defaults to the league's lowest-Brier model. */
+                model?: string | null;
+                /** @description First season year to include. Defaults to all of them. */
+                from?: number | null;
+                /** @description Last season year to include. Defaults to all of them. */
+                to?: number | null;
+            };
+            header?: never;
+            path: {
+                league: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
