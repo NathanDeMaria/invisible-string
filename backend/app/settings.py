@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     # re-check is a conditional GET, so a cheap 304 in the common case.
     releases_cache_ttl_seconds: float = 60.0
 
+    # How long the parquet artifacts published beside a release --
+    # `history.parquet` and `predictions.parquet` (DESIGN.md section 6) -- are
+    # held before being re-read. Longer than the release TTL on purpose: they
+    # are megabytes rather than a small JSON object, they change exactly when
+    # the release does, and the release cache re-checks with a conditional GET
+    # that these have no cheap equivalent of. See `app.artifacts`.
+    artifacts_cache_ttl_seconds: float = 300.0
+
     # Used only when releases_bucket is unset.
     releases_root: Path = Path("./data")
 

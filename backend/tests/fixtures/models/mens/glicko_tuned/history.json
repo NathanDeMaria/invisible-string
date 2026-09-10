@@ -1,0 +1,50 @@
+[
+  {
+    "team": "Duke", "year": 2026, "week": 1,
+    "date": "2026-07-31T23:00:00Z",
+    "rating": 1810.0, "rd": 73.0, "wins": 22, "losses": 5,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "Houston", "year": 2026, "week": 1,
+    "date": "2026-07-31T23:00:00Z",
+    "rating": 1800.0, "rd": 70.0, "wins": 24, "losses": 4,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "North Carolina", "year": 2026, "week": 1,
+    "date": "2026-07-31T23:00:00Z",
+    "rating": 1800.5, "rd": 75.0, "wins": 21, "losses": 7,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "Kansas", "year": 2026, "week": 1,
+    "date": "2026-07-31T23:00:00Z",
+    "rating": 1770.0, "rd": 71.0, "wins": 20, "losses": 8,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "Duke", "year": 2026, "week": 2,
+    "date": "2026-08-07T23:15:00Z",
+    "rating": 1834.2, "rd": 71.4, "wins": 24, "losses": 5,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "Houston", "year": 2026, "week": 2,
+    "date": "2026-08-07T23:15:00Z",
+    "rating": 1834.2, "rd": 68.0, "wins": 26, "losses": 4,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "North Carolina", "year": 2026, "week": 2,
+    "date": "2026-08-07T23:15:00Z",
+    "rating": 1790.0, "rd": 74.1, "wins": 22, "losses": 8,
+    "run_id": "2026-08-08T09:00:12Z"
+  },
+  {
+    "team": "Kansas", "year": 2026, "week": 2,
+    "date": "2026-08-07T23:15:00Z",
+    "rating": 1755.5, "rd": 70.2, "wins": 21, "losses": 9,
+    "run_id": "2026-08-08T09:00:12Z"
+  }
+]

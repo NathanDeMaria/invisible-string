@@ -369,10 +369,6 @@
             "title": "Home Win Prob",
             "type": "number"
           },
-          "in_sample": {
-            "title": "In Sample",
-            "type": "boolean"
-          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -398,7 +394,6 @@
           "run_id",
           "home_win_prob",
           "predicted_spread",
-          "in_sample",
           "home_rating",
           "away_rating"
         ],
@@ -967,6 +962,60 @@
         "title": "ModelSummary",
         "type": "object"
       },
+      "Movement": {
+        "description": "What changed for one team since the comparison week.\n\n`rank` is positive when a team moved *up*, which is the opposite sign to\nthe rank itself: 4th from 8th is +4, and the arrow beside it points the\nway the team went rather than the way the number did.\n\n`wins` and `losses` are what the team went in between, from the records\nthe history carries season-to-date.",
+        "properties": {
+          "losses": {
+            "title": "Losses",
+            "type": "integer"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "number"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rating",
+          "rank",
+          "wins",
+          "losses"
+        ],
+        "title": "Movement",
+        "type": "object"
+      },
+      "MovementWindow": {
+        "description": "The snapshot everything is measured against.\n\nPublished so the page can name the day rather than say \"last week\" and\nhope. `date` is the last game played in that week (cassandra's\n`WeekSnapshot.date`), so it is a day something actually happened on.",
+        "properties": {
+          "date": {
+            "format": "date-time",
+            "title": "Date",
+            "type": "string"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "week",
+          "date"
+        ],
+        "title": "MovementWindow",
+        "type": "object"
+      },
       "OddsDay": {
         "description": "One league's odds pulls on one day.\n\n`pulls` and `bytes` come from listing alone. `latest_records` is the only\ntrue record count on the dashboard -- odds objects are small and immutable,\nso the newest one per league is cheap to open and count (section 12.4).",
         "properties": {
@@ -1108,6 +1157,16 @@
             "title": "Model",
             "type": "string"
           },
+          "movement_since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovementWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ratings": {
             "items": {
               "$ref": "#/components/schemas/TeamRow"
@@ -1213,6 +1272,16 @@
           "losses": {
             "title": "Losses",
             "type": "integer"
+          },
+          "movement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Movement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "rank": {
             "title": "Rank",

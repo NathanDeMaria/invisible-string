@@ -4,6 +4,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
+from app.artifacts import ArtifactStore, get_artifact_store
+from app.movement import Movement, MovementWindow, Standing, movement
 from app.releases import (
     ReleaseNotFound,
     ReleaseStore,
@@ -13,7 +15,7 @@ from app.releases import (
     pick_default,
     resolve_release,
 )
-from app.schema import Metrics, ModelRelease, TrainedThrough
+from app.schema import Metrics, ModelRelease, TeamRating, TrainedThrough
 from app.teams import still_playing
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,11 @@ class TeamRow(BaseModel):
     rd: float | None
     wins: int
     losses: int
+    # What the week did to this team (`app.movement`). None where the history
+    # can't say: no `history.parquet` published for this model, the first
+    # snapshot of a season, or a team whose first game was this week. A row
+    # that says nothing is right where a zero would be a claim.
+    movement: Movement | None = None
 
 
 class RatingsResponse(BaseModel):
@@ -54,10 +61,14 @@ class RatingsResponse(BaseModel):
     created_at: datetime
     trained_through: TrainedThrough
     metrics: Metrics
+    # The snapshot every `movement` above is measured against, so the page can
+    # name the day rather than say "last week" and hope. None when no row has
+    # a movement.
+    movement_since: MovementWindow | None = None
     ratings: list[TeamRow]
 
 
-def _rank(release: ModelRelease) -> list[TeamRow]:
+def _ranked(release: ModelRelease) -> list[tuple[int, str, TeamRating]]:
     """The release's ratings as a leaderboard of the teams that still play.
 
     A model trained on a decade of seasons rates every team it has ever seen,
@@ -77,16 +88,14 @@ def _rank(release: ModelRelease) -> list[TeamRow]:
     ]
     # Ties break on team name so a redeploy doesn't reshuffle equal-rated teams.
     ordered = sorted(playing, key=lambda kv: (-kv[1].rating, kv[0]))
+    return [(i, team, r) for i, (team, r) in enumerate(ordered, start=1)]
+
+
+def _standings(ranked: list[tuple[int, str, TeamRating]]) -> list[Standing]:
+    """The ranked table in the shape `app.movement` measures against."""
     return [
-        TeamRow(
-            rank=i,
-            team=team,
-            rating=r.rating,
-            rd=r.rd,
-            wins=r.wins,
-            losses=r.losses,
-        )
-        for i, (team, r) in enumerate(ordered, start=1)
+        Standing(team=team, rank=rank, rating=r.rating, wins=r.wins, losses=r.losses)
+        for rank, team, r in ranked
     ]
 
 
@@ -131,6 +140,7 @@ def get_ratings(
         description="Defaults to the league's lowest-Brier model.",
     ),
     store: ReleaseStore = Depends(get_release_store),
+    artifacts: ArtifactStore = Depends(get_artifact_store),
 ) -> RatingsResponse:
     try:
         release = resolve_release(store, league, model)
@@ -144,6 +154,15 @@ def get_ratings(
         log.warning("serving 502 for %s: %s", league, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    ranked = _ranked(release)
+    # The history is an enhancement, never a precondition: `app.artifacts`
+    # answers a missing or unreadable file with an empty frame, and an empty
+    # frame produces no movement rather than an error. A league published
+    # before the artifact existed still gets its table.
+    window, moved = movement(
+        artifacts.history(release.league, release.model), _standings(ranked)
+    )
+
     return RatingsResponse(
         league=release.league,
         model=release.model,
@@ -151,5 +170,17 @@ def get_ratings(
         created_at=release.created_at,
         trained_through=release.trained_through,
         metrics=release.metrics,
-        ratings=_rank(release),
+        movement_since=window,
+        ratings=[
+            TeamRow(
+                rank=rank,
+                team=team,
+                rating=r.rating,
+                rd=r.rd,
+                wins=r.wins,
+                losses=r.losses,
+                movement=moved.get(team),
+            )
+            for rank, team, r in ranked
+        ],
     )

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.artifacts import ArtifactStore, LocalArtifactStore, get_artifact_store
 from app.games import (
     GamesSource,
     GamesUnavailable,
@@ -73,9 +74,20 @@ class StubGames:
         return GameWindow(since=since, until=until, games=self._games)
 
 
-def client_for(source: GamesSource, store: ReleaseStore) -> TestClient:
+# A model published before the parquet artifacts existed, which is what the
+# real class does with a directory that isn't there. The default for a test
+# about something else, so those keep exercising the live-prediction path.
+NO_ARTIFACTS = LocalArtifactStore(Path("no-such-directory"))
+
+
+def client_for(
+    source: GamesSource,
+    store: ReleaseStore,
+    artifacts: ArtifactStore = NO_ARTIFACTS,
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_release_store] = lambda: store
+    app.dependency_overrides[get_artifact_store] = lambda: artifacts
     app.dependency_overrides[get_games_source] = lambda: source
     return TestClient(app)
 
@@ -297,29 +309,82 @@ class TestGamesEndpoint:
         assert response.status_code == 502
 
 
-class TestInSample:
-    """Releases are rebuilt nightly, so last night's result is usually already
-    in the ratings that "predicted" it. The flag is what keeps the page from
-    calling that a forecast."""
+class TestStoredPredictions:
+    """A completed game shows what the model said before it was played.
 
-    def test_a_game_the_release_trained_on_is_flagged(
-        self, store: ReleaseStore
+    Releases are rebuilt nightly, so re-predicting last night's game asks a
+    model that has already trained on the result. `predictions.parquet` is
+    what makes that unnecessary -- the forecast it made at the time is on
+    file -- and the page used to carry a dagger precisely because it wasn't.
+    """
+
+    def test_a_completed_game_uses_the_forecast_that_was_made(
+        self, client: TestClient
     ) -> None:
-        # The mens fixture's watermark is 2026-08-07, so a game dated well
-        # before it is one the ratings already contain.
+        """The fixture's stored row, not a number computed from today's
+        ratings. Distinguishable on purpose: a live prediction for
+        Duke-North Carolina out of this release is nowhere near 0.62."""
+        row = _game(client, "401710101")
+        assert row["prediction"]["home_win_prob"] == pytest.approx(0.62)
+        # The market's sign, applied to the margin the run's own calibration
+        # implied: +5.5 for the home team is a spread of -5.5.
+        assert row["prediction"]["predicted_spread"] == pytest.approx(-5.5)
+
+    def test_an_unplayed_game_is_predicted_live(self, client: TestClient) -> None:
+        """The other half of the rule. Nothing has trained on tonight's game,
+        so the release itself is the honest answer."""
+        row = _game(client, "401710105")
+        assert row["completed"] is False
+        assert row["prediction"] is not None
+        # Not a stored row: the fixture has none for this game.
+        assert row["prediction"]["run_id"] == "2026-08-08T09:00:12Z"
+
+    def test_a_game_the_release_trained_on_shows_no_number(
+        self, store: ReleaseStore, caplog
+    ) -> None:
+        """The mismatch cassandra's publish order exists to prevent: a release
+        that has folded a result in, with no forecast on file for it. There is
+        nothing honest left to show, so the row goes without a number rather
+        than carrying hindsight dressed as a forecast.
+
+        The mens fixture's watermark is 2026-08-07, so a game dated well
+        before it is one the ratings already contain.
+        """
         played = game(game_id="old", completed=True, home_score=70, away_score=68)
         played = played.model_copy(
             update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)}
         )
-        body = client_for(StubGames(played), store).get("/api/games").json()
-        assert body["games"][0]["prediction"]["in_sample"] is True
+        with caplog.at_level(logging.WARNING):
+            body = client_for(StubGames(played), store).get("/api/games").json()
+        assert body["games"][0]["prediction"] is None
+        # Said out loud, because the fix is a republish and nothing on the
+        # page will say so.
+        assert "stored no prediction" in caplog.text
 
-    def test_a_game_after_the_watermark_is_not(self, store: ReleaseStore) -> None:
-        upcoming = game(game_id="new")
-        body = client_for(StubGames(upcoming), store).get("/api/games").json()
-        assert body["games"][0]["prediction"]["in_sample"] is False
+    def test_that_warning_lands_once_per_league(
+        self, store: ReleaseStore, caplog
+    ) -> None:
+        played = [
+            game(
+                game_id=f"old-{i}", completed=True, home_score=70, away_score=68
+            ).model_copy(update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)})
+            for i in range(3)
+        ]
+        with caplog.at_level(logging.WARNING):
+            client_for(StubGames(*played), store).get("/api/games")
+        assert caplog.text.count("stored no prediction") == 1
 
-    def test_a_game_with_no_result_is_never_hindsight(
+    def test_a_game_after_the_watermark_is_still_a_forecast(
+        self, store: ReleaseStore
+    ) -> None:
+        """Completed, unstored, and *not* trained on -- a game that finished
+        after the last publish. Predicting it live is out of sample, so the
+        row keeps its number."""
+        just_played = game(game_id="new", completed=True, home_score=70, away_score=68)
+        body = client_for(StubGames(just_played), store).get("/api/games").json()
+        assert body["games"][0]["prediction"] is not None
+
+    def test_a_game_with_no_result_is_never_trained_on(
         self, store: ReleaseStore
     ) -> None:
         """A postponed game sits at its original tip-off, behind a watermark
@@ -329,11 +394,11 @@ class TestInSample:
             update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)}
         )
         body = client_for(StubGames(moved), store).get("/api/games").json()
-        assert body["games"][0]["prediction"]["in_sample"] is False
+        assert body["games"][0]["prediction"] is not None
 
     def test_the_same_game_played_would_be(self, store: ReleaseStore) -> None:
         """The other half: the guard is about the result, not about the date,
-        so it must not swallow the flag on a game that did finish."""
+        so it must not let a trained-on game through as a forecast."""
         played = game(
             game_id="postponed",
             completed=True,
@@ -342,7 +407,22 @@ class TestInSample:
             away_score=68,
         ).model_copy(update={"start": datetime(2026, 8, 1, 19, 0, tzinfo=UTC)})
         body = client_for(StubGames(played), store).get("/api/games").json()
-        assert body["games"][0]["prediction"]["in_sample"] is True
+        assert body["games"][0]["prediction"] is None
+
+    def test_a_model_with_no_artifacts_still_predicts_tonight(
+        self, store: ReleaseStore
+    ) -> None:
+        """A league published before any of this existed keeps its slate: only
+        the games the release has trained on lose their number."""
+        body = client_for(StubGames(game(game_id="new")), store).get("/api/games")
+        assert body.json()["games"][0]["prediction"] is not None
+
+    def test_the_game_page_agrees_with_the_table(self, client: TestClient) -> None:
+        """Same rule, same window, same number -- a game page that disagreed
+        with the row it was reached from would be worse than no game page."""
+        row = _game(client, "401710101")
+        detail = client.get("/api/games/mens/401710101").json()
+        assert detail["prediction"] == row["prediction"]
 
 
 def _by_league(client: TestClient, league: str) -> list[dict]:
