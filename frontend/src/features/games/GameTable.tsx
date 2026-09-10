@@ -39,6 +39,11 @@ interface Props {
  * number beside a book's at all. That gap is stated under the book's number
  * rather than left as a subtraction, and once the game is final it has an
  * answer: the mark beside the model's number is it.
+ *
+ * A finished game's number is the one the model published *before* it was
+ * played, so the mark grades a forecast rather than a memory. This page used
+ * to dagger those rows because it had no way to tell the two apart; the API
+ * has one now (`app.artifacts`), so the dagger is gone rather than dimmed.
  */
 export function GameTable({ games }: Props) {
   return (
@@ -87,17 +92,6 @@ export function GameTable({ games }: Props) {
                   <>
                     <span className="rate">
                       {spread(game.prediction.predicted_spread)}
-                      {/* Releases are rebuilt nightly, so by the time a
-                          score is on this page the model has usually trained
-                          on it. Still worth showing, but not as a forecast. */}
-                      {game.prediction.in_sample && (
-                        <abbr
-                          className="hindsight"
-                          title="The model has already trained on this result"
-                        >
-                          †
-                        </abbr>
-                      )}
                       {/* Whether that number beat the one beside it, once
                           there's a result to say so. A game with no line, no
                           result, or a model that agrees with the book gets
@@ -116,8 +110,10 @@ export function GameTable({ games }: Props) {
                     </span>
                   </>
                 ) : (
-                  // A league with no published model, or a team this release
-                  // has never rated. The score and the line still earn the row.
+                  // A league with no published model, a team this release has
+                  // never rated, or a finished game whose forecast wasn't
+                  // published with the release that trained on it. The score
+                  // and the line still earn the row.
                   <span className="rate">&mdash;</span>
                 )}
               </td>

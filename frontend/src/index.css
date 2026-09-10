@@ -376,6 +376,40 @@ table.ratings,
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
+/* What the week did to a team: the rating change, and under it the places it
+   moved and the record it went. Two lines, like every other cell on the games
+   table -- the number, then what it's of.
+
+   Uncoloured on purpose. Green and red mean "verdict" on this site (a failing
+   job, a number that beat the line), and a rating going up is a direction
+   rather than a verdict. The arrow carries it, which also survives greyscale
+   and a reader who doesn't see the colour. */
+.ratings .move .delta {
+  display: block;
+  text-decoration: none;
+  cursor: help;
+}
+
+.ratings .move .places {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* The arrow, at the size of the text it sits in rather than the glyph's own:
+   ▲ and ▼ are drawn large, and left alone they read as the loudest thing in a
+   table whose ratings are the point. */
+.ratings .move .places .up,
+.ratings .move .places .down {
+  font-size: 0.6875rem;
+}
+
+/* A team whose first game was this week: nothing to compare against, and a
+   zero would claim there was. */
+.ratings .move .quiet {
+  color: var(--muted);
+}
+
 /* The line is the answer -- everything else on the matchup page is support. */
 .matchup .line {
   font-size: 1.5rem;

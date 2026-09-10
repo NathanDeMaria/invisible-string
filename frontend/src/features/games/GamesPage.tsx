@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useGetGamesQuery, type GameRow } from "../../services/api";
-import { atsCall, modelEdge } from "./ats";
+import { type AtsCall, atsCall, modelEdge } from "./ats";
 import { GameTable } from "./GameTable";
 import { byLeagueThenRating } from "./order";
 import { count } from "../jobs/format";
@@ -51,6 +51,31 @@ const ALL = "";
  * matchup page's pickers do: a slate is a thing to send someone, and the URL
  * is the only state a link carries.
  */
+/**
+ * How the model did against the line, over the games on this page.
+ *
+ * Only the graded ones: a slate that hasn't been played has no record, and
+ * counting the unplayed games as anything would be the same mistake the
+ * dagger used to warn about from the other direction.
+ *
+ * Pushes are shown rather than dropped, and shown last. A game that landed on
+ * the number is neither a hit nor a miss -- folding it into either would move
+ * a percentage nobody could reproduce from the marks in the table.
+ */
+function AgainstTheSpread({ calls }: { calls: AtsCall[] }) {
+  if (calls.length === 0) return null;
+  const hits = calls.filter((call) => call.result === "hit").length;
+  const misses = calls.filter((call) => call.result === "miss").length;
+  const pushes = calls.length - hits - misses;
+  return (
+    <>
+      {" "}
+      &middot; model {hits}-{misses}
+      {pushes > 0 && `-${pushes}`} against the spread
+    </>
+  );
+}
+
 export function GamesPage() {
   const [params, setParams] = useSearchParams();
   const today = todayCentral();
@@ -151,9 +176,13 @@ export function GamesPage() {
     [all, league],
   );
 
-  const hindsight = listed.some((game) => game.prediction?.in_sample);
   const priced = listed.some((game) => modelEdge(game) !== null);
-  const graded = listed.some((game) => atsCall(game) !== null);
+  // Every finished, lined game on the page, graded. Worth counting now that
+  // the numbers being graded are forecasts: the model's spread for a finished
+  // game is the one it published before the game (`app.artifacts`), so this
+  // is a record rather than a re-scoring of games it has since learned from.
+  const calls = listed.map(atsCall).filter((call) => call !== null);
+  const graded = calls.length > 0;
 
   return (
     <section className="games-page">
@@ -287,6 +316,7 @@ export function GamesPage() {
                 <>
                   <p className="meta" data-testid="games-meta">
                     {count(listed.length, "game")} &middot; times {zoneLabel()}
+                    <AgainstTheSpread calls={calls} />
                   </p>
                   <GameTable games={listed} />
                   <p className="meta">
@@ -309,26 +339,19 @@ export function GamesPage() {
                         it names a number, not a team.
                       </>
                     )}
-                    {/* Only once a game on the page has actually been graded -- a
-                    footnote about a mark that isn't there is one more thing to
-                    go looking for, and the same is true of the dagger below
-                    it. */}
+                    {/* Only once a game on the page has actually been graded:
+                    a footnote about a mark that isn't there is one more thing
+                    to go looking for. */}
                     {graded && (
                       <>
                         {" "}
                         Once a game is final that pick has an answer, and the
                         mark beside the model&rsquo;s number is it: &#10003;
                         means that side covered, &#10007; that it didn&rsquo;t,
-                        and = that the game landed exactly on the number.
-                      </>
-                    )}
-                    {hindsight && (
-                      <>
-                        {" "}
-                        &dagger; marks a game whose result that release has
-                        already trained on, which makes the number &mdash; and
-                        any mark beside it &mdash; hindsight rather than a
-                        forecast.
+                        and = that the game landed exactly on the number. A
+                        finished game&rsquo;s number is the one the model
+                        published before it was played, so the marks are a
+                        record rather than a replay.
                       </>
                     )}{" "}
                     Scores arrive with the nightly scrape, so a game that has

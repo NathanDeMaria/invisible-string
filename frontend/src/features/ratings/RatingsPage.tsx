@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 
 import type { RootState } from "../../app/store";
 import { useGetLeaguesQuery, useGetRatingsQuery } from "../../services/api";
+import { weekEnding } from "./movement";
 import { RatingsTable } from "./RatingsTable";
 import { modelSelected, searchChanged } from "./uiSlice";
 
@@ -68,16 +69,36 @@ export function RatingsPage() {
           &middot; Brier {ratings.data.metrics.brier_score.toFixed(4)} &middot;
           margin MAE {ratings.data.metrics.margin_mae.toFixed(1)}
           <MarketComparison metrics={ratings.data.metrics} />
+          <Since at={ratings.data.movement_since?.date} />
         </p>
       )}
 
       {ratings.isLoading ? (
         <p className="loading">Loading&hellip;</p>
       ) : (
-        <RatingsTable rows={rows} showRd={showRd} />
+        <RatingsTable
+          rows={rows}
+          showRd={showRd}
+          since={ratings.data?.movement_since?.date ?? null}
+        />
       )}
     </>
   );
+}
+
+/**
+ * What the Week column is a week *from*.
+ *
+ * Said once, above the table, rather than in the column heading: the heading
+ * has room for one word, and "since Jul 31" is the part a reader needs only
+ * once. Absent entirely when nothing has movement -- a model published before
+ * the history existed, or the first week of a season, where a heading
+ * promising a comparison would be the only thing on the page claiming one.
+ */
+function Since({ at }: { at?: string | null }) {
+  const day = weekEnding(at);
+  if (!day) return null;
+  return <> &middot; week since {day}</>;
 }
 
 function defaultName(models: { name: string; is_default: boolean }[]): string {

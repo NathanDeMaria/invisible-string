@@ -1,9 +1,10 @@
 # invisible-string
 
 A webapp over [cassandra](https://github.com/NathanDeMaria/cassandra) model
-results: current ratings per league, win probability / predicted spread for a
-hypothetical matchup, and the games around today with the best model's number
-beside the book's. A football game gets a page of its own, with its in-game win
+results: current ratings per league and what the last week did to them, win
+probability / predicted spread for a hypothetical matchup, and the games around
+today with the best model's number beside the book's -- for a finished game,
+the number it published *before* the game. A football game gets a page of its own, with its in-game win
 probability and its EPA per play drawn from
 [the-lucky-ones](https://github.com/NathanDeMaria/the-lucky-ones). See
 [DESIGN.md](./DESIGN.md).
@@ -93,7 +94,8 @@ fails a build instead of becoming `undefined` in the browser.
 | `INVISIBLE_STRING_RELEASES_BUCKET` | unset | Read releases from this S3 bucket (`cd infra && terraform output artifacts_bucket`). Unset means read from disk instead, which is what tests and local dev use. |
 | `INVISIBLE_STRING_RELEASES_PREFIX` | `models/` | Key prefix within the bucket |
 | `INVISIBLE_STRING_RELEASES_CACHE_TTL_SECONDS` | `60` | How long a release is served from memory before S3 is re-checked |
-| `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/latest.json`. Used only when no bucket is set. |
+| `INVISIBLE_STRING_ARTIFACTS_CACHE_TTL_SECONDS` | `300` | How long `history.parquet` and `predictions.parquet` are served from memory. Longer than the release TTL: they're megabytes, and they change when it does. |
+| `INVISIBLE_STRING_RELEASES_ROOT` | `./data` | Directory holding `models/{league}/{model}/` -- `latest.json` and the two parquet artifacts beside it. Used only when no bucket is set. |
 | `INVISIBLE_STRING_STATIC_DIR` | `./static` | Built SPA. Skipped when absent, which is the local-dev case. |
 | `INVISIBLE_STRING_BATCH_JOB_QUEUE` | unset | endgame's Batch queue (name or ARN), for the job health dashboard. |
 | `INVISIBLE_STRING_ENDGAME_BUCKET` | unset | endgame's bucket. Listed for odds volume, and season files are read to count games. |

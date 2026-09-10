@@ -138,9 +138,10 @@ export function GamePage() {
                 )}
                 <span className="of">
                   {probability(detail.prediction.home_win_prob)} {detail.home}
-                  {detail.prediction.in_sample && (
-                    <> &mdash; a result this release has already trained on</>
-                  )}
+                  {/* A finished game's number is the forecast this run made
+                      before it was played, so there is nothing left to
+                      disclaim -- see `GameTable`. */}
+                  {detail.completed && <> &mdash; before it was played</>}
                 </span>
               </dd>
             </div>

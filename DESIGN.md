@@ -503,7 +503,18 @@ season's *starting* state, not this season's result.
 
 Long format, one file per `(league, model)`:
 `models/{league}/{model}/history.parquet` with columns
-`team, year, week, rating, rd, run_id`.
+`team, year, week, date, rating, rd, wins, losses, run_id`.
+
+Three of those are later than this section. `date` is the last game *played*
+that week, so a chart's x-axis is time rather than an integer that resets every
+November and nothing has to reopen a season pickle to label it — `week.end`
+would date a week in progress in the future, now that season files carry
+fixtures. `wins` and `losses` are season-to-date, counted inside the game walk
+where the tally is free, which is what makes "went 2-1 last week" answerable
+from this file alone. There is deliberately no `rank`: rank depends on which
+teams are in the table, the API drops programs that folded before it counts
+(§11), and a rank computed upstream would disagree with the leaderboard it is
+supposed to explain.
 
 All seasons back to 2010 (§11.3). Sizing: ~360 teams × ~20 weeks × 16 seasons ≈ 115k
 rows per model. That's a couple of MB as Parquet — small enough that the API loads
@@ -535,6 +546,72 @@ frontend it's a line chart on the team detail route plus a "compare" affordance 
 the ratings table (select rows → chart them). Include a real `date` per week
 alongside `(year, week)` so the x-axis is time rather than an integer that resets
 every November.
+
+**Not built, and the column below is why.** The first thing worth building on
+this file isn't the chart — it's the question a reader has before they want a
+line, which is what the last week did:
+
+```
+GET /api/leagues/{league}/ratings
+    -> {..., movement_since: {year, week, date} | null,
+        ratings: [{rank, team, rating, rd, wins, losses,
+                   movement: {rating, rank, wins, losses} | null}]}
+```
+
+Three decisions inside that, each a choice about what "since last week" means:
+
+- **The comparison is a week, not seven days.** The file is weekly, so the row
+  to diff against is the previous *snapshot*, and its date is published rather
+  than assumed — the answer is a property of the data rather than of the clock
+  the request arrived on.
+- **A season boundary ends it.** Between two seasons a rating moves because
+  `pass_season` regressed it toward its anchor, not because anybody played, and
+  the record resets. So the first snapshot of a season has no movement, which is
+  also the honest thing to show in week one.
+- **Rank movement is over today's table.** The previous week is ranked using the
+  teams the current leaderboard shows, so "up four places" is four places *on
+  this page* rather than four among whoever happened to have a row back then.
+
+The history endpoint waits on a team detail route to put it on: an endpoint
+with no page is a contract maintained for nobody.
+
+## 6a. Stored predictions
+
+`models/{league}/{model}/predictions.parquet`: what the model said *before* each
+game was played. Columns `game_id, date, year, week, home_team, away_team,
+neutral_site, team1_win_prob, predicted_margin, home_score, away_score, spread,
+run_id`, keyed on `game_id` and sorted by `date`.
+
+It costs nothing to produce. The walk-forward already computes a genuine
+out-of-sample forecast for every game — `update_game` predicts and *then*
+updates, in every stateful predictor — and then threw it away once the metrics
+were scored. What it buys is §13.3: a finished game shows the number the model
+published before it, so the page stops re-predicting games the release has
+already trained on, and the mark beside that number grades a forecast.
+
+Two properties are load-bearing:
+
+- **The file and `latest.json` come out of one run and carry one `run_id`.** A
+  game inside a release's `processed_game_ids` with no row here is the failure
+  mode — the consumer falls through to a live prediction for a game the model
+  has memorized and prints it as a forecast. cassandra's publish writes the
+  parquet artifacts first and `latest.json` last, so a half-finished publish is
+  inert rather than wrong, and `seed-artifacts.sh` uploads them in the same
+  order and says so when a hand-published release arrives without them.
+- **It stores inputs, not verdicts.** The forecast, the line and the final
+  score; the consumer grades them. "Did it cover" has two answers in this
+  codebase — `score_predictions` counts a push as team1 not covering, the games
+  page counts it as neither — and a stored verdict column would silently pick
+  one.
+
+Sorted by date because the API reads a ±7 day window and prunes row groups on
+the footer's min/max, the same trick §16.3 plays on endgame's play-by-play.
+
+**Neither artifact is load-bearing on the way in.** A missing or unreadable one
+is an empty frame, not an error: without the history the ratings table loses a
+column, without the predictions the games page loses the model's number on the
+games it can't speak to honestly, and every model published before these existed
+keeps its table and its slate until it is republished.
 
 ## 7. Infra (`infra/`)
 
@@ -1216,7 +1293,8 @@ GET /api/games?back=2&ahead=1
       games: [{league, game_id, start, day, home, away, neutral, completed,
                status, home_score, away_score, market_spread,
                prediction: {model, run_id, home_win_prob,
-                            predicted_spread, in_sample} | null}]}
+                            predicted_spread,
+                            home_rating, away_rating} | null}]}
 ```
 
 One endpoint for every league, and no `league=` filter: the whole window is one
@@ -1269,12 +1347,12 @@ states worth naming, keeps the dash for a game that simply hasn't happened
 — the tip-off beside it has already said so — and turns an unrecognized
 `STATUS_FOO_BAR` into "Foo bar" rather than hiding it.
 
-**And nothing unplayed is ever daggered.** §13.3's `in_sample` has two signals
-and the schedule can fool both: a postponed game sits at its original tip-off,
-behind a watermark that has moved past it, and a training run walking a season
-file straight through would put tonight's fixtures in `processed_game_ids` as
-readily as last night's finals. A game with no result is a forecast whatever
-either signal says, so `completed` gates them.
+**And nothing unplayed is ever taken for trained-on.** §13.3's `_trained_on`
+has two signals and the schedule can fool both: a postponed game sits at its
+original tip-off, behind a watermark that has moved past it, and a training run
+walking a season file straight through would put tonight's fixtures in
+`processed_game_ids` as readily as last night's finals. A game with no result
+is a forecast whatever either signal says, so `completed` gates them.
 
 ### 13.2 What this costs to read
 
@@ -1332,26 +1410,43 @@ without re-reading anything. The window itself is capped at a week either side
 but a cost cap. That cap is also the day picker's horizon. A month of games is a
 different page.
 
-### 13.3 The prediction is the current release, which has usually seen the result
+### 13.3 A finished game shows the forecast that was made before it
 
 Releases are rebuilt nightly (§5a). So by the time last night's score is on this
-page, last night's result is already folded into the ratings that "predicted"
-it. That number is still the honest answer to "what does the model say about
-this matchup" — but it is not a forecast, and a page that showed it beside a
-final score without saying so would be quietly claiming a hit rate it never
-earned.
+page, last night's result is already folded into the ratings that would
+"predict" it. Re-predicting the game asks a model that has seen the answer, and
+a page showing that number beside a final score would be quietly claiming a hit
+rate it never earned.
 
-`in_sample` is that flag. It's true when the game's id is in
+**This section used to describe the disclaimer, and now describes the fix.**
+The original design had no way to do better, so it flagged the problem:
+`in_sample` was true when the game's id was in
 `trained_through.processed_game_ids` — the refresh job's own idempotency marker,
 so an exact answer where it applies — or, falling back for a game outside the
-current season, when the kickoff is at or before `trained_through.last_game_date`.
-The UI marks those rows with a dagger and explains it under the table.
+current season, when the kickoff was at or before
+`trained_through.last_game_date`; the UI daggered those rows and explained the
+dagger under the table. It also called predicting out of sample "a real feature
+and a bigger one", needing the release as of the morning of the game — per-day
+releases kept around and one picked per game.
 
-Predicting *out of sample* is a real feature and a bigger one: it needs the
-release as of the morning of the game, which means keeping per-day releases
-around and picking one per game. §6's rating history is the same storage
-problem, and §14 is where both of them get somewhere to live — they are the two
-features that make a query engine worth its cost.
+It turned out not to need any of that. The walk-forward already computes a
+genuine pre-game forecast for every game — `update_game` predicts and *then*
+updates — and cassandra now keeps them (§6a) instead of discarding them after
+scoring. So the rule is
+
+    completed game -> the stored pre-game prediction
+    unplayed game  -> predicted live from the release
+
+and both halves are honest. No dagger, no per-day releases, and no query
+engine: the storage problem §14 was going to solve turned out to be one column
+in a file the same publish already writes.
+
+`_trained_on` survives as the guard on the one case left over: a game the
+release has trained on with *no* stored forecast, which means a release and a
+predictions file out of step. The row shows no number at all, and the API logs
+the mismatch once per league — cassandra's publish order (parquet first,
+`latest.json` last) is arranged to prevent it, and `seed-artifacts.sh` says so
+when a hand-published release arrives without its artifacts.
 
 **A league without a model still gets its rows.** endgame scrapes leagues
 nothing has published a `ModelRelease` for, and a missing, stale, or ratingless
@@ -1570,18 +1665,27 @@ the four silence the edge line as well, because there is no disagreement to
 state; "no result yet" is the grade's alone, and is exactly the row the edge
 line exists for.
 
-**A daggered game is graded like any other.** §13.3's whole point is that these
-predictions are usually hindsight, and hindsight is exactly as capable of being
-wrong. The mark says what happened; the dagger says what the number was worth
-before it happened. The footnote now ties them together rather than leaving a
-reader to assume a ✓ on a daggered row was a forecast.
+**The mark grades a forecast.** It used to grade whatever number the release
+happened to produce today, which for a finished game was usually hindsight —
+hence the dagger, and a footnote tying the two together. §13.3 replaced that:
+the number beside a finished game is the one the model published before it was
+played, so a ✓ means the model was right in advance, which is the only version
+of that mark worth printing.
 
-**No record, no win rate, no units.** A tally at the top of the page would be a
-model's ATS record over whatever days the picker happens to be showing, most of
-them in sample — a number that looks like a claim about the model and isn't one.
-`against_spread_accuracy` in the release metrics is the honest version of that
-number, over the model's whole evaluation set, and it is already on the ratings
-page. This page grades games, not the model.
+**A record over the day, but no win rate and no units.** The original rule here
+was "no tally at all", on the grounds that a record over whatever days the
+picker happens to be showing is mostly in sample — a number that looks like a
+claim about the model and isn't one. The first half of that objection expired
+with §13.3: the marks now grade forecasts, so counting them is counting
+something real, and the page states the record of the games it is showing
+beside the count of them.
+
+The second half stands. It is a record over a day or three, not a rate: a
+percentage would invite reading a 1-0 evening as a hit rate, and pushes are
+shown as their own column of the record rather than folded into either side, so
+the number can be checked against the marks in the table. `against_spread_accuracy`
+in the release metrics is still the model-level number, over the whole
+evaluation set, and it is still the one on the ratings page.
 
 **Colour is the fast read; the glyph is the accessible one.** Green and red are
 the second colours on the site (the first is the job dashboard's failure red,

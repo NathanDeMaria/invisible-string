@@ -182,7 +182,6 @@ describe("GamesPage", () => {
               run_id: "r1",
               home_win_prob: 0.6,
               predicted_spread: -3,
-              in_sample: false,
               home_rating: rating,
               away_rating: rating - 200,
             },
@@ -307,16 +306,17 @@ describe("GamesPage", () => {
     expect(row).toContain("Duke"); // who won
   });
 
-  it("marks a prediction the model has already trained on", async () => {
+  it("does not disclaim a finished game's number", async () => {
     renderApp(<GamesPage />, on(-2));
     await screen.findAllByRole("table");
 
-    // Releases are rebuilt nightly, so last night's result is usually already
-    // in the ratings that "predicted" it. That's hindsight, not a forecast.
-    const marker = screen.getByTitle(/already trained on this result/);
-    expect(marker.closest("tr")?.textContent).toContain(
-      "North Carolina @ Duke",
-    );
+    // The page used to dagger last night's rows: releases are rebuilt
+    // nightly, so re-predicting a finished game asked a model that had
+    // already trained on it. The API sends the forecast made before the game
+    // now, so there is nothing left to disclaim -- and a dagger that survived
+    // the change would be a footnote about a problem the page no longer has.
+    expect(screen.queryByTitle(/already trained on/)).toBeNull();
+    expect(await rowFor("North Carolina @ Duke")).toContain("-5.3");
   });
 
   it("marks a finished game the model got right against the line", async () => {
@@ -386,7 +386,6 @@ describe("GamesPage", () => {
                 run_id: "r1",
                 home_win_prob: 0.55,
                 predicted_spread: -2,
-                in_sample: false,
               },
             },
           ],
@@ -515,6 +514,25 @@ describe("GamesPage", () => {
     );
   });
 
+  it("counts the model's record against the line", async () => {
+    renderApp(<GamesPage />, on(-2));
+    await screen.findAllByRole("table");
+
+    // The numbers being graded are the ones the model published *before*
+    // those games, so this is a record rather than a re-scoring of results it
+    // has since trained on -- which is what the page's dagger used to warn
+    // about, and why counting them up was never worth doing before.
+    const meta = await screen.findByTestId("games-meta");
+    expect(meta).toHaveTextContent("model 1-0 against the spread");
+  });
+
+  it("says nothing about a slate that hasn't been played", async () => {
+    renderApp(<GamesPage />, { route: "/games" });
+
+    const meta = await screen.findByTestId("games-meta");
+    expect(meta).not.toHaveTextContent("against the spread");
+  });
+
   it("counts the day's games above the table", async () => {
     renderApp(<GamesPage />, { route: "/games" });
 
@@ -522,14 +540,16 @@ describe("GamesPage", () => {
     expect(meta).toHaveTextContent("2 games");
   });
 
-  it("explains the sign convention and the dagger", async () => {
+  it("explains the sign convention and what the marks grade", async () => {
     renderApp(<GamesPage />, on(-2));
     await screen.findAllByRole("table");
 
     // Two spread columns in the market's convention are unreadable without
     // the sentence that says which side they're quoted from.
     expect(screen.getByText(/home team’s side/)).toBeInTheDocument();
-    expect(screen.getByText(/already trained on/)).toBeInTheDocument();
+    // And a tick beside a finished game is worth much more if the reader
+    // knows the number it grades was published before the game.
+    expect(screen.getByText(/before it was played/)).toBeInTheDocument();
   });
 
   it("decodes the shorthand under the table", async () => {

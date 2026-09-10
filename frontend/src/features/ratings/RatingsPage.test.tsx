@@ -62,6 +62,91 @@ describe("RatingsPage", () => {
     expect(rowsInBody()[0]).toHaveTextContent("Houston");
   });
 
+  describe("the week's movement", () => {
+    /** The row for a team, as the table renders it. */
+    const rowFor = (team: string) =>
+      rowsInBody().find((row) => row.textContent?.includes(team));
+
+    it("shows what the week did to each team", async () => {
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Duke");
+
+      // Duke gained ground without changing places; Houston lost both.
+      expect(rowFor("Duke")).toHaveTextContent("+24.2");
+      expect(rowFor("Houston")).toHaveTextContent("-8.5");
+    });
+
+    it("points the arrow the way the team went", async () => {
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Houston");
+
+      // Second from first is a place lost, whatever the rank integer did.
+      expect(rowFor("Houston")).toHaveTextContent("▼1");
+      // A team that held its place gets no arrow: there is nothing to point.
+      expect(rowFor("Duke")?.textContent).not.toContain("▲");
+      expect(rowFor("Duke")?.textContent).not.toContain("▼");
+    });
+
+    it("carries the record the week produced", async () => {
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Duke");
+      expect(rowFor("Duke")).toHaveTextContent("2-0");
+    });
+
+    it("names the day it is a week since", async () => {
+      // "Last week" is a claim the reader can't check. A date is one they can.
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      expect(await screen.findByTestId("run-meta")).toHaveTextContent(
+        "week since Jul 31",
+      );
+    });
+
+    it("decodes the shorthand in a title", async () => {
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Houston");
+      expect(
+        screen.getByTitle(/Down 8.5 points and down 1 place since Jul 31/),
+      ).toBeInTheDocument();
+    });
+
+    it("drops the column for a model with no history", async () => {
+      // Every model published before the artifact existed. A column of dashes
+      // would imply a comparison the data can't make.
+      const user = userEvent.setup();
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Duke");
+
+      await user.selectOptions(screen.getByLabelText("Model"), "elo");
+
+      await waitFor(() =>
+        expect(screen.queryByRole("columnheader", { name: "Week" })).toBeNull(),
+      );
+      expect(screen.getByTestId("run-meta")).not.toHaveTextContent(
+        "week since",
+      );
+    });
+
+    it("leaves a team with nothing behind it blank", async () => {
+      // Its first game was this week: there is no previous rating to
+      // subtract, and a zero would claim there was one.
+      server.use(
+        http.get("/api/leagues/:league/ratings", () =>
+          HttpResponse.json({
+            ...ratingsFixture,
+            ratings: ratingsFixture.ratings.map((row) =>
+              row.team === "Houston" ? { ...row, movement: null } : row,
+            ),
+          }),
+        ),
+      );
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Houston");
+
+      const cells = within(rowFor("Houston")!).getAllByRole("cell");
+      expect(cells[cells.length - 1]).toHaveTextContent("—");
+    });
+  });
+
   it("says so when a league has no published ratings", async () => {
     renderApp(<RatingsPage />, RATINGS_ROUTE("womens"));
     expect(await screen.findByText(/No ratings published/)).toBeInTheDocument();
