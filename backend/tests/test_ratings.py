@@ -105,3 +105,64 @@ class TestRatings:
 
     def test_unknown_model_404s(self, client: TestClient) -> None:
         assert client.get("/api/leagues/mens/ratings?model=nope").status_code == 404
+
+
+class TestMovement:
+    """The column the ratings page has been missing: what the week did.
+
+    The mens fixture's history holds two weeks, and its second week is the
+    release -- which is what a healthy publish writes, since both come out of
+    one replay. So every number here is the first week subtracted from the
+    table beside it.
+    """
+
+    def test_rating_movement_is_the_week_that_just_happened(
+        self, client: TestClient
+    ) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        moved = {row["team"]: row["movement"] for row in rows}
+        assert moved["Houston"]["rating"] == pytest.approx(34.2)
+        assert moved["North Carolina"]["rating"] == pytest.approx(-10.5)
+
+    def test_places_gained_are_positive(self, client: TestClient) -> None:
+        """Houston went third to second. The reader sees "up one", so the sign
+        follows the team rather than the rank integer."""
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        moved = {row["team"]: row["movement"] for row in rows}
+        assert moved["Houston"]["rank"] == 1
+        assert moved["North Carolina"]["rank"] == -1
+        assert moved["Duke"]["rank"] == 0
+
+    def test_the_record_the_week_produced(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        moved = {row["team"]: row["movement"] for row in rows}
+        assert (moved["Duke"]["wins"], moved["Duke"]["losses"]) == (2, 0)
+        assert (moved["Kansas"]["wins"], moved["Kansas"]["losses"]) == (1, 1)
+
+    def test_the_page_can_name_the_day_it_compares_against(
+        self, client: TestClient
+    ) -> None:
+        """ "Last week" said as a date, so the column doesn't have to be taken
+        on trust -- and so a league that hasn't played in a fortnight says so
+        rather than implying a week."""
+        body = client.get("/api/leagues/mens/ratings").json()
+        assert body["movement_since"]["year"] == 2026
+        assert body["movement_since"]["week"] == 1
+        assert body["movement_since"]["date"].startswith("2026-07-31")
+
+    def test_a_model_with_no_history_still_serves_its_table(
+        self, client: TestClient
+    ) -> None:
+        """Every model published before the artifact existed. The column is
+        absent, the leaderboard isn't."""
+        body = client.get("/api/leagues/womens/ratings").json()
+        assert body["movement_since"] is None
+        assert body["ratings"]
+        assert all(row["movement"] is None for row in body["ratings"])
+
+    def test_history_is_per_model_not_per_league(self, client: TestClient) -> None:
+        """mens has two models and one of them has a history. Reading the
+        wrong one would put glicko's movement beside elo's ratings."""
+        body = client.get("/api/leagues/mens/ratings?model=elo").json()
+        assert body["movement_since"] is None
+        assert all(row["movement"] is None for row in body["ratings"])

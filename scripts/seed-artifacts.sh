@@ -17,11 +17,20 @@
 #
 #   <dir>/models/{league}/{model}/latest.json
 #   <dir>/models/{league}/{model}/runs/{run_id}.json
+#   <dir>/models/{league}/{model}/history.parquet
+#   <dir>/models/{league}/{model}/predictions.parquet
 #
-# Either file is enough. A directory holding only `runs/` -- which is what you
-# get if a publish step wrote the immutable copy and stopped -- publishes fine:
-# the newest run becomes latest.json, because latest.json is a *copy*, not a
-# pointer, and the API reads it with one GET.
+# Either release file is enough. A directory holding only `runs/` -- which is
+# what you get if a publish step wrote the immutable copy and stopped --
+# publishes fine: the newest run becomes latest.json, because latest.json is a
+# *copy*, not a pointer, and the API reads it with one GET.
+#
+# The two parquet artifacts go up with it when they're there. They belong to
+# the same run and the API reads all three (DESIGN.md section 6): the history
+# is what the ratings table's movement column is, and the predictions are what
+# the games page shows for a game the release has already trained on. Leaving
+# them behind is the one way to publish a release that is worse than not
+# publishing it, so this says so out loud when they're missing.
 
 set -euo pipefail
 
@@ -136,6 +145,32 @@ for file in "${files[@]}"; do
   model="$(basename "$league_model_dir")"
   league="$(basename "$(dirname "$league_model_dir")")"
   run_id="$(jq -r .run_id "$file")"
+
+  # The parquet artifacts first, then the release -- the order publish.py
+  # uploads in, and for the same reason. `latest.json` is the pointer the API
+  # reads: stopping part-way here leaves a history and a set of predictions
+  # nothing points at yet, which is inert. The other order leaves a live
+  # release whose completed games have no stored forecast, and the games page
+  # answers that by showing no number at all (app/api/games.py).
+  for artifact in history.parquet predictions.parquet; do
+    [ -f "$league_model_dir/$artifact" ] || continue
+    dest="s3://$bucket/models/$league/$model/$artifact"
+    if [ -n "${DRY_RUN:-}" ]; then
+      echo "    would copy $league_model_dir/$artifact -> $dest"
+    else
+      aws s3 cp "$league_model_dir/$artifact" "$dest" \
+        --content-type application/vnd.apache.parquet
+    fi
+  done
+
+  # Said once per model, because the effect is quiet: the ratings table loses
+  # its movement column and every game the release has trained on loses its
+  # number. Not fatal -- a release without them is still servable -- so this
+  # warns rather than refusing.
+  if [ ! -f "$league_model_dir/predictions.parquet" ]; then
+    echo "    warning: no predictions.parquet beside $league/$model;" \
+      "completed games will show no model number until it is published" >&2
+  fi
 
   # Both keys, per the layout in DESIGN.md section 2: runs/ is the immutable
   # history a rollback copies from, latest.json is the copy the API reads.

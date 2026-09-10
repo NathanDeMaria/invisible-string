@@ -1,3 +1,4 @@
+import json
 import pickle
 from collections import namedtuple
 from collections.abc import Iterator
@@ -8,11 +9,19 @@ from typing import Any
 from unittest import mock
 
 import endgame.types
+import pandas as pd
 import pytest
+from cassandra.serving import (
+    history_path,
+    predictions_path,
+    write_history,
+    write_predictions,
+)
 from endgame.ncaabb.ncaabb import Season
 from endgame.types import Week
 from fastapi.testclient import TestClient
 
+from app.artifacts import ArtifactStore, LocalArtifactStore, get_artifact_store
 from app.games import GamesSource, LocalGamesSource, get_games_source
 from app.jobs import JobsSource, LocalJobsSource, get_jobs_source
 from app.main import create_app
@@ -25,6 +34,45 @@ FIXTURES = Path(__file__).parent / "fixtures"
 @pytest.fixture
 def store() -> ReleaseStore:
     return LocalReleaseStore(FIXTURES)
+
+
+@pytest.fixture(scope="session")
+def artifact_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The parquet artifacts, written from the JSON fixtures beside them.
+
+    `history.parquet` and `predictions.parquet` are binary, and a fixture
+    nobody can read in a diff is a fixture nobody maintains. So the rows are
+    committed as JSON next to the release they belong to, and this writes them
+    out through cassandra's own writers once per session.
+
+    Through cassandra's writers specifically, not `to_parquet` here: the dtypes
+    and the column order are the artifact's schema, and a fixture that pinned
+    its own would keep passing after upstream moved. What the tests read is
+    what a publish writes.
+    """
+    root = tmp_path_factory.mktemp("artifacts")
+    for source in sorted(FIXTURES.glob("models/*/*/history.json")):
+        league, model = source.parent.parent.name, source.parent.name
+        write_history(_rows(source), history_path(root, league, model))
+    for source in sorted(FIXTURES.glob("models/*/*/predictions.json")):
+        league, model = source.parent.parent.name, source.parent.name
+        write_predictions(_rows(source), predictions_path(root, league, model))
+    return root
+
+
+def _rows(source: Path) -> pd.DataFrame:
+    return pd.DataFrame(json.loads(source.read_text()))
+
+
+@pytest.fixture
+def artifacts(artifact_root: Path) -> ArtifactStore:
+    return LocalArtifactStore(artifact_root)
+
+
+@pytest.fixture
+def no_artifacts(tmp_path: Path) -> ArtifactStore:
+    """A store for a model published before the parquet artifacts existed."""
+    return LocalArtifactStore(tmp_path)
 
 
 @pytest.fixture
@@ -45,12 +93,14 @@ def plays_source() -> PlaysSource:
 @pytest.fixture
 def client(
     store: ReleaseStore,
+    artifacts: ArtifactStore,
     jobs_source: JobsSource,
     games_source: GamesSource,
     plays_source: PlaysSource,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_release_store] = lambda: store
+    app.dependency_overrides[get_artifact_store] = lambda: artifacts
     app.dependency_overrides[get_jobs_source] = lambda: jobs_source
     app.dependency_overrides[get_games_source] = lambda: games_source
     app.dependency_overrides[get_plays_source] = lambda: plays_source

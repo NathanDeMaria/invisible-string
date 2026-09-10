@@ -14,12 +14,20 @@ league" already has a definition here -- `pick_default`, lowest Brier
 model comparison wearing a scoreboard's clothes. The response names the model
 and run it used, so it's never a mystery which one answered.
 
-**A prediction for a game the model has already trained on says so.** Releases
-are rebuilt nightly, so by the time last night's score is on this page, last
-night's result is usually already in the ratings that predicted it. That
-number is still worth showing -- it's what the model says about the matchup --
-but it is not a forecast, and `in_sample` is the flag that keeps the page from
-implying it was.
+**A completed game shows the forecast that was made before it.** Releases are
+rebuilt nightly, so by the time last night's score is on this page, last
+night's result is already in the ratings -- re-predicting it would be
+hindsight wearing a forecast's clothes, which is what the page used to flag
+with a dagger. It doesn't have to any more: `predictions.parquet` stores what
+the model said *before* each game (`app.artifacts`), so the rule is
+
+    completed game -> the stored pre-game prediction
+    unplayed game  -> predicted live from the release
+
+and both halves are honest. The one case left over is a game the release has
+trained on that has no stored row -- a release published without its
+predictions, or one that outran them. That is a mismatch rather than a
+forecast, and it renders as no prediction at all: see `_predict_stored`.
 
 A league whose release is missing, stale, or ratingless still gets its games:
 the prediction is None and the row renders without one. Only the *games* half
@@ -27,10 +35,13 @@ failing is a 502, because that's the half with nothing to show.
 """
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import NamedTuple
 
 import numpy as np
+import pandas as pd
 from cassandra.predictor import (
     Predictor,
     RatingsUnsupported,
@@ -41,6 +52,7 @@ from cassandra.prob_to_margin import BaseProbToMarginPredictor
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
+from app.artifacts import ArtifactStore, get_artifact_store
 from app.games import (
     DEFAULT_DAYS_AHEAD,
     DEFAULT_DAYS_BACK,
@@ -51,6 +63,7 @@ from app.games import (
     ScheduledGame,
     find_game,
     get_games_source,
+    window_bounds,
 )
 from app.releases import (
     ReleaseNotFound,
@@ -78,9 +91,6 @@ class GamePrediction(BaseModel):
     # None when the release carries no margin fit, exactly as in
     # `/api/predict`: better an absent number than a fabricated one.
     predicted_spread: float | None
-    # True when the ratings behind this number already include this game's
-    # result. Hindsight, not a forecast -- see the module docstring.
-    in_sample: bool
     # The two numbers the win probability was computed from, in the release's
     # own scale. Not required to render a row -- `/api/leagues/{league}/ratings`
     # already serves them per team -- but joined to the game here so a page
@@ -148,6 +158,7 @@ def get_games(
     ahead: int = _ahead,
     source: GamesSource = Depends(get_games_source),
     store: ReleaseStore = Depends(get_release_store),
+    artifacts: ArtifactStore = Depends(get_artifact_store),
 ) -> GamesResponse:
     try:
         window = source.window(back, ahead)
@@ -157,7 +168,9 @@ def get_games(
         log.warning("serving 502 for games: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    models = _Models(store)
+    # The window the games came from, so the stored predictions are read over
+    # exactly the days being rendered.
+    models = _Models(store, artifacts, window.since, window.until)
     return GamesResponse(
         days_back=back,
         days_ahead=ahead,
@@ -201,6 +214,7 @@ def get_game(
     game_id: str,
     source: GamesSource = Depends(get_games_source),
     store: ReleaseStore = Depends(get_release_store),
+    artifacts: ArtifactStore = Depends(get_artifact_store),
 ) -> GameDetail:
     """Everything this app knows about one game.
 
@@ -225,12 +239,23 @@ def get_game(
             detail=(f"no {league} game {game_id} in the week either side of today"),
         )
 
+    # `find_game` searches the widest window this API will serve, so the
+    # stored predictions are read over the same span -- a game page reached
+    # from the far edge of the table must show the number the table did.
+    since, until = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
     return GameDetail(
         **game.model_dump(),
         day=game.day,
-        prediction=_Models(store).predict(game),
+        prediction=_Models(store, artifacts, since, until).predict(game),
         has_win_probability=fit_for(league) is not None,
     )
+
+
+class _Stored(NamedTuple):
+    """One row of `predictions.parquet`: the forecast, as it was made."""
+
+    home_win_prob: float
+    predicted_margin: float
 
 
 @dataclass
@@ -246,6 +271,9 @@ class _LeagueModel:
     predictor: Predictor
     margin: BaseProbToMarginPredictor | None
     processed: frozenset[str]
+    # What this model said before each game in the window, by game id, out of
+    # `predictions.parquet`. Empty for a model published without one.
+    stored: dict[str, _Stored]
 
 
 class _Models:
@@ -253,14 +281,30 @@ class _Models:
 
     A league that can't be predicted from is remembered as None so a window
     full of its games doesn't re-resolve, re-log and re-fail once per row.
+
+    The window's days are held because the stored predictions are read by
+    date: one range read per league, on the first game of it, rather than a
+    lookup per row.
     """
 
-    def __init__(self, store: ReleaseStore) -> None:
+    def __init__(
+        self,
+        store: ReleaseStore,
+        artifacts: ArtifactStore,
+        since: date,
+        until: date,
+    ) -> None:
         self._store = store
+        self._artifacts = artifacts
+        self._since = since
+        self._until = until
         self._by_league: dict[str, _LeagueModel | None] = {}
         # Leagues whose predictor has already thrown, so a window full of
         # their games logs one traceback rather than one per row.
         self._logged: set[str] = set()
+        # Leagues that have already reported a trained-on game with no stored
+        # prediction, for the same reason.
+        self._mismatched: set[str] = set()
 
     def predict(self, game: ScheduledGame) -> GamePrediction | None:
         model = self._for(game.league)
@@ -278,6 +322,14 @@ class _Models:
         if game.away not in model.release.ratings:
             return None
 
+        stored = self._predict_stored(model, game)
+        if stored is not None:
+            return stored
+        if _trained_on(model, game):
+            # Trained on it, and no forecast on file. See `_predict_stored`.
+            self._report_mismatch(model, game)
+            return None
+
         try:
             prob = predict_matchup(
                 model.predictor,
@@ -292,7 +344,6 @@ class _Models:
                 run_id=model.release.run_id,
                 home_win_prob=prob,
                 predicted_spread=_spread(model.margin, prob),
-                in_sample=_in_sample(model, game),
                 home_rating=model.release.ratings[game.home].rating,
                 away_rating=model.release.ratings[game.away].rating,
             )
@@ -319,6 +370,55 @@ class _Models:
                     exc_info=True,
                 )
             return None
+
+    def _predict_stored(
+        self, model: _LeagueModel, game: ScheduledGame
+    ) -> GamePrediction | None:
+        """The forecast this run made before the game, if it made one.
+
+        None means "not on file", which the caller reads two ways depending on
+        `_trained_on`: for a game the release hasn't trained on it falls
+        through to a live prediction, which is a genuine forecast; for one it
+        has, there is nothing honest left to show and the row goes without a
+        number.
+
+        That second case is the mismatch cassandra's `serving/predictions`
+        names -- a release and a predictions file out of step, which its
+        publish order is arranged to prevent. It is worth a log line rather
+        than a silent blank, because the fix is a republish and nothing on the
+        page will say so.
+        """
+        row = model.stored.get(game.game_id)
+        if row is None:
+            return None
+
+        return GamePrediction(
+            model=model.release.model,
+            run_id=model.release.run_id,
+            home_win_prob=row.home_win_prob,
+            # The negation `_spread` applies to a live prediction, applied to
+            # the margin the run's own calibration implied. Stored rather than
+            # recomputed for the reason cassandra stores it: the fit is refit
+            # every run, and grading an old forecast against a newer mapping
+            # would grade it against one that didn't exist when it was made.
+            predicted_spread=-row.predicted_margin,
+            home_rating=model.release.ratings[game.home].rating,
+            away_rating=model.release.ratings[game.away].rating,
+        )
+
+    def _report_mismatch(self, model: _LeagueModel, game: ScheduledGame) -> None:
+        """Once per league, not once per row."""
+        if game.league in self._mismatched:
+            return
+        self._mismatched.add(game.league)
+        log.warning(
+            "%s/%s (run %s) has trained on game %s but stored no prediction "
+            "for it; those rows will show no number until it is republished",
+            game.league,
+            model.release.model,
+            model.release.run_id,
+            game.game_id,
+        )
 
     def _for(self, league: str) -> _LeagueModel | None:
         if league not in self._by_league:
@@ -377,6 +477,11 @@ class _Models:
             predictor=predictor,
             margin=release.margin_predictor(),
             processed=frozenset(release.trained_through.processed_game_ids),
+            stored=_stored(
+                self._artifacts.predictions(
+                    league, release.model, self._since, self._until
+                )
+            ),
         )
 
 
@@ -393,21 +498,51 @@ def _spread(margin: BaseProbToMarginPredictor | None, prob: float) -> float | No
     return -float(margin.predict_margins(np.array([prob]))[0])
 
 
-def _in_sample(model: _LeagueModel, game: ScheduledGame) -> bool:
-    """Whether the ratings behind the prediction already include this result.
+def _stored(predictions: pd.DataFrame) -> dict[str, _Stored]:
+    """A window of `predictions.parquet`, keyed by the game it is about.
+
+    Built once per league rather than looked up per row, because the read
+    behind it is a range read: `app.artifacts` fetches the row groups covering
+    these days, and turning them into a dict costs one pass.
+
+    A row whose margin didn't survive the fit is dropped rather than carried
+    as a NaN. It would reach the wire as a `null` spread -- which already
+    means "this release has no margin fit" -- and the two are worth telling
+    apart.
+    """
+    if predictions.empty:
+        return {}
+    rows = predictions.to_dict("records")
+    return {
+        str(row["game_id"]): _Stored(
+            home_win_prob=float(row["team1_win_prob"]),
+            predicted_margin=float(row["predicted_margin"]),
+        )
+        for row in rows
+        if not math.isnan(float(row["predicted_margin"]))
+        and not math.isnan(float(row["team1_win_prob"]))
+    }
+
+
+def _trained_on(model: _LeagueModel, game: ScheduledGame) -> bool:
+    """Whether the ratings behind a live prediction already include this result.
+
+    Only asked of a game with no stored forecast, and it decides between the
+    two things that can mean: a game the release hasn't seen, which can still
+    be predicted honestly, and one it has, which can't (see `_predict_stored`).
 
     The id list is the exact answer where it applies -- it's the refresh job's
     idempotency marker, so a game in it has been folded in. It only covers the
     current season, so the watermark date is the fallback, and a release
     carrying neither says "no" rather than guessing.
 
-    A game with no result can't be in sample whatever either of them says, and
-    that guard earns its place now that the season files carry unplayed games.
-    Both signals can claim one: a postponed game sits at its original tip-off,
-    behind a watermark that has moved past it, and a training run walking a
-    season file straight through would put tonight's fixtures in
-    `processed_game_ids` as readily as last night's finals. Neither is a
-    reason to dagger a forecast as hindsight -- there is nothing to have
+    A game with no result can't have been trained on whatever either of them
+    says, and that guard earns its place now that the season files carry
+    unplayed games. Both signals can claim one: a postponed game sits at its
+    original tip-off, behind a watermark that has moved past it, and a
+    training run walking a season file straight through would put tonight's
+    fixtures in `processed_game_ids` as readily as last night's finals.
+    Neither is a reason to withhold a forecast -- there is nothing to have
     learned from yet.
     """
     if not game.completed:
