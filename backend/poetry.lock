@@ -796,7 +796,7 @@ develop = false
 [package.dependencies]
 aiofiles = "^25.1.0"
 call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "15f23685a42466d3273a18430c19d2b5daee2586"}
-endgame = {git = "https://github.com/NathanDeMaria/EndGame.git", rev = "f0be488a26c9bcf60a21ba00146581779485e852", subdirectory = "py-endgame"}
+endgame = {git = "https://github.com/NathanDeMaria/EndGame.git", rev = "b15f504fbef74459aaf3aea0526f3a6dc11a4f9e", subdirectory = "py-endgame"}
 numpy = "^2.4.0"
 pandas = "^2.3.3"
 pydantic = "^2.12.5"
@@ -804,8 +804,8 @@ pydantic = "^2.12.5"
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "8def97d29d14cf742d0ff23308f01ef9982e1f04"
-resolved_reference = "8def97d29d14cf742d0ff23308f01ef9982e1f04"
+reference = "69437cc1bbc4df7f0bb35a97809b6989aab54840"
+resolved_reference = "69437cc1bbc4df7f0bb35a97809b6989aab54840"
 
 [[package]]
 name = "certifi"
@@ -1167,8 +1167,8 @@ python-dateutil = "^2.8.2"
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/EndGame.git"
-reference = "f0be488a26c9bcf60a21ba00146581779485e852"
-resolved_reference = "f0be488a26c9bcf60a21ba00146581779485e852"
+reference = "b15f504fbef74459aaf3aea0526f3a6dc11a4f9e"
+resolved_reference = "b15f504fbef74459aaf3aea0526f3a6dc11a4f9e"
 subdirectory = "py-endgame"
 
 [[package]]
@@ -3390,4 +3390,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "f4c4f13a75767e829f4a87eba3d8f0bc34a69f6c0704119706b2724cbdbdc764"
+content-hash = "a94766851618b9c9aef47b806be920c813e568e35d2df503a52c4139c16d1282"
