@@ -954,6 +954,67 @@ keeps the *next* drift from taking a page down; the second is what makes this
 one's numbers appear. Shipping only the pin would leave the site one `optimize.py`
 run away from the same outage.
 
+#### The second bump: `8def97d` → `69437cc`
+
+One `optimize.py` run away is where the paragraph above left it, and this is
+that run. Fifteen commits upstream add three *matchup* terms — rest, travel and
+quarterback availability — and make the sigmoid's scale a parameter instead of
+a constant, and the tuned searches take them: `models/nfl/elo.json` now ranges
+over `rest_advantage`, `travel_advantage` and `qb_out_penalty`, and every
+`glicko_full.json` over `sigmoid_scale`. So the next release published for any
+of them carries four knobs in `params` that the previous pin's constructors had
+never heard of — the same `TypeError` out of `cls(league, **params)`, arriving
+by the same route `season_regression` did.
+
+The three re-checks §8 asks for, made rather than assumed:
+
+- **The schema never moved.** `cassandra/serving/`, `prob_to_margin.py`, and
+  `predictor/`'s `__init__.py`, `types.py` and `matchup.py` are byte-identical
+  across the whole range, so `ModelRelease`, the calibration it rehydrates, the
+  class registry and `predict_matchup`'s signature are all exactly as they
+  were. The risk was confined to predictor constructors again, which is the
+  narrow kind.
+- **Nothing already being served changes.** Every golden fixture, rebuilt and
+  asked for every ordered pair of its rated teams, home and neutral, gives a
+  win probability identical to twelve decimal places either side of the bump —
+  the mens fixture is still 0.633 — and so does every margin its calibration
+  puts on a probability. It has to be: all three new weights default to 0,
+  which is the model that shipped before them, and `sigmoid_scale` defaults to
+  the 10.0 `glicko_blend.py` used to hard-code.
+- **sklearn is still absent from the image**, and this time nothing else
+  arrived either: the lock moves two git revs and not one package more.
+
+**What a release tuned *with* those knobs will and won't reproduce here**, which
+is the part worth knowing before one lands. The weights round-trip in
+`state_dict`, so a release carries them and this build now accepts them — but
+the *state* behind two of the three does not travel with it. Rest needs when
+each team last played, and a predictor rebuilt from a release starts with an
+empty ledger; quarterback availability needs an index keyed by game id, and a
+fixture nobody has played is not in one. Both therefore price at zero on the
+cold rebuild `/api/games` and `/api/predict` do, so the number this site shows
+for an ncaafb or nfl game will drift slightly from the one cassandra's own
+replay produced. That is the safe direction — a missing input reads as "no
+adjustment" rather than as a wrong number, the same choice §3's unknown-team
+guard makes — and it is a gap to close upstream rather than by guessing here.
+Travel is the exception and needs nothing: it reads two team names against a
+venue table that ships inside the package.
+
+**The endgame chain caught up on its own.** §13.5 is written against a pin that
+"can't simply be bumped" because endgame arrives transitively and poetry
+refuses two git revs of one package. Bumping cassandra bumps it: endgame moves
+`f0be488` → `b15f504` in the lock, via cassandra's own `endgame-aws` bump.
+`endgame/types.py` is untouched across that range, so `Game` has the same nine
+fields in the same order, `RawGame.FIELDS` still matches the installed class,
+and `test_endgame_pickle.py` — the check that exists for exactly this — stays
+green. The tolerant reader is still the right answer for the next appended
+field; it just isn't carrying this one.
+
+One thing arrives that nothing here has to do anything about: `ncaawvb`,
+women's college volleyball, is a league upstream now. No league list is
+hard-coded in this app — the ratings nav, the games window and the artifact
+store all read whatever the bucket holds — so it appears when a release for it
+is published, and not before.
+
 ---
 
 ## 9. Changes needed in cassandra
