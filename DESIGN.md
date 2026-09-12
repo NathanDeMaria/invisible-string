@@ -1015,6 +1015,69 @@ hard-coded in this app — the ratings nav, the games window and the artifact
 store all read whatever the bucket holds — so it appears when a release for it
 is published, and not before.
 
+#### The third bump: `69437cc` → `a653519`
+
+Sixty-three commits upstream, and unlike the second bump this one does not get
+to say "the schema never moved" without qualification. `cassandra/serving/`
+changed this time: `TeamRating` grows two new optional fields, `offense` and
+`defense` (`UnitRating`, a `{rating, rd}` pair), and `Rating` — the NamedTuple
+`ratings_from_predictor`/`from_ratings` round-trip through — grows a matching
+`units: Units | None = None`, last and defaulted so a `Rating(r, rd)` written
+by any of this app's tests is still the same tuple it always was.
+`predictor/__init__.py` and `predictor/types.py` moved for the same reason:
+`Unit`, `Units` and `CompoundGlickoPredictor` are new exports. `matchup.py`
+and `prob_to_margin.py` are still byte-identical, so `predict_matchup`'s
+signature and the margin calibration are untouched — the risk this time is
+confined to the release schema's new optional pair and one new predictor
+class, not the read path this app calls on every request.
+
+The three re-checks, made again:
+
+- **Nothing already being served changes.** The verification script from the
+  second bump — rebuild every golden fixture's predictor and ask it for
+  every ordered pair of its rated teams, home and neutral — gives an
+  identical win probability to twelve decimal places either side of the
+  bump, for all four fixtures. `offense`/`defense` are absent from every
+  fixture on file (nothing has published a compound release yet), so the
+  new fields round-trip as `None` and never enter the arithmetic;
+  `prediction_scale`, the one new constructor knob that touches an existing
+  class (`GlickoPredictor` and its blend), defaults to `400.0` — the same
+  constant `predict_game`'s `10 ** (gap / 400)` used to hard-code — so a
+  fixture that doesn't carry it predicts exactly as it did.
+- **A new predictor class arrives already handled.** `CompoundGlickoPredictor`
+  rates an offense and a defense per team on garbage-time-adjusted EPA,
+  Glicko-style, alongside the parent record rating — three new model
+  configs, `glicko_compound`/`glicko_compound_narrow` for `ncaafb` and `nfl`.
+  Nothing here has to know that: `app.releases` resolves `predictor_class`
+  by name through `load_predictor_class`, the same dynamic lookup that let
+  `ncaawvb` appear without a code change, so the new class just works once
+  the pin carries it. What was worth checking rather than assuming:
+  `predict_game` (what `/api/games` and `/api/predict` call) reads only the
+  parent rating, the blended unit rating already rehydrated by
+  `from_ratings`, and the existing matchup adjustments — it never touches
+  `game_epa` or `qb_out`, which only feed `update_game`, the training-time
+  method this app never calls. So a cold rebuild of a compound release
+  needs no EPA index or injury feed to answer a prediction, the same "safe
+  to be missing" shape §8 already established for rest and quarterback
+  availability. A team the compound model never rated (`units=None` on its
+  release entry, or absent from `predictor._units` entirely) reads as its
+  parent record alone — `get_units` falls back to the prior at the initial
+  deviation, which is the same "no adjustment" default `unit_information`
+  hands anything unseen.
+- **sklearn is still absent from the image.** cassandra's `pyproject.toml` is
+  byte-identical across the whole range — no dependency moved, added, or
+  dropped — so the lock file's only change is the two `resolved_reference`
+  lines and the content hash. Nothing arrives transitively either: endgame
+  stays pinned at `b15f504`, unmoved since the second bump, so
+  `test_endgame_pickle.py`'s guard is unexercised this time rather than
+  freshly re-passed.
+
+`app.schema` needed no edit: it re-exports `TeamRating` and `ModelRelease` by
+reference, so the new optional fields arrive on the classes it already
+imports. `UnitRating` itself is not re-exported, on the same rule the module's
+docstring already states — nothing here reads it yet, and importing a name
+nothing uses is the sweep this module exists to avoid.
+
 ---
 
 ## 9. Changes needed in cassandra
