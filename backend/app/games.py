@@ -177,6 +177,29 @@ class PlayedGame(NamedTuple):
 class GamesSource(Protocol):
     def window(self, days_back: int, days_ahead: int) -> GameWindow: ...
 
+    def find_in_season(
+        self, league: str, game_id: str, season: int
+    ) -> "ScheduledGame | None":
+        """One game out of one season file, named by the season it is in.
+
+        The way past the window's horizon, and the reason it takes a season
+        rather than searching for one: a season file is keyed by league and
+        year, so an id on its own is a walk of every file in the bucket.
+        Whoever holds a link to an old game knows which season it was --
+        `predictions.parquet` stores it beside the id (`app.api.team_games`)
+        -- so the cheap read is the only one this offers.
+
+        **Builds one row and keeps nothing.** That is what makes it safe to
+        reach outside the horizon at all: the horizon exists because a row per
+        game for a whole season is hundreds of megabytes held in a cache
+        (`app.seasons._read_season`), and one row is not. The read itself is
+        the same object `window` already pulls for the current season.
+
+        None for a game the file hasn't got, and for a season nothing was
+        found for -- both of which the caller answers with the same 404.
+        """
+        ...
+
     def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
         """Every game of one league's season, for working out who is rested.
 
@@ -196,26 +219,37 @@ def window_bounds(
     return today - timedelta(days=days_back), today + timedelta(days=days_ahead)
 
 
-def find_game(source: GamesSource, league: str, game_id: str) -> ScheduledGame | None:
-    """One game out of the widest window the API will serve, or None.
+def find_game(
+    source: GamesSource, league: str, game_id: str, season: int | None = None
+) -> ScheduledGame | None:
+    """One game, out of the window if it's near today and the season if not.
 
-    There is no by-id read to make here. A season file is keyed by league and
-    year and holds the whole schedule, so "find game 401671789" is either a
-    walk of every season file in the bucket or a walk of the days this app
-    already reads, and the second is much the cheaper. Its expensive half is
-    shared, too: a season file is read for the whole horizon whatever window
-    asked for it, so this adds an odds listing rather than a pickle read
-    (§13.2).
+    The window first, always, and not only because it is usually the answer.
+    It is the fresher of the two: a game in it carries the line off today's
+    odds pulls, and the season file behind `find_in_season` carries no line at
+    all. A game that both could answer for should come back the way the games
+    table would have shown it.
 
-    The horizon is a cost cap rather than a retention ceiling: a link to a game
-    from last month 404s, which is the same week either side of today the games
-    page itself can reach.
+    There is still no by-id read to make. A season file is keyed by league and
+    year and holds the whole schedule, so "find game 401671789" with nothing
+    else to go on is a walk of every file in the bucket -- which is why the
+    fallback is offered a season rather than asked to find one. A caller with
+    a link to an old game has it: `predictions.parquet` stores the season
+    beside the id, so the team page's links carry it and the game page passes
+    it straight through.
+
+    Without a season this is what it always was: the week either side of
+    today, and a 404 past that. The horizon stays a cost cap on what the
+    *window* builds -- see `find_in_season` for what stops the fallback from
+    reintroducing the memory it was there to save.
     """
     window = source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
     for game in window.games:
         if game.league == league and game.game_id == game_id:
             return game
-    return None
+    if season is None:
+        return None
+    return source.find_in_season(league, game_id, season)
 
 
 def each_day(since: date, until: date) -> list[date]:
@@ -277,6 +311,24 @@ class LocalGamesSource:
         in_window = [g for g in shifted if since <= g.day <= until]
         in_window.sort(key=lambda g: (g.start, g.league, g.game_id))
         return GameWindow(since=since, until=until, games=in_window)
+
+    def find_in_season(
+        self, league: str, game_id: str, season: int
+    ) -> ScheduledGame | None:
+        """The fixture's own games, unbounded by the window.
+
+        Shifted like everything else this source serves, so a game found here
+        and the same game found in the window agree about when it was.
+        """
+        offset = _fixture_offset(self._fixture())
+        for game in self._fixture():
+            if (
+                game.league == league
+                and game.game_id == game_id
+                and game.season == season
+            ):
+                return _shift(game, offset)
+        return None
 
     def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
         """The fixture's own games, re-based the same way the window's are.

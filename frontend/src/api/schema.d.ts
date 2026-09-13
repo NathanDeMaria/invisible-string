@@ -37,9 +37,11 @@ export interface paths {
          *     would be worse than no game page. What it adds is the partition its plays
          *     live in, and whether there's a model that could draw them.
          *
-         *     404 for a game outside the week either side of today (see
-         *     `app.games.find_game`): the horizon is a cost cap, and a link that
-         *     outlived it should say so rather than render an empty page.
+         *     A game outside the week either side of today needs its `season`, and 404s
+         *     without one (see `app.games.find_game`). The horizon still bounds what the
+         *     *window* builds; naming the season buys one game out of one season file
+         *     rather than a wider window, which is what lets a team page link to every
+         *     game it lists instead of only the fortnight of them in reach.
          *
          *     The four matchup flags make this a what-if: the same release, asked about
          *     the same fixture with a quarterback ruled out or a side off a bye. They are
@@ -152,6 +154,36 @@ export interface paths {
         };
         /** Get Ratings */
         get: operations["get_ratings_api_leagues__league__ratings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/leagues/{league}/teams/{team}/games": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Team Games
+         * @description Every game this model has a stored prediction for, for one team.
+         *
+         *     The whole career in one response, for the reason the history endpoint
+         *     serves a whole line: it is a few hundred rows, which is smaller than the
+         *     ratings table the page was reached from, and a season picker that went
+         *     back to the network to narrow what it already had would be slower and no
+         *     smaller.
+         *
+         *     The model follows the page's selection, like the chart above it. A game
+         *     list showing elo's forecasts under glicko's rank would be two models
+         *     wearing one heading.
+         */
+        get: operations["get_team_games_api_leagues__league__teams__team__games_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -869,6 +901,66 @@ export interface components {
             /** Year */
             year: number;
         };
+        /**
+         * TeamGameRow
+         * @description One game, as the team this list is about played it.
+         *
+         *     `season` and `week` are the model's own partition for the game, which is
+         *     what the game page needs to find it outside the days the schedule source
+         *     keeps in reach (`app.games.find_game`). They are on the wire so a link
+         *     into that page can carry the season rather than making it search.
+         *
+         *     `team_score` and `opponent_score` are None together for a game that hasn't
+         *     been played -- a run predicts fixtures as well as results, so the newest
+         *     rows in the file are often games with nothing to report yet.
+         *
+         *     `win_prob` is this team's, and `predicted_spread` and `market_spread` are
+         *     quoted from its side in the market's convention: negative means this team
+         *     was favoured. The same convention `/api/games` uses for a row, turned
+         *     around for whichever team the page is about.
+         */
+        TeamGameRow: {
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /** Game Id */
+            game_id: string;
+            /** Home */
+            home: boolean;
+            /** Market Spread */
+            market_spread: number | null;
+            /** Neutral */
+            neutral: boolean;
+            /** Opponent */
+            opponent: string;
+            /** Opponent Score */
+            opponent_score: number | null;
+            /** Predicted Spread */
+            predicted_spread: number | null;
+            /** Season */
+            season: number;
+            /** Team Score */
+            team_score: number | null;
+            /** Week */
+            week: number;
+            /** Win Prob */
+            win_prob: number | null;
+        };
+        /** TeamGamesResponse */
+        TeamGamesResponse: {
+            /** Games */
+            games: components["schemas"]["TeamGameRow"][];
+            /** League */
+            league: string;
+            /** Model */
+            model: string;
+            /** Run Id */
+            run_id: string;
+            /** Team */
+            team: string;
+        };
         /** TeamRow */
         TeamRow: {
             defense?: components["schemas"]["UnitRating"] | null;
@@ -1042,6 +1134,8 @@ export interface operations {
     get_game_api_games__league___game_id__get: {
         parameters: {
             query?: {
+                /** @description The season the game is in. Only needed for a game outside the week either side of today, which can't be found without it. */
+                season?: number | null;
                 /** @description Home QB out. Only for a game that hasn't been played, in a league with the term. */
                 qb_out_home?: boolean;
                 /** @description Away QB out. Only for a game that hasn't been played, in a league with the term. */
@@ -1082,7 +1176,10 @@ export interface operations {
     };
     get_win_probability_api_games__league___game_id__win_probability_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The season the game is in. Only needed for a game outside the week either side of today, exactly as on the game itself. */
+                season?: number | null;
+            };
             header?: never;
             path: {
                 league: string;
@@ -1257,6 +1354,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RatingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_team_games_api_leagues__league__teams__team__games_get: {
+        parameters: {
+            query?: {
+                /** @description Defaults to the league's lowest-Brier model. */
+                model?: string | null;
+            };
+            header?: never;
+            path: {
+                league: string;
+                team: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamGamesResponse"];
                 };
             };
             /** @description Validation Error */

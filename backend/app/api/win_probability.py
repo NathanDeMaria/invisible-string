@@ -29,7 +29,7 @@ bucket refusing to be read, exactly as on the games page.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from lucky_ones import EpaPerPlay as LuckyOnesEpaPerPlay
 from lucky_ones import GameControl as LuckyOnesGameControl
 from lucky_ones.bundled import BundledModel
@@ -284,6 +284,13 @@ class WinProbabilityResponse(BaseModel):
 def get_win_probability(
     league: str,
     game_id: str,
+    season: int | None = Query(
+        default=None,
+        description=(
+            "The season the game is in. Only needed for a game outside the "
+            "week either side of today, exactly as on the game itself."
+        ),
+    ),
     source: GamesSource = Depends(get_games_source),
     plays_source: PlaysSource = Depends(get_plays_source),
 ) -> WinProbabilityResponse:
@@ -297,14 +304,18 @@ def get_win_probability(
         )
 
     try:
-        game = find_game(source, league, game_id)
+        game = find_game(source, league, game_id, season)
     except GamesUnavailable as exc:
         log.warning("serving 502 for %s/%s win probability: %s", league, game_id, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if game is None:
         raise HTTPException(
             status_code=404,
-            detail=f"no {league} game {game_id} in the week either side of today",
+            detail=(
+                f"no {league} game {game_id} in the week either side of today"
+                if season is None
+                else f"no {league} game {game_id} in the {season} season"
+            ),
         )
 
     release = fit.release

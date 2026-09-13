@@ -24,6 +24,7 @@ import logging
 import re
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -60,6 +61,16 @@ _SEASON_KEY = re.compile(r"^seasons/(?P<year>\d{4})/(?P<league>[^/]+)\.pkl$")
 # worth the tidier query.
 _SEASON_YEARS = 2
 
+# How many single old games to keep built. A page view is one entry, and an
+# entry is one `ScheduledGame` -- the cap is there because the key is a game
+# id rather than because the rows are large.
+MAX_CACHED_ROWS = 256
+
+# What S3 says when the object isn't there. `get_object` raises for both, and
+# a season a link names but nothing has written is a miss rather than the
+# outage `_upstream` turns a ClientError into.
+_MISSING = {"NoSuchKey", "404"}
+
 
 class AwsGamesSource:
     """Live reads against endgame's bucket.
@@ -83,6 +94,9 @@ class AwsGamesSource:
         # entry per season file, replaced when the daily job rewrites it, so
         # this can't grow with time the way an ETag-keyed cache would.
         self._seasons: dict[str, tuple[str, "_SeasonGames"]] = {}
+        # One row per old game anybody has opened a page for. See
+        # `find_in_season` for why this is rows and the one above is seasons.
+        self._rows: OrderedDict[tuple[str, str], ScheduledGame] = OrderedDict()
 
     def window(self, days_back: int, days_ahead: int) -> GameWindow:
         cached = self._cached(days_back, days_ahead)
@@ -103,6 +117,83 @@ class AwsGamesSource:
         with self._lock:
             self._windows[(days_back, days_ahead)] = (window, time.monotonic())
         return window
+
+    def find_in_season(
+        self, league: str, game_id: str, season: int
+    ) -> ScheduledGame | None:
+        """One game out of one season file, built and kept on its own.
+
+        Three reads, cheapest first.
+
+        The cached season's own rows answer for anything inside the horizon,
+        which is the case where this is called at all only because the window
+        was searched by league and came back empty for another one.
+
+        Then this method's own cache, which holds *rows* rather than seasons:
+        a game that has been played never changes, so a reader reloading an
+        old game page pays the pickle once. Bounded, because the key is a game
+        id and there are hundreds of thousands of those.
+
+        Then the file. `_find_row` walks it and builds exactly one
+        `ScheduledGame`, which is the whole reason reaching past the horizon is
+        affordable: what took the endpoint down was a *cache* of rows for every
+        game of every league and season, and one row for one game is four
+        orders of magnitude off that. The unpickled graph is transient, the
+        same way `app.batch`'s is.
+
+        No line. The spread lives in the odds objects for the day the game was
+        played, which is a listing and two reads per game page for a number
+        that is only on the board while the game is (`_spreads`). A game this
+        old shows the score and the forecast without one.
+        """
+        key = f"seasons/{season}/{league}.pkl"
+        cached = self._seasons.get(key)
+        if cached is not None:
+            for rows in cached[1].by_day.values():
+                for game in rows:
+                    if game.game_id == game_id:
+                        return game
+
+        with self._lock:
+            found = self._rows.get((league, game_id))
+        if found is not None:
+            return found
+
+        with _upstream("s3"):
+            row = self._read_one(key, league, game_id)
+        if row is None:
+            return None
+
+        with self._lock:
+            self._rows[(league, game_id)] = row
+            self._rows.move_to_end((league, game_id))
+            while len(self._rows) > MAX_CACHED_ROWS:
+                self._rows.popitem(last=False)
+        return row
+
+    def _read_one(self, key: str, league: str, game_id: str) -> ScheduledGame | None:
+        """One season file, walked for one game. Best-effort like the rest."""
+        try:
+            raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        except ClientError as exc:
+            # A season nobody has written is an ordinary miss here rather than
+            # an outage: a link can name a year this league has no file for.
+            if exc.response.get("Error", {}).get("Code") in _MISSING:
+                log.info("no season file at s3://%s/%s", self._bucket, key)
+                return None
+            raise
+
+        try:
+            seasons = load_seasons(raw)
+        except Exception as exc:  # noqa: BLE001 - unpickling a foreign graph
+            log.warning("could not unpickle s3://%s/%s: %s", self._bucket, key, exc)
+            return None
+
+        try:
+            return _find_row(seasons, league, game_id)
+        except Exception as exc:  # noqa: BLE001 - a foreign, evolving Game
+            log.warning("could not walk s3://%s/%s: %s", self._bucket, key, exc)
+            return None
 
     def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
         """One season file's whole schedule, at three fields a game.
@@ -385,6 +476,32 @@ def _pool_games(seasons: Any, league: str, horizon: tuple[date, date]) -> _Poole
             exc_info=first_failure,
         )
     return _Pooled(rows=pooled, schedule=sorted(schedule.values()))
+
+
+def _find_row(seasons: Any, league: str, game_id: str) -> ScheduledGame | None:
+    """One game out of a whole season file, as a row -- and nothing else.
+
+    The counterpart to `_pool_games`, and the difference is the point: that
+    one builds every row in the horizon and this builds at most one. A season
+    file is the whole schedule, so the id is checked against the raw `Game`
+    before anything is converted.
+
+    Pooled like `_pool_games` pools, for the same reason: a cross-division
+    game is in the file twice and the copies need not agree, so the walk
+    continues past a first match and the completed copy wins. The year and the
+    week come from where it was found, which is the only place they exist.
+    """
+    found: ScheduledGame | None = None
+    for season in seasons:
+        year = getattr(season, "year", None)
+        for number, games in numbered_weeks(season):
+            for game in games:
+                if game.game_id != game_id:
+                    continue
+                row = _to_row(game, league, season=year, week=number)
+                if found is None or (row.completed and not found.completed):
+                    found = row
+    return found
 
 
 def _to_row(

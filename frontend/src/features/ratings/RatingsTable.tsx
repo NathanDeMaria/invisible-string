@@ -127,7 +127,9 @@ function UnitCell({ unit }: { unit: UnitRating | null | undefined }) {
   }
   return (
     <td className="num">
-      <abbr title={`RD ${unit.rd.toFixed(1)}`}>{unit.rating.toFixed(1)}</abbr>
+      <abbr className="unit" title={`RD ${unit.rd.toFixed(1)}`}>
+        {unit.rating.toFixed(1)}
+      </abbr>
     </td>
   );
 }

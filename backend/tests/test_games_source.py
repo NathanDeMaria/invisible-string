@@ -531,3 +531,119 @@ class TestANewerSeasonFile:
         assert "pre-flip" in by_id
         # "" rather than STATUS_FINAL: it is final, but nothing recorded that.
         assert by_id["pre-flip"].status == ""
+
+
+class TestFindingOneOldGame:
+    """Reaching past the horizon without bringing back what it was cut for.
+
+    A team page links to every game it lists, most of which are seasons old.
+    The window can't answer for those and a wider window is the outage above,
+    so the way through is one game named by its season -- and the property
+    that matters is that finding it costs one row, not a season of them.
+    """
+
+    def one_season(self, s3: Any, *games: Game, client: Any = None) -> AwsGamesSource:
+        """A 2024 season file, and a source that reads it.
+
+        The year is in the pickle as well as in the key, because `_to_row`
+        takes the season from the `Season` object rather than from the path --
+        a fixture that put 2026 inside `seasons/2024/` would be testing a
+        disagreement nothing in the bucket has.
+        """
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2024/mens.pkl",
+            Body=season_pickle(list(games), year=2024),
+        )
+        return AwsGamesSource(bucket=BUCKET, s3_client=client or s3)
+
+    def old(self, gid: str = "november", *, completed: bool = True) -> Game:
+        midnight = datetime.combine(datetime.now(GAME_TZ).date(), datetime.min.time())
+        return game(midnight - timedelta(days=200), gid=gid, completed=completed)
+
+    def test_finds_a_game_the_window_cannot_reach(self, s3: Any) -> None:
+        source = self.one_season(s3, self.old())
+
+        found = source.find_in_season("mens", "november", 2024)
+
+        assert found is not None
+        assert found.game_id == "november"
+        assert (found.home_score, found.away_score) == (78, 71)
+        assert (found.season, found.week) == (2024, 1)
+
+    def test_builds_one_row_and_keeps_only_that(self, s3: Any) -> None:
+        """The whole reason this is allowed to read outside the horizon.
+
+        What took the endpoint down was a *cache* of rows for every game of
+        every league and season. One game page is one row, and the season it
+        came out of is not kept at all.
+        """
+        source = self.one_season(
+            s3,
+            self.old("november"),
+            self.old("december"),
+            self.old("january"),
+        )
+
+        source.find_in_season("mens", "november", 2024)
+
+        assert list(source._rows) == [("mens", "november")]
+        assert source._seasons == {}
+
+    def test_a_second_look_does_not_reread_the_file(self, s3: Any) -> None:
+        counting = CountingS3(s3)
+        source = self.one_season(s3, self.old(), client=counting)
+
+        source.find_in_season("mens", "november", 2024)
+        source.find_in_season("mens", "november", 2024)
+
+        # A game that has been played does not change, so a reader reloading
+        # an old page pays the pickle once.
+        assert counting.gets_under("seasons/") == 1
+
+    def test_a_season_nothing_has_written_is_a_miss(self, s3: Any) -> None:
+        """Not a 502. A link can name a year this league has no file for, and
+        that is a fact about the link rather than about the bucket."""
+        source = self.one_season(s3, self.old())
+
+        assert source.find_in_season("mens", "november", 1999) is None
+
+    def test_a_game_the_file_hasnt_got_is_a_miss(self, s3: Any) -> None:
+        source = self.one_season(s3, self.old())
+
+        assert source.find_in_season("mens", "not-a-game", 2024) is None
+
+    def test_the_completed_copy_of_a_doubled_game_wins(self, s3: Any) -> None:
+        """A cross-division game is in the file twice and the copies need not
+        agree -- one of them can predate the final whistle. The walk carries
+        on past a first match for exactly that."""
+        source = self.one_season(
+            s3,
+            self.old("doubled", completed=False),
+            self.old("doubled", completed=True),
+        )
+
+        found = source.find_in_season("mens", "doubled", 2024)
+
+        assert found is not None
+        assert found.completed is True
+
+    def test_the_cached_season_answers_without_a_read(self, s3: Any) -> None:
+        """A game inside the horizon is already built and grouped by day. This
+        is only reached when the window was searched for another league, so
+        the rows in hand should answer before the file is opened again."""
+        midnight = datetime.combine(datetime.now(GAME_TZ).date(), datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle([game(midnight, gid="today")]),
+        )
+        counting = CountingS3(s3)
+        source = AwsGamesSource(bucket=BUCKET, s3_client=counting)
+        source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+        reads = counting.gets_under("seasons/")
+
+        found = source.find_in_season("mens", "today", 2026)
+
+        assert found is not None
+        assert counting.gets_under("seasons/") == reads

@@ -533,3 +533,48 @@ describe("the matchup terms", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("a game older than the window", () => {
+  /**
+   * The fixture's archived game: Duke-Vermont from last season, which the
+   * games window cannot reach. A team page links to dozens like it, and the
+   * season on the link is the whole of what makes those links work.
+   */
+  const archived = (search = "") => ({
+    route: `/games/mens/401700101${search}`,
+    path: "/games/:league/:gameId",
+  });
+
+  it("renders when the link names its season", async () => {
+    renderApp(<GamePage />, archived("?season=2025"));
+
+    expect(
+      await screen.findByRole("heading", { name: /Vermont at Duke/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the forecast that was made before it", async () => {
+    renderApp(<GamePage />, archived("?season=2025"));
+    await screen.findByRole("heading", { name: /Vermont at Duke/ });
+
+    // The reason for reaching an old game at all is mostly the number on it.
+    // A page that found the game and lost the model would be a scoreboard.
+    expect(screen.getByText("-22.5")).toBeInTheDocument();
+  });
+
+  it("says the link outlived the window when it names no season", async () => {
+    renderApp(<GamePage />, archived());
+
+    expect(await screen.findByText(/outlived it/)).toBeInTheDocument();
+  });
+
+  it("names the season it looked in when one was given", async () => {
+    renderApp(<GamePage />, archived("?season=2019"));
+
+    // Not "older than a week": the request named 2019, so a message about the
+    // fortnight around today would describe a limit it had already passed.
+    expect(
+      await screen.findByText(/nothing in the 2019 season/),
+    ).toBeInTheDocument();
+  });
+});

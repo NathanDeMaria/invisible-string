@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { dukeHistory } from "../../test/handlers";
+import { dukeGames, dukeHistory } from "../../test/handlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { TeamPage } from "./TeamPage";
@@ -13,9 +13,23 @@ const TEAM_ROUTE = (team: string, league = "mens") => ({
   path: "/:league/teams/:team",
 });
 
-/** The season table, which is the chart's other half. */
+/**
+ * The season table, which is the chart's other half.
+ *
+ * Named rather than "the table on the page": the games list is a table too,
+ * and both of them are rows about the same team. Each is reached through its
+ * own caption, which is also what a screen reader tells them apart by.
+ */
 const seasonRows = () =>
-  within(screen.getByRole("table")).getAllByRole("row").slice(1);
+  within(screen.getByRole("table", { name: /Every season/ }))
+    .getAllByRole("row")
+    .slice(1);
+
+/** The games list under it. */
+const gameRows = () =>
+  within(screen.getByRole("table", { name: /Newest first/ }))
+    .getAllByRole("row")
+    .slice(1);
 
 describe("TeamPage", () => {
   it("names the team and where it stands", async () => {
@@ -156,6 +170,41 @@ describe("TeamPage", () => {
   });
 
   it("offers no season picker when there is only one season", async () => {
+    // Both artifacts, because the picker narrows both halves of the page: a
+    // team with one season of history and two of games has a second season to
+    // pick, and offering nothing would leave half the list unreachable.
+    server.use(
+      http.get("/api/leagues/:league/history", () =>
+        HttpResponse.json({
+          ...dukeHistory,
+          series: [
+            {
+              team: "Duke",
+              points: dukeHistory.series[0].points.filter(
+                (point) => point.year === 2026,
+              ),
+            },
+          ],
+        }),
+      ),
+      http.get("/api/leagues/:league/teams/:team/games", () =>
+        HttpResponse.json({
+          ...dukeGames,
+          games: dukeGames.games.filter((row) => row.season === 2026),
+        }),
+      ),
+    );
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("img");
+
+    expect(screen.queryByLabelText("Season")).toBeNull();
+  });
+
+  it("offers the picker for a season only the games know about", async () => {
+    // The two artifacts are published separately, so one can carry a season
+    // the other doesn't. Here the history is 2026 alone and the games reach
+    // back into 2025 -- and 2025 has to be pickable, or those rows can only
+    // ever be read as part of "all seasons".
     server.use(
       http.get("/api/leagues/:league/history", () =>
         HttpResponse.json({
@@ -172,9 +221,95 @@ describe("TeamPage", () => {
       ),
     );
     renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
-    await screen.findByRole("img");
 
-    expect(screen.queryByLabelText("Season")).toBeNull();
+    const picker = await screen.findByLabelText("Season");
+    expect(
+      within(picker).getByRole("option", { name: "2025" }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists the games the model forecast, newest first", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+
+    await screen.findByRole("table", { name: /Newest first/ });
+    const rows = gameRows();
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("Houston");
+    expect(rows[3]).toHaveTextContent("Vermont");
+  });
+
+  it("says which way each game went", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    // Home and won, away and lost, and one nobody has played.
+    expect(gameRows()[2]).toHaveTextContent("W 78–71");
+    expect(gameRows()[1]).toHaveTextContent("L 59–61");
+    expect(gameRows()[0]).not.toHaveTextContent(/[WL] \d/);
+  });
+
+  it("marks which side of the fixture the team was on", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    expect(gameRows()[1]).toHaveTextContent("@ Houston");
+    expect(gameRows()[2]).toHaveTextContent("vs North Carolina");
+  });
+
+  it("shows both numbers from this team's side", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    // Duke were 0.45 at Houston, getting 1.75 from the model and 1.5 from the
+    // book -- the away end of a row the file stores from Houston's.
+    const away = gameRows()[1];
+    expect(away).toHaveTextContent("45%");
+    expect(away).toHaveTextContent("+1.8");
+    expect(away).toHaveTextContent("+1.5");
+  });
+
+  it("links every game, carrying the season the API needs", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    // The link is the whole point of the list: without the season on it, the
+    // games API can only answer for the fortnight around today.
+    expect(
+      within(gameRows()[2]).getByRole("link", { name: /North Carolina/ }),
+    ).toHaveAttribute("href", "/games/mens/401710101?season=2026");
+    expect(
+      within(gameRows()[3]).getByRole("link", { name: /Vermont/ }),
+    ).toHaveAttribute("href", "/games/mens/401700101?season=2025");
+  });
+
+  it("narrows the games to the chosen season too", async () => {
+    const user = userEvent.setup();
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    await user.selectOptions(screen.getByLabelText("Season"), "2025");
+
+    // One picker over both halves of the page: narrowing the chart to a
+    // season and leaving the list on all of them would be two answers to one
+    // question.
+    await waitFor(() => expect(gameRows()).toHaveLength(1));
+    expect(gameRows()[0]).toHaveTextContent("Vermont");
+  });
+
+  it("says so when the model has published no games", async () => {
+    // elo has no predictions artifact, which is every model in the bucket
+    // until it is republished. The list goes; the chart stays.
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await screen.findByRole("table", { name: /Newest first/ });
+
+    server.use(
+      http.get("/api/leagues/:league/teams/:team/games", () =>
+        HttpResponse.json({ ...dukeGames, model: "elo", games: [] }),
+      ),
+    );
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+
+    expect(await screen.findByText(/No games published/)).toBeInTheDocument();
   });
 
   it("says so when the model has no history published", async () => {

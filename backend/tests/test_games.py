@@ -8,16 +8,19 @@ dates, which is what keeps them from expiring a week after they were written.
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.games import MatchupUnsupported
 from app.artifacts import ArtifactStore, LocalArtifactStore, get_artifact_store
 from app.games import (
+    MAX_DAYS_AHEAD,
+    MAX_DAYS_BACK,
     GamesSource,
     GamesUnavailable,
     GameWindow,
@@ -69,14 +72,37 @@ class StubGames:
     """A source that answers with whatever the test handed it."""
 
     def __init__(
-        self, *games: ScheduledGame, schedule: list[PlayedGame] | None = None
+        self,
+        *games: ScheduledGame,
+        schedule: list[PlayedGame] | None = None,
+        archive: list[ScheduledGame] | None = None,
     ) -> None:
         self._games = list(games)
         self._schedule = schedule or []
+        self._archive = list(archive or [])
 
     def window(self, days_back: int, days_ahead: int) -> GameWindow:
         since, until = window_bounds(days_back, days_ahead)
         return GameWindow(since=since, until=until, games=self._games)
+
+    def find_in_season(
+        self, league: str, game_id: str, season: int
+    ) -> ScheduledGame | None:
+        """The games only a season file could reach.
+
+        Kept apart from `window`'s on purpose: a real source answers these two
+        out of different reads, and a stub that served one list for both
+        couldn't tell a test that found a game the cheap way from one that
+        needed the fallback.
+        """
+        for game in self._archive:
+            if (
+                game.league == league
+                and game.game_id == game_id
+                and game.season == season
+            ):
+                return game
+        return None
 
     def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
         """Whatever the test handed it, unfiltered.
@@ -85,6 +111,33 @@ class StubGames:
         schedule at all is already asking about one game.
         """
         return self._schedule
+
+
+class RecordingArtifacts:
+    """A real store that remembers which prediction windows it was asked for.
+
+    The bounds are a pruning device, so what they *are* is invisible from the
+    rows that come back -- `LocalArtifactStore` ignores them outright and
+    returns the whole file. Against S3 they decide which row groups get
+    fetched, which is the difference between finding an old game's forecast
+    and reading the wrong end of sixteen seasons for nothing.
+    """
+
+    def __init__(self, inner: ArtifactStore) -> None:
+        self._inner = inner
+        self.windows: list[tuple[date, date]] = []
+
+    def history(self, league: str, model: str) -> pd.DataFrame:
+        return self._inner.history(league, model)
+
+    def predictions(
+        self, league: str, model: str, since: date, until: date
+    ) -> pd.DataFrame:
+        self.windows.append((since, until))
+        return self._inner.predictions(league, model, since, until)
+
+    def team_predictions(self, league: str, model: str, team: str) -> pd.DataFrame:
+        return self._inner.team_predictions(league, model, team)
 
 
 # A model published before the parquet artifacts existed, which is what the
@@ -316,6 +369,11 @@ class TestGamesEndpoint:
 
         class Broken:
             def window(self, days_back: int, days_ahead: int) -> GameWindow:
+                raise GamesUnavailable("could not read s3: AccessDenied")
+
+            def find_in_season(
+                self, league: str, game_id: str, season: int
+            ) -> ScheduledGame | None:
                 raise GamesUnavailable("could not read s3: AccessDenied")
 
             def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
@@ -796,3 +854,148 @@ class TestTheMatchupTerms:
 
         assert response.status_code == 422
         assert "takes no sources" in response.json()["detail"]
+
+
+class TestAGameOutsideTheWindow:
+    """The horizon is a cost cap on the window, not a retention ceiling.
+
+    A team page lists every game a model has a forecast for -- sixteen seasons
+    of them -- and links into this endpoint. A link that only worked for the
+    fortnight either side of today would make most of that list dead, so a
+    caller that knows the season can name it and get one game out of one
+    season file (`app.games.find_game`).
+
+    The fixture keeps two nfl games well outside the widest window this API
+    serves, which is what makes them the ones to ask for: no window test can
+    see them, and until now neither could this endpoint.
+    """
+
+    def test_found_when_the_link_names_its_season(self, client: TestClient) -> None:
+        response = client.get("/api/games/nfl/401910099", params={"season": 2026})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["home"], body["away"]) == ("Chicago Bears", "Detroit Lions")
+        assert (body["home_score"], body["away_score"]) == (20, 17)
+
+    def test_404_without_one(self, client: TestClient) -> None:
+        """Unchanged for a caller that doesn't know which season it was: there
+        is no by-id read to make, and walking every season file in the bucket
+        is the cost the horizon exists to refuse."""
+        response = client.get("/api/games/nfl/401910099")
+
+        assert response.status_code == 404
+        assert "week either side of today" in response.json()["detail"]
+
+    def test_404_for_a_season_it_isnt_in(self, client: TestClient) -> None:
+        """And the message names the season that was looked in, rather than
+        repeating a horizon this request had already reached past."""
+        response = client.get("/api/games/nfl/401910099", params={"season": 2019})
+
+        assert response.status_code == 404
+        assert "2019 season" in response.json()["detail"]
+
+    def test_the_window_answers_first(self, store: ReleaseStore) -> None:
+        """A game both reads could answer comes back the window's way.
+
+        The window is the fresher of the two -- its games carry the line off
+        today's odds pulls, and a season file carries no line at all -- so a
+        game page reached from the games table must not lose its spread to a
+        copy of the same game out of the archive.
+        """
+        tonight = game(game_id="g1").model_copy(
+            update={"season": 2026, "market_spread": -4.5}
+        )
+        lineless = tonight.model_copy(update={"market_spread": None})
+        client = client_for(StubGames(tonight, archive=[lineless]), store)
+
+        body = client.get("/api/games/mens/g1", params={"season": 2026}).json()
+        assert body["market_spread"] == pytest.approx(-4.5)
+
+
+class TestTheForecastOnAnOldGame:
+    """A game found by season still shows what the model said before it.
+
+    `predictions.parquet` is read by date, and an old game's row is nowhere
+    near today's. Reading the usual window for it comes back empty -- which
+    `_trained_on` reads as a release and a predictions file out of step, logs
+    as a mismatch, and renders as a page with no model on it at all. The point
+    of reaching an old game page is mostly the forecast on it, so the read
+    moves to the game.
+    """
+
+    def test_the_stored_forecast_is_served(
+        self, store: ReleaseStore, artifacts: ArtifactStore
+    ) -> None:
+        old = game(game_id="401710101", completed=True).model_copy(
+            update={
+                "season": 2026,
+                "start": datetime(2026, 8, 20, 19, 0, tzinfo=UTC),
+                "home": "Duke",
+                "away": "North Carolina",
+                "home_score": 78,
+                "away_score": 71,
+            }
+        )
+        client = client_for(StubGames(archive=[old]), store, artifacts)
+
+        body = client.get("/api/games/mens/401710101", params={"season": 2026}).json()
+
+        assert body["prediction"]["home_win_prob"] == pytest.approx(0.62)
+        assert body["prediction"]["predicted_spread"] == pytest.approx(-5.5)
+
+    def test_no_mismatch_is_reported_for_one(
+        self, store: ReleaseStore, artifacts: ArtifactStore, caplog
+    ) -> None:
+        """The warning that says a republish is needed. An old game that finds
+        its forecast must not trip it -- a log line crying mismatch on every
+        page of last season would bury the ones that mean it."""
+        old = game(game_id="401710101", completed=True).model_copy(
+            update={
+                "season": 2026,
+                "start": datetime(2026, 8, 20, 19, 0, tzinfo=UTC),
+                "home": "Duke",
+                "away": "North Carolina",
+                "home_score": 78,
+                "away_score": 71,
+            }
+        )
+        client = client_for(StubGames(archive=[old]), store, artifacts)
+
+        with caplog.at_level(logging.WARNING):
+            client.get("/api/games/mens/401710101", params={"season": 2026})
+
+        assert "stored no prediction" not in caplog.text
+
+    def test_the_predictions_are_read_at_the_game_not_at_today(
+        self, store: ReleaseStore, artifacts: ArtifactStore
+    ) -> None:
+        """The half a local store cannot show on its own.
+
+        `LocalArtifactStore` returns every row whatever window it is handed,
+        so the two tests above would pass even if the endpoint had asked about
+        today -- and against S3, where the bounds prune row groups, asking
+        about today finds nothing. So this asserts the span requested.
+        """
+        old = game(game_id="401710101", days=-40, completed=True).model_copy(
+            update={"season": 2026, "home_score": 78, "away_score": 71}
+        )
+        recording = RecordingArtifacts(artifacts)
+        client = client_for(StubGames(archive=[old]), store, recording)
+
+        client.get("/api/games/mens/401710101", params={"season": 2026})
+
+        assert recording.windows == [(old.day, old.day)]
+
+    def test_a_game_in_the_window_still_reads_the_whole_window(
+        self, store: ReleaseStore, artifacts: ArtifactStore
+    ) -> None:
+        """The other half: a game near today keeps the widest window, so a
+        page reached from the far edge of the games table shows the number the
+        table showed."""
+        recording = RecordingArtifacts(artifacts)
+        client = client_for(StubGames(game(game_id="g1")), store, recording)
+
+        client.get("/api/games/mens/g1")
+
+        assert recording.windows == [window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)]

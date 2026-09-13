@@ -226,6 +226,13 @@ _stated = "Only for a game that hasn't been played, in a league with the term."
 def get_game(
     league: str,
     game_id: str,
+    season: int | None = Query(
+        default=None,
+        description=(
+            "The season the game is in. Only needed for a game outside the "
+            "week either side of today, which can't be found without it."
+        ),
+    ),
     qb_out_home: bool = Query(default=False, description=f"Home QB out. {_stated}"),
     qb_out_away: bool = Query(default=False, description=f"Away QB out. {_stated}"),
     rest_home: bool = Query(
@@ -245,9 +252,11 @@ def get_game(
     would be worse than no game page. What it adds is the partition its plays
     live in, and whether there's a model that could draw them.
 
-    404 for a game outside the week either side of today (see
-    `app.games.find_game`): the horizon is a cost cap, and a link that
-    outlived it should say so rather than render an empty page.
+    A game outside the week either side of today needs its `season`, and 404s
+    without one (see `app.games.find_game`). The horizon still bounds what the
+    *window* builds; naming the season buys one game out of one season file
+    rather than a wider window, which is what lets a team page link to every
+    game it lists instead of only the fortnight of them in reach.
 
     The four matchup flags make this a what-if: the same release, asked about
     the same fixture with a quarterback ruled out or a side off a bye. They are
@@ -258,7 +267,7 @@ def get_game(
     request.
     """
     try:
-        game = find_game(source, league, game_id)
+        game = find_game(source, league, game_id, season)
     except GamesUnavailable as exc:
         log.warning("serving 502 for game %s/%s: %s", league, game_id, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -266,7 +275,11 @@ def get_game(
     if game is None:
         raise HTTPException(
             status_code=404,
-            detail=(f"no {league} game {game_id} in the week either side of today"),
+            detail=(
+                f"no {league} game {game_id} in the week either side of today"
+                if season is None
+                else f"no {league} game {game_id} in the {season} season"
+            ),
         )
 
     overrides = MatchupOverrides(
@@ -292,6 +305,15 @@ def get_game(
     # stored predictions are read over the same span -- a game page reached
     # from the far edge of the table must show the number the table did.
     since, until = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+    if not since <= game.day <= until:
+        # A game found by season instead. Its forecast is in the same file,
+        # nowhere near today's rows, and reading the window for it would find
+        # nothing -- which `_trained_on` would then read as a release and a
+        # predictions file out of step, log as a mismatch, and render as a
+        # page with no model on it at all. One day is the right range read
+        # here: `predictions.parquet` is sorted by date for exactly this, and
+        # `app.artifacts` widens it by a day either side already.
+        since = until = game.day
     try:
         prediction = _Models(store, artifacts, since, until).predict(game, overrides)
     except MatchupUnsupported as exc:

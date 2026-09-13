@@ -60,7 +60,14 @@ export function GamePage() {
     restHome: params.get("rest_home") === "1",
     restAway: params.get("rest_away") === "1",
   };
-  const game = useGetGameQuery({ league, gameId, ...stated });
+  // Which season this game is in, where the link that got here said so. The
+  // API finds a game near today without it and needs it for anything older
+  // (`app.games.find_game`), so a team page's links carry it and the games
+  // table's don't. Read from the URL rather than from the response, because it
+  // is what the *request* needs -- taking it from `detail.season` would mean
+  // asking without it first, which is the 404 it exists to avoid.
+  const season = Number(params.get("season")) || undefined;
+  const game = useGetGameQuery({ league, gameId, season, ...stated });
   // `data` rather than `currentData`, so ticking a box keeps the game on the
   // page while its new number is fetched instead of blanking it to a spinner.
   // What that costs is a moment where the prediction is the previous one, and
@@ -80,22 +87,25 @@ export function GamePage() {
   // has one, and asking for a basketball game's curve is a request that can
   // only 404.
   const curve = useGetWinProbabilityQuery(
-    { league, gameId },
+    { league, gameId, season },
     { skip: !detail?.has_win_probability },
   );
 
   if (game.isLoading) return <p className="loading">Loading&hellip;</p>;
 
   if (game.isError || !detail) {
-    // A 404 here is the ordinary case rather than a broken page: the API
-    // serves the week either side of today, so a link older than that has
-    // outlived the window rather than pointed at nothing.
+    // A 404 here is the ordinary case rather than a broken page, and which
+    // case it is depends on what was asked. Without a season the link has
+    // outlived the window; with one, the season was read and the game wasn't
+    // in it -- and saying "older than a week" to someone who named 2019 would
+    // be describing a limit their request had already reached past.
     return (
       <section className="game-page">
         <h2>Game</h2>
         <p className="error">
-          No such game &mdash; the API serves the week either side of today, so
-          a link older than that has outlived it.{" "}
+          {season
+            ? `No such game — nothing in the ${season} season under that id.`
+            : "No such game — the API serves the week either side of today, so a link older than that has outlived it, unless it names a season."}{" "}
           <Link to="/games">Back to the games.</Link>
         </p>
       </section>

@@ -166,3 +166,74 @@ class TestTheCache:
         assert store.history("mens", "glicko_tuned") is not store.history(
             "mens", "glicko_tuned"
         )
+
+
+class TestOneTeamsGames:
+    """The third way to read the predictions file.
+
+    The other two read a span of days, which is what the file is sorted for.
+    A team's games are spread across every row group in it, so this one is a
+    filtered read rather than a range read -- and the filter is what keeps it
+    from materializing sixteen seasons to answer about one team.
+    """
+
+    def test_finds_a_team_on_either_side_of_the_fixture(
+        self, local: LocalArtifactStore
+    ) -> None:
+        """Duke is home in one of the fixture's games and away in another.
+
+        cassandra stores a game once, under whichever team was home, so a
+        team's schedule is the union of the two columns -- a filter on one of
+        them would silently serve half a season.
+        """
+        frame = local.team_predictions("mens", "glicko_tuned", "Duke")
+
+        assert set(frame["game_id"]) == {"401710101", "401710103"}
+        assert list(frame.columns) == list(PREDICTION_COLUMNS)
+
+    def test_leaves_out_the_games_it_wasnt_in(self, local: LocalArtifactStore) -> None:
+        frame = local.team_predictions("mens", "glicko_tuned", "Duke")
+        assert "401710102" not in set(frame["game_id"])
+
+    def test_a_team_with_no_games_is_an_empty_frame(
+        self, local: LocalArtifactStore
+    ) -> None:
+        """With the columns, so the caller can filter without asking first --
+        the same contract a missing file has."""
+        frame = local.team_predictions("mens", "glicko_tuned", "Vermont")
+
+        assert frame.empty
+        assert list(frame.columns) == list(PREDICTION_COLUMNS)
+
+    def test_a_missing_file_is_an_empty_frame(self, tmp_path: Path) -> None:
+        frame = LocalArtifactStore(tmp_path).team_predictions(
+            "mens", "glicko_tuned", "Duke"
+        )
+        assert frame.empty
+        assert list(frame.columns) == list(PREDICTION_COLUMNS)
+
+    def test_the_s3_store_reads_the_same_rows(self, artifact_root: Path) -> None:
+        mine = s3_like(artifact_root).team_predictions("mens", "glicko_tuned", "Duke")
+        theirs = LocalArtifactStore(artifact_root).team_predictions(
+            "mens", "glicko_tuned", "Duke"
+        )
+        pd.testing.assert_frame_equal(
+            mine.sort_values("game_id").reset_index(drop=True),
+            theirs.sort_values("game_id").reset_index(drop=True),
+        )
+
+    def test_a_second_read_inside_the_ttl_is_cached(self, artifact_root: Path) -> None:
+        store = s3_like(artifact_root)
+        first = store.team_predictions("mens", "glicko_tuned", "Duke")
+        assert store.team_predictions("mens", "glicko_tuned", "Duke") is first
+
+    def test_the_cache_is_bounded(self, artifact_root: Path) -> None:
+        """The key is a team name and the college leagues have hundreds, so
+        this can't be allowed to grow with who has been looked at."""
+        from app.artifacts import MAX_CACHED_TEAMS
+
+        store = s3_like(artifact_root)
+        for i in range(MAX_CACHED_TEAMS + 4):
+            store.team_predictions("mens", "glicko_tuned", f"team-{i}")
+
+        assert len(store._teams) == MAX_CACHED_TEAMS

@@ -27,6 +27,8 @@ export type GamesResponse = components["schemas"]["GamesResponse"];
 export type GameRow = components["schemas"]["GameRow"];
 export type GamePrediction = components["schemas"]["GamePrediction"];
 export type GameDetail = components["schemas"]["GameDetail"];
+export type TeamGamesResponse = components["schemas"]["TeamGamesResponse"];
+export type TeamGameRow = components["schemas"]["TeamGameRow"];
 export type WinProbabilityResponse =
   components["schemas"]["WinProbabilityResponse"];
 export type WinProbabilityFit = components["schemas"]["WinProbabilityFit"];
@@ -52,6 +54,16 @@ export interface HistoryArgs {
   model?: string;
 }
 
+/**
+ * One team's games. Singular, unlike `HistoryArgs` -- a chart overlays a
+ * handful of lines and a game list is about one team by construction.
+ */
+export interface TeamGamesArgs {
+  league: string;
+  team: string;
+  model?: string;
+}
+
 /** Days of history. The backend caps it at a week -- see DESIGN.md §12.3. */
 export interface WindowArgs {
   days: number;
@@ -66,10 +78,19 @@ export interface GamesArgs {
   ahead: number;
 }
 
-/** One game, by the two things that name it on the wire. */
+/**
+ * One game, by the two things that name it on the wire -- plus the season,
+ * for one the schedule source can't reach without it.
+ *
+ * `season` is optional because a game in the fortnight either side of today is
+ * found without it, which is every game reached from the games table. A link
+ * from a team's game list carries it, because most of those are older than
+ * that (see `app.games.find_game`).
+ */
 export interface GameArgs {
   league: string;
   gameId: string;
+  season?: number;
 }
 
 /**
@@ -147,6 +168,7 @@ export const api = createApi({
       query: ({
         league,
         gameId,
+        season,
         qbOutHome,
         qbOutAway,
         restHome,
@@ -154,6 +176,7 @@ export const api = createApi({
       }) => ({
         url: `games/${league}/${gameId}`,
         params: {
+          ...(season ? { season } : {}),
           ...(qbOutHome ? { qb_out_home: true } : {}),
           ...(qbOutAway ? { qb_out_away: true } : {}),
           ...(restHome ? { rest_home: true } : {}),
@@ -162,8 +185,23 @@ export const api = createApi({
       }),
     }),
     getWinProbability: builder.query<WinProbabilityResponse, GameArgs>({
-      query: ({ league, gameId }) =>
-        `games/${league}/${gameId}/win-probability`,
+      query: ({ league, gameId, season }) => ({
+        url: `games/${league}/${gameId}/win-probability`,
+        // The same season the game itself is fetched with. Without it an old
+        // game's curve 404s while the game above it renders, which reads as a
+        // league with no play-by-play rather than as a link that outran the
+        // schedule source.
+        params: season ? { season } : undefined,
+      }),
+    }),
+    // The team page's game list. One request for the whole career: a few
+    // hundred rows, and smaller than the ratings table the page came from --
+    // so the season picker filters what it already has, like the chart's.
+    getTeamGames: builder.query<TeamGamesResponse, TeamGamesArgs>({
+      query: ({ league, team, model }) => ({
+        url: `leagues/${league}/teams/${encodeURIComponent(team)}/games`,
+        params: model ? { model } : undefined,
+      }),
     }),
     predict: builder.query<PredictResponse, PredictArgs>({
       query: ({ league, home, away, neutral, model }) => ({
@@ -192,4 +230,5 @@ export const {
   useGetGamesQuery,
   useGetGameQuery,
   useGetWinProbabilityQuery,
+  useGetTeamGamesQuery,
 } = api;
