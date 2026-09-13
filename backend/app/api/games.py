@@ -302,22 +302,34 @@ def get_game(
         day=game.day,
         prediction=prediction,
         has_win_probability=fit_for(league) is not None,
-        matchup=_facts(game, overrides),
+        matchup=_facts(source, game, overrides),
     )
 
 
-def _facts(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupFacts | None:
+def _facts(
+    source: GamesSource, game: ScheduledGame, overrides: MatchupOverrides
+) -> MatchupFacts | None:
     """What the page shows beside the prediction.
 
     Read for a game that has been played, echoed back for one that hasn't --
     the page's toggles are then rendered from the response rather than from
     what it sent, so the two cannot disagree about what was applied.
+
+    The season's schedule is fetched only for the played half, and only to work
+    out who was rested: a fixture's rest is whatever the request stated, and
+    asking the source for a season nobody is going to read would be a list and
+    a read for nothing. A game whose season the file never said is an empty
+    schedule, which reads as "can't say" downstream.
     """
     if not has_matchup_terms(game.league):
         return None
-    if game.completed:
-        return played_facts(game)
-    return overrides.facts()
+    if not game.completed:
+        return overrides.facts()
+
+    schedule = (
+        [] if game.season is None else source.season_schedule(game.league, game.season)
+    )
+    return played_facts(game, schedule)
 
 
 class _Stored(NamedTuple):

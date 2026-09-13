@@ -41,7 +41,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
@@ -149,8 +149,43 @@ class GameWindow(BaseModel):
     games: list[ScheduledGame]
 
 
+class PlayedGame(NamedTuple):
+    """One game of a season, as the rest ledger needs to read it.
+
+    Three fields and no more, which is the point. A season file carries the
+    whole schedule and `window` deliberately builds a `ScheduledGame` for only
+    the days around today -- the conversion is what costs the memory (see
+    `app.seasons._pool_games`). Rest needs to know when each side last played
+    and nothing else, so this rides alongside at a date and two names per game:
+    kilobytes for a season, against the hundreds of megabytes that made the
+    horizon necessary in the first place.
+
+    `date` first so a list of these sorts chronologically, which is the order
+    a ledger has to be walked in.
+
+    `completed` because a cancelled game is not a game anybody played, and
+    counting one would hand the team after it a bye it never had. The season
+    file carries scheduled and called-off games alongside the played ones.
+    """
+
+    date: datetime
+    home: str
+    away: str
+    completed: bool
+
+
 class GamesSource(Protocol):
     def window(self, days_back: int, days_ahead: int) -> GameWindow: ...
+
+    def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
+        """Every game of one league's season, for working out who is rested.
+
+        Separate from `window` because it answers a different question over a
+        different span: `window` is the days around today, and this is the
+        season behind them. Empty for a season a source has nothing for, which
+        a caller reads as "can't say" rather than as "nobody was rested".
+        """
+        ...
 
 
 def window_bounds(
@@ -235,22 +270,41 @@ class LocalGamesSource:
 
     def window(self, days_back: int, days_ahead: int) -> GameWindow:
         since, until = window_bounds(days_back, days_ahead)
-        raw = self._load("games.json")
-
-        try:
-            games = [
-                ScheduledGame.model_validate(item) for item in raw.get("games", [])
-            ]
-        except ValidationError as exc:
-            raise GamesUnavailable(
-                f"{self._dir / 'games.json'} is not readable game data"
-            ) from exc
+        games = self._fixture()
 
         offset = _fixture_offset(games)
         shifted = [_shift(game, offset) for game in games]
         in_window = [g for g in shifted if since <= g.day <= until]
         in_window.sort(key=lambda g: (g.start, g.league, g.game_id))
         return GameWindow(since=since, until=until, games=in_window)
+
+    def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
+        """The fixture's own games, re-based the same way the window's are.
+
+        Through `_shift` for the reason `window` is: the fixture is anchored on
+        today, and a schedule left at the dates in the file would be measuring
+        gaps against a window that had moved out from under it.
+        """
+        offset = _fixture_offset(self._fixture())
+        return [
+            PlayedGame(
+                date=game.start + offset,
+                home=game.home,
+                away=game.away,
+                completed=game.completed,
+            )
+            for game in self._fixture()
+            if game.league == league and game.season == season
+        ]
+
+    def _fixture(self) -> list[ScheduledGame]:
+        raw = self._load("games.json")
+        try:
+            return [ScheduledGame.model_validate(item) for item in raw.get("games", [])]
+        except ValidationError as exc:
+            raise GamesUnavailable(
+                f"{self._dir / 'games.json'} is not readable game data"
+            ) from exc
 
     def _load(self, name: str) -> dict[str, Any]:
         path = self._dir / name

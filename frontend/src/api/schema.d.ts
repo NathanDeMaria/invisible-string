@@ -658,15 +658,14 @@ export interface components {
          *     the fact a reader has; that both being out is worth nothing to either side
          *     is the model's business, not the page's.
          *
-         *     `rest_home` and `rest_away` are None when nobody can say. That is every
-         *     completed game today: deciding who came off a bye needs when each side last
-         *     played, and the games source keeps a window of days around today rather
-         *     than a season -- see `app.seasons`, whose season cache is deliberately
-         *     trimmed to that horizon. A team on a normal week played inside it and one
-         *     off a bye did not, so walking what is there would answer "nobody was
-         *     rested" for precisely the games where somebody was. None says "not known"
-         *     instead, which is the one honest answer available until that cache is
-         *     widened.
+         *     `rest_home` and `rest_away` are None when nobody can say, which is a
+         *     narrow case and not the same as False. Both are False for two sides on
+         *     level rest -- an ordinary week, which is most games. Both are None for a
+         *     game either side is playing first this season: `RestLedger` prices that at
+         *     0 because "we have no idea" and "level" are the same number to a model
+         *     about to add nothing either way, but a page that rendered a season opener
+         *     as "nobody was rested" would be stating a fact it doesn't have. Also None
+         *     for a game whose season the source has no schedule for.
          */
         MatchupFacts: {
             /** Qb Out Away */

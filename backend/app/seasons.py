@@ -28,7 +28,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -39,6 +39,7 @@ from app.games import (
     MAX_DAYS_BACK,
     GamesUnavailable,
     GameWindow,
+    PlayedGame,
     ScheduledGame,
     as_aware,
     each_day,
@@ -102,6 +103,39 @@ class AwsGamesSource:
         with self._lock:
             self._windows[(days_back, days_ahead)] = (window, time.monotonic())
         return window
+
+    def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
+        """One season file's whole schedule, at three fields a game.
+
+        Usually free. A game page is reached from the games table, so the file
+        it needs has already been unpickled to build that window and the
+        schedule was kept in the same walk -- this is a dict lookup. Only a
+        cold page pays a list and a read.
+
+        A cached entry is used without re-checking its ETag, unlike `window`'s.
+        What this is for is when each side last *played*, and a game that has
+        been played does not move; the file is re-read on the next window
+        anyway, so the schedule is never more than one rewrite behind.
+
+        An empty list for a season nothing was found for, which the caller
+        reads as "can't say" rather than as "nobody was rested".
+        """
+        key = f"seasons/{season}/{league}.pkl"
+        cached = self._seasons.get(key)
+        if cached is not None:
+            return cached[1].schedule
+
+        with _upstream("s3"):
+            objects = _list_objects(self._s3, self._bucket, key)
+            if not objects:
+                return []
+            loaded = self._season_games(
+                key,
+                league,
+                str(objects[0].get("ETag", "")),
+                window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD),
+            )
+        return [] if loaded is None else loaded.schedule
 
     # -- games -----------------------------------------------------------
 
@@ -184,9 +218,14 @@ class AwsGamesSource:
             return None
 
         by_day: dict[date, list[ScheduledGame]] = {}
-        for row in pooled.values():
+        for row in pooled.rows.values():
             by_day.setdefault(row.day, []).append(row)
-        return _SeasonGames(by_day=by_day, since=horizon[0], until=horizon[1])
+        return _SeasonGames(
+            by_day=by_day,
+            schedule=pooled.schedule,
+            since=horizon[0],
+            until=horizon[1],
+        )
 
     # -- odds ------------------------------------------------------------
 
@@ -247,9 +286,14 @@ class _SeasonGames:
     `since`/`until` are the horizon the file was read for, not a property of
     the file: everything outside it was skipped rather than kept, so a cache
     entry can only answer for the span it was built over.
+
+    `schedule` is the exception, and deliberately not bounded by the horizon:
+    it is the whole season at three fields a game, which is what rest has to
+    look back over. `covers` says nothing about it, because it always covers.
     """
 
     by_day: Mapping[date, list[ScheduledGame]]
+    schedule: list[PlayedGame]
     since: date
     until: date
 
@@ -257,10 +301,22 @@ class _SeasonGames:
         return self.since <= horizon[0] and horizon[1] <= self.until
 
 
-def _pool_games(
-    seasons: Any, league: str, horizon: tuple[date, date]
-) -> dict[str, ScheduledGame]:
-    """The games of `seasons` that fall inside `horizon`, pooled by game id.
+class _Pooled(NamedTuple):
+    """What one walk of a season file keeps: the window's rows, and the dates.
+
+    Two spans out of one pass, because they cost very different amounts.
+    `rows` is the horizon only -- building a `ScheduledGame` is the expensive
+    part and all but a few days of the file is thrown away. `schedule` is the
+    *whole* season at a date and two names per game, which is what rest needs
+    and what nothing else in the file is cheap enough to keep.
+    """
+
+    rows: dict[str, ScheduledGame]
+    schedule: list[PlayedGame]
+
+
+def _pool_games(seasons: Any, league: str, horizon: tuple[date, date]) -> _Pooled:
+    """The games of `seasons` near today, pooled by game id -- and every date.
 
     Pooled because the same game can be fetched twice -- a cross-division
     matchup comes back under both divisions -- and the copies aren't
@@ -270,9 +326,17 @@ def _pool_games(
     The day is computed from the raw `Game` and checked *before* a row is
     built, which is the whole point: the conversion is what costs memory, and
     all but a few days of a season file is thrown away.
+
+    The schedule is taken *before* that check, from the raw game, because who
+    is rested is a question about the season rather than about the window: a
+    side coming off a bye last played a fortnight ago, which is a week outside
+    the widest horizon this API serves. Reading only the window would answer
+    "nobody was rested" for precisely the games where somebody was. Three
+    fields is what makes that affordable -- see `PlayedGame`.
     """
     since, until = horizon
     pooled: dict[str, ScheduledGame] = {}
+    schedule: dict[str, PlayedGame] = {}
     skipped = 0
     first_failure: Exception | None = None
 
@@ -280,6 +344,20 @@ def _pool_games(
         year = getattr(season, "year", None)
         for number, games in numbered_weeks(season):
             for game in games:
+                # Pooled by id like the rows, and for the same reason: a
+                # cross-division game arrives twice and must not read as two
+                # games a team played on the same day.
+                try:
+                    schedule[game.game_id] = PlayedGame(
+                        date=as_aware(game.date),
+                        home=game.home,
+                        away=game.away,
+                        completed=game.completed,
+                    )
+                except Exception:  # noqa: BLE001 - a foreign, evolving Game
+                    # Counted with the rows below rather than separately: a
+                    # game this can't read is one the row build can't either.
+                    pass
                 if not since <= game_day(game.date) <= until:
                     continue
                 try:
@@ -306,7 +384,7 @@ def _pool_games(
             first_failure,
             exc_info=first_failure,
         )
-    return pooled
+    return _Pooled(rows=pooled, schedule=sorted(schedule.values()))
 
 
 def _to_row(

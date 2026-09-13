@@ -59,20 +59,22 @@ export function MatchupTerms({ detail, stated, pending, onChange }: Props) {
           <div>
             <dt>Rest</dt>
             <dd>
-              &mdash;
+              {restLabel(detail)}
               <span className="of">
-                not known for a game that has been played
+                {facts.rest_home === null
+                  ? "nobody had played yet, so there is no gap to compare"
+                  : "worked out from when each side last played this season"}
               </span>
             </dd>
           </div>
         </dl>
-        <Explainer summary="Why rest is blank on a finished game">
-          Telling a bye from an ordinary week needs to know when each side last
-          played, and this API serves the week either side of today. A team on a
-          normal week played inside that window and a team off a bye did not, so
-          reading what is there would answer &ldquo;nobody was rested&rdquo; for
-          precisely the games where somebody was. A blank is the honest version
-          of that until the schedule this page can see reaches back further.
+        <Explainer summary="What counts as a bye">
+          A side has to have had five days more than the other before this says
+          anything &mdash; college football is Saturday to Saturday, so a
+          Thursday game is a different fact from a week off and, measured, it
+          doesn&rsquo;t run the same way. Past twenty days it stops counting
+          too: a team is not off for three weeks mid-season, and far more often
+          the game it played is a row the schedule doesn&rsquo;t have.
         </Explainer>
       </>
     );
@@ -160,6 +162,23 @@ function Toggle({
       {label}
     </label>
   );
+}
+
+/**
+ * Who came off the longer break, said out loud.
+ *
+ * An em dash only when nobody can say -- a season opener, or a season the
+ * schedule didn't cover. "Level" is a real answer and gets words, because a
+ * blank there would read as the page not knowing rather than as the two sides
+ * having arrived on the same rest.
+ */
+function restLabel(detail: GameDetail): string {
+  const facts = detail.matchup;
+  if (!facts || facts.rest_home === null || facts.rest_away === null)
+    return "—";
+  if (facts.rest_home) return `${detail.home} off the longer break`;
+  if (facts.rest_away) return `${detail.away} off the longer break`;
+  return "Level";
 }
 
 /** Which side was missing its starter, said out loud. */
