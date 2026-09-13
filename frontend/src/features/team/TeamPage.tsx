@@ -8,6 +8,7 @@ import {
   useGetRatingsQuery,
   type HistoryPoint,
   type TeamRow,
+  type UnitRating,
 } from "../../services/api";
 import {
   movementTitle,
@@ -156,6 +157,8 @@ function Standing({ row, since }: { row: TeamRow; since: string | null }) {
           {row.rd != null && <span className="of">RD {row.rd.toFixed(1)}</span>}
         </dd>
       </div>
+      <Unit name="Offense" unit={row.offense} />
+      <Unit name="Defense" unit={row.defense} />
       <div>
         <dt>Record</dt>
         <dd>
@@ -187,6 +190,37 @@ function Standing({ row, since }: { row: TeamRow; since: string | null }) {
         </div>
       )}
     </dl>
+  );
+}
+
+/**
+ * One half of a team, where the model rates the halves apart.
+ *
+ * Beside the rating rather than under its own heading, because that is what it
+ * is: the compound Glicko rates an offense and a defense on EPA per play and
+ * blends them back into the number above, so the three belong in one list.
+ *
+ * Absent entirely for a model that rates the result alone, and for a team that
+ * model has no plays for -- which is why this renders nothing rather than a
+ * dash. A page for one team has no column to keep aligned, and "Offense —"
+ * would look like a rating that failed to load.
+ */
+function Unit({
+  name,
+  unit,
+}: {
+  name: string;
+  unit: UnitRating | null | undefined;
+}) {
+  if (!unit) return null;
+  return (
+    <div>
+      <dt>{name}</dt>
+      <dd>
+        {unit.rating.toFixed(1)}
+        <span className="of">RD {unit.rd.toFixed(1)}</span>
+      </dd>
+    </div>
   );
 }
 

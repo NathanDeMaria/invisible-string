@@ -50,6 +50,18 @@ export const leagues: LeagueSummary[] = [
       },
     ],
   },
+  {
+    league: "ncaafb",
+    models: [
+      {
+        name: "compound_glicko",
+        is_default: true,
+        run_id: "r4",
+        created_at: "2026-08-08T09:05:44Z",
+        metrics: { ...metrics, brier_score: 0.1694 },
+      },
+    ],
+  },
   // Listed, but the ratings handler below 404s for it -- which is the real
   // shape of a league whose releases exist as prefixes but aren't servable,
   // and what the "no ratings published" case renders from.
@@ -137,6 +149,60 @@ const elo: RatingsResponse = {
   ratings: [
     { rank: 1, team: "Duke", rating: 1801.0, rd: null, wins: 24, losses: 5 },
     { rank: 2, team: "Houston", rating: 1799.5, rd: null, wins: 26, losses: 4 },
+  ],
+};
+
+/**
+ * Mirrors backend/tests/fixtures/models/ncaafb/compound_glicko: the one model
+ * that rates a team's two halves apart.
+ *
+ * Georgia leads the table on a defense nobody else has and Ohio State has the
+ * better offense, so a page that rendered the team rating under both headings
+ * would look plausible and still fail. Alabama carries no units at all -- a
+ * team the play-by-play index never had a game for, which is what stops the
+ * columns from promising a number for every row.
+ */
+export const compound: RatingsResponse = {
+  league: "ncaafb",
+  model: "compound_glicko",
+  run_id: "r4",
+  created_at: "2026-08-08T09:05:44Z",
+  trained_through: {
+    season_year: 2026,
+    last_game_date: "2026-08-07T23:45:00Z",
+    processed_game_ids: [],
+  },
+  metrics: { ...metrics, brier_score: 0.1694 },
+  movement_since: null,
+  ratings: [
+    {
+      rank: 1,
+      team: "Georgia",
+      rating: 1892.4,
+      rd: 58.2,
+      wins: 12,
+      losses: 1,
+      offense: { rating: 1861.0, rd: 74.5 },
+      defense: { rating: 1923.8, rd: 69.1 },
+    },
+    {
+      rank: 2,
+      team: "Ohio State",
+      rating: 1874.1,
+      rd: 61.0,
+      wins: 11,
+      losses: 2,
+      offense: { rating: 1948.2, rd: 71.2 },
+      defense: { rating: 1800.0, rd: 76.4 },
+    },
+    {
+      rank: 3,
+      team: "Alabama",
+      rating: 1751.9,
+      rd: 70.3,
+      wins: 9,
+      losses: 4,
+    },
   ],
 };
 
@@ -812,6 +878,9 @@ export const handlers = [
     return HttpResponse.json({ ...volume, window_days: days });
   }),
   http.get("/api/leagues/:league/ratings", ({ params, request }) => {
+    if (params.league === "ncaafb") {
+      return HttpResponse.json(compound);
+    }
     if (params.league !== "mens") {
       return HttpResponse.json({ detail: "not found" }, { status: 404 });
     }

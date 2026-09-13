@@ -34,6 +34,43 @@ describe("TeamPage", () => {
     expect(screen.getByText("Record").nextSibling).toHaveTextContent("24–5");
   });
 
+  it("puts a team's two halves beside its rating", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Georgia", "ncaafb"));
+
+    expect(await screen.findByText("Offense")).toBeInTheDocument();
+    // The units, not the rating copied twice: Georgia leads this table on its
+    // defense, and its offense is the lower of the two numbers.
+    expect(screen.getByText("Offense").nextSibling).toHaveTextContent("1861.0");
+    expect(screen.getByText("Defense").nextSibling).toHaveTextContent("1923.8");
+    expect(screen.getByText("Rating").nextSibling).toHaveTextContent("1892.4");
+  });
+
+  it("says how settled each half is", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Georgia", "ncaafb"));
+
+    expect(await screen.findByText("Offense")).toBeInTheDocument();
+    expect(screen.getByText("Offense").nextSibling).toHaveTextContent(
+      "RD 74.5",
+    );
+  });
+
+  it("says nothing about halves for a team the model has no plays for", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Alabama", "ncaafb"));
+
+    // The rating arrives, so this is the page rendered rather than the page
+    // still loading -- and there is still no Offense on it.
+    expect(await screen.findByText("Rating")).toBeInTheDocument();
+    expect(screen.queryByText("Offense")).toBeNull();
+    expect(screen.queryByText("Defense")).toBeNull();
+  });
+
+  it("says nothing about halves for a model that rates only the result", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+
+    expect(await screen.findByText("Rating")).toBeInTheDocument();
+    expect(screen.queryByText("Offense")).toBeNull();
+  });
+
   it("repeats the week's movement rather than recomputing it", async () => {
     renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
 

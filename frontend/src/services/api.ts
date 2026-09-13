@@ -10,6 +10,7 @@ export type LeagueSummary = components["schemas"]["LeagueSummary"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
+export type UnitRating = components["schemas"]["UnitRating"];
 export type Movement = components["schemas"]["Movement"];
 export type MovementWindow = components["schemas"]["MovementWindow"];
 export type HistoryResponse = components["schemas"]["HistoryResponse"];

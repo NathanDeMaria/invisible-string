@@ -51,6 +51,55 @@ describe("RatingsPage", () => {
     );
   });
 
+  it("shows the unit columns for a model that rates a team's halves", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    expect(
+      screen.getByRole("columnheader", { name: "Off" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Def" }),
+    ).toBeInTheDocument();
+    // The best offense in this table isn't the top of it, so a bug that put
+    // the team rating in both columns fails here rather than looking right.
+    expect(rowsInBody()[0]).toHaveTextContent("1861.0");
+    expect(rowsInBody()[1]).toHaveTextContent("1948.2");
+  });
+
+  it("hides the unit columns for a model that rates only the result", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+    await screen.findByText("Duke");
+
+    expect(screen.queryByRole("columnheader", { name: "Off" })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Def" })).toBeNull();
+  });
+
+  it("dashes the unit cells for a team the model has no plays for", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Alabama");
+
+    const alabama = rowsInBody()[2];
+    expect(alabama).toHaveTextContent("1751.9");
+    // Two dashes: one per unit column. The row keeps its rating and says
+    // nothing about halves it has no evidence for.
+    expect(within(alabama).getAllByText("—")).toHaveLength(2);
+  });
+
+  it("keeps the unit columns while the search box narrows the table", async () => {
+    const user = userEvent.setup();
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    // Filtering down to the one team with no units must not take the columns
+    // away from under the reader: the question is what the *model* rates.
+    await user.type(screen.getByLabelText("Filter teams"), "alab");
+    await waitFor(() => expect(rowsInBody()).toHaveLength(1));
+    expect(
+      screen.getByRole("columnheader", { name: "Off" }),
+    ).toBeInTheDocument();
+  });
+
   it("filters teams by the search box", async () => {
     const user = userEvent.setup();
     renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));

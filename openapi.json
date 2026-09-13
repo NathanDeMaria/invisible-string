@@ -1406,6 +1406,16 @@
       },
       "TeamRow": {
         "properties": {
+          "defense": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "losses": {
             "title": "Losses",
             "type": "integer"
@@ -1414,6 +1424,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Movement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offense": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitRating"
               },
               {
                 "type": "null"
@@ -1511,6 +1531,25 @@
           "season_year"
         ],
         "title": "TrainedThrough",
+        "type": "object"
+      },
+      "UnitRating": {
+        "description": "One side of a team, on the same scale as `TeamRating.rating`.\n\n`rd` is not optional here the way it is on the team: only a Glicko rates\nsides, and the deviation is what the model reads to decide how much a\nside has to say. See `predictor.types.Unit`.",
+        "properties": {
+          "rating": {
+            "title": "Rating",
+            "type": "number"
+          },
+          "rd": {
+            "title": "Rd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rating",
+          "rd"
+        ],
+        "title": "UnitRating",
         "type": "object"
       },
       "ValidationError": {
