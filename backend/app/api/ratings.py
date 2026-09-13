@@ -31,6 +31,11 @@ class ModelSummary(BaseModel):
     run_id: str
     created_at: datetime
     metrics: Metrics
+    predictor_class: str
+    # The knobs the release was published with -- what a tuning run landed on
+    # for this model, not the ratings it produced. Free-form because
+    # `ModelRelease.params` is: every predictor class has its own set.
+    params: dict[str, float | str]
 
 
 class LeagueSummary(BaseModel):
@@ -124,6 +129,8 @@ def list_leagues(
                         run_id=r.run_id,
                         created_at=r.created_at,
                         metrics=r.metrics,
+                        predictor_class=r.predictor_class,
+                        params=r.params,
                     )
                     for r in releases
                 ],

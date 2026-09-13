@@ -418,6 +418,35 @@ table.ratings,
   margin: 0.5rem 0 1rem;
 }
 
+/* One section per model, so a league with several doesn't read as one table
+   whose rows belong to different predictors. */
+.model-settings {
+  margin: 0 0 2rem;
+}
+
+.model-settings h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.2rem;
+}
+
+.model-settings .badge {
+  margin-left: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+/* Param names, not team names -- capped so a long one doesn't push the value
+   column around from row to row. */
+.settings-table th {
+  color: var(--muted);
+  font-weight: 400;
+  width: 60%;
+}
+
 .jobs-page > h2 {
   font-size: 0.95rem;
   font-weight: 600;

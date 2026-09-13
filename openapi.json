@@ -1030,6 +1030,24 @@
             "title": "Name",
             "type": "string"
           },
+          "params": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Params",
+            "type": "object"
+          },
+          "predictor_class": {
+            "title": "Predictor Class",
+            "type": "string"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -1040,7 +1058,9 @@
           "is_default",
           "run_id",
           "created_at",
-          "metrics"
+          "metrics",
+          "predictor_class",
+          "params"
         ],
         "title": "ModelSummary",
         "type": "object"

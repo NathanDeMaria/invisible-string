@@ -683,6 +683,12 @@ export interface components {
             metrics: components["schemas"]["Metrics"];
             /** Name */
             name: string;
+            /** Params */
+            params: {
+                [key: string]: number | string;
+            };
+            /** Predictor Class */
+            predictor_class: string;
             /** Run Id */
             run_id: string;
         };

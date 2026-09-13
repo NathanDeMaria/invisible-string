@@ -22,6 +22,7 @@ export function LeagueLayout() {
       <nav className="panels" aria-label="Panel">
         <NavLink to={`/${league}/ratings`}>Leaderboard</NavLink>
         <NavLink to={`/${league}/matchup`}>Matchup</NavLink>
+        <NavLink to={`/${league}/settings`}>Settings</NavLink>
       </nav>
 
       <Outlet />

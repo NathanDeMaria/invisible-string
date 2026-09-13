@@ -13,6 +13,7 @@ import { JobsPage } from "./features/jobs/JobsPage";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { useGetLeaguesQuery } from "./services/api";
 
@@ -23,7 +24,11 @@ export function App() {
   // Changing league keeps the panel you were looking at. Sending someone
   // comparing two leagues' matchups back to the leaderboard every time would
   // make the outer tabs feel like they discard your place rather than move it.
-  const panel = pathname.endsWith("/matchup") ? "matchup" : "ratings";
+  const panel = pathname.endsWith("/matchup")
+    ? "matchup"
+    : pathname.endsWith("/settings")
+      ? "settings"
+      : "ratings";
 
   // Games and jobs span no league, or none in particular, so neither lives
   // under one -- they're sections in their own right, alongside ratings
@@ -77,6 +82,7 @@ export function App() {
             <Route index element={<Navigate to="ratings" replace />} />
             <Route path="ratings" element={<RatingsPage />} />
             <Route path="matchup" element={<MatchupPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             {/* A team is a detail of its league, so it sits under the league's
                 layout and keeps the panel nav that leads back to the
                 leaderboard it was reached from. Encoded in the path rather

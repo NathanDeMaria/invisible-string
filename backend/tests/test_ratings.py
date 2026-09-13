@@ -164,6 +164,19 @@ class TestListLeagues:
             "glicko_tuned"
         ]
 
+    def test_carries_each_model_s_settings(self, client: TestClient) -> None:
+        """The knobs a tuning run landed on, not just the score it got --
+        what a settings page needs and the leaderboard doesn't."""
+        body = client.get("/api/leagues").json()
+        mens = next(e for e in body if e["league"] == "mens")
+        glicko = next(m for m in mens["models"] if m["name"] == "glicko_tuned")
+        assert glicko["predictor_class"] == "GlickoPredictor"
+        assert glicko["params"]["home_advantage"] == 95.0
+
+        elo = next(m for m in mens["models"] if m["name"] == "elo")
+        assert elo["predictor_class"] == "EloPredictor"
+        assert elo["params"] == {"home_advantage": 105.0, "k": 20.0}
+
 
 class TestRatings:
     def test_defaults_to_lowest_brier_model(self, client: TestClient) -> None:
