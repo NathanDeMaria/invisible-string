@@ -71,6 +71,19 @@ export interface GameArgs {
   gameId: string;
 }
 
+/**
+ * A game, asked about as if something were true of it.
+ *
+ * Separate from `GameArgs` because only the game query takes these: the curve
+ * is drawn from plays that happened and has no what-if to answer.
+ */
+export interface GameStatedArgs extends GameArgs {
+  qbOutHome?: boolean;
+  qbOutAway?: boolean;
+  restHome?: boolean;
+  restAway?: boolean;
+}
+
 export interface PredictArgs {
   league: string;
   home: string;
@@ -126,8 +139,26 @@ export const api = createApi({
     // two upstreams: a season pickle for the schedule and a parquet object
     // for the plays. The chart being slow -- or absent -- must not hold up
     // the game it belongs to.
-    getGame: builder.query<GameDetail, GameArgs>({
-      query: ({ league, gameId }) => `games/${league}/${gameId}`,
+    getGame: builder.query<GameDetail, GameStatedArgs>({
+      // The flags are omitted when false rather than sent as `false`, so an
+      // untouched game page asks the same URL it always did -- one cache key
+      // for the ordinary case, and a distinct one per what-if.
+      query: ({
+        league,
+        gameId,
+        qbOutHome,
+        qbOutAway,
+        restHome,
+        restAway,
+      }) => ({
+        url: `games/${league}/${gameId}`,
+        params: {
+          ...(qbOutHome ? { qb_out_home: true } : {}),
+          ...(qbOutAway ? { qb_out_away: true } : {}),
+          ...(restHome ? { rest_home: true } : {}),
+          ...(restAway ? { rest_away: true } : {}),
+        },
+      }),
     }),
     getWinProbability: builder.query<WinProbabilityResponse, GameArgs>({
       query: ({ league, gameId }) =>

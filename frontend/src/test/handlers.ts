@@ -500,6 +500,16 @@ export const games: GamesResponse = {
       away: "Houston",
       prediction: predicted(2.1, 0.44),
     }),
+    // Tomorrow, and football: the one game on this board that can be asked a
+    // what-if, since only football prices the matchup terms.
+    gameRow(1, {
+      league: "nfl",
+      game_id: "g1nfl",
+      home: "Detroit Lions",
+      away: "Minnesota Vikings",
+      market_spread: -3.5,
+      prediction: predicted(-4.1, 0.6),
+    }),
   ],
 };
 
@@ -509,13 +519,48 @@ export const games: GamesResponse = {
 // that separation: a game exists whether or not anyone has play-by-play for
 // it, and only football has a fit at all.
 
-/** Only football has a win probability model, which is what the flag says. */
-const detailFor = (row: GameRow): GameDetail => ({
-  ...row,
-  season: 2026,
-  week: 3,
-  has_win_probability: row.league === "nfl" || row.league === "ncaafb",
-});
+/**
+ * Only football has a win probability model, which is what the flag says --
+ * and only football prices the matchup terms, which is what `matchup` being
+ * null says everywhere else. A played football game reports what was true; an
+ * unplayed one reports what has been stated, which starts as nothing.
+ */
+const detailFor = (row: GameRow, stated?: URLSearchParams): GameDetail => {
+  const football = row.league === "nfl" || row.league === "ncaafb";
+  const on = (flag: string) => stated?.get(flag) === "true";
+  // The real API prices these through the model; the fake just has to move
+  // the number the same direction, so a test can tell a toggle that reached
+  // the request from one that didn't.
+  const edge =
+    (on("qb_out_away") ? 0.1 : 0) -
+    (on("qb_out_home") ? 0.1 : 0) +
+    (on("rest_home") ? 0.05 : 0) -
+    (on("rest_away") ? 0.05 : 0);
+
+  return {
+    ...row,
+    season: 2026,
+    week: 3,
+    has_win_probability: football,
+    prediction:
+      row.prediction && edge
+        ? {
+            ...row.prediction,
+            home_win_prob: row.prediction.home_win_prob + edge,
+          }
+        : row.prediction,
+    matchup: football
+      ? {
+          qb_out_home: on("qb_out_home"),
+          qb_out_away: on("qb_out_away"),
+          // Never known for a game that has been played -- the window this
+          // API serves can't tell a bye from an ordinary week.
+          rest_home: row.completed ? null : on("rest_home"),
+          rest_away: row.completed ? null : on("rest_away"),
+        }
+      : null,
+  };
+};
 
 /**
  * A short game whose scoreboard moves twice, which is all the chart needs to
@@ -728,14 +773,14 @@ export const handlers = [
       ),
     });
   }),
-  http.get("/api/games/:league/:gameId", ({ params }) => {
+  http.get("/api/games/:league/:gameId", ({ params, request }) => {
     const row = games.games.find(
       (game) => game.league === params.league && game.game_id === params.gameId,
     );
     if (!row) {
       return HttpResponse.json({ detail: "not found" }, { status: 404 });
     }
-    return HttpResponse.json(detailFor(row));
+    return HttpResponse.json(detailFor(row, new URL(request.url).searchParams));
   }),
   http.get("/api/games/:league/:gameId/win-probability", ({ params }) => {
     if (params.league !== "nfl") {

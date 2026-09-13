@@ -40,6 +40,14 @@ export interface paths {
          *     404 for a game outside the week either side of today (see
          *     `app.games.find_game`): the horizon is a cost cap, and a link that
          *     outlived it should say so rather than render an empty page.
+         *
+         *     The four matchup flags make this a what-if: the same release, asked about
+         *     the same fixture with a quarterback ruled out or a side off a bye. They are
+         *     refused on a game that has been played, which is not squeamishness about
+         *     counterfactuals -- a completed game shows the forecast that was made before
+         *     it (see the module docstring), and that forecast is a stored number no flag
+         *     can reach. Answering a what-if with it would be silently ignoring the
+         *     request.
          */
         get: operations["get_game_api_games__league___game_id__get"];
         put?: never;
@@ -370,6 +378,7 @@ export interface components {
             league: string;
             /** Market Spread */
             market_spread: number | null;
+            matchup: components["schemas"]["MatchupFacts"] | null;
             /** Neutral */
             neutral: boolean;
             prediction: components["schemas"]["GamePrediction"] | null;
@@ -639,6 +648,35 @@ export interface components {
             realized: number;
             /** Retained */
             retained: number;
+        };
+        /**
+         * MatchupFacts
+         * @description What the matchup terms say about one game.
+         *
+         *     Signed per side rather than as cassandra's single differential, because a
+         *     page renders two teams and "the home team is missing its quarterback" is
+         *     the fact a reader has; that both being out is worth nothing to either side
+         *     is the model's business, not the page's.
+         *
+         *     `rest_home` and `rest_away` are None when nobody can say. That is every
+         *     completed game today: deciding who came off a bye needs when each side last
+         *     played, and the games source keeps a window of days around today rather
+         *     than a season -- see `app.seasons`, whose season cache is deliberately
+         *     trimmed to that horizon. A team on a normal week played inside it and one
+         *     off a bye did not, so walking what is there would answer "nobody was
+         *     rested" for precisely the games where somebody was. None says "not known"
+         *     instead, which is the one honest answer available until that cache is
+         *     widened.
+         */
+        MatchupFacts: {
+            /** Qb Out Away */
+            qb_out_away: boolean;
+            /** Qb Out Home */
+            qb_out_home: boolean;
+            /** Rest Away */
+            rest_away: boolean | null;
+            /** Rest Home */
+            rest_home: boolean | null;
         };
         /**
          * Metrics
@@ -988,7 +1026,16 @@ export interface operations {
     };
     get_game_api_games__league___game_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Home QB out. Only for a game that hasn't been played, in a league with the term. */
+                qb_out_home?: boolean;
+                /** @description Away QB out. Only for a game that hasn't been played, in a league with the term. */
+                qb_out_away?: boolean;
+                /** @description Home side off the longer break. Only for a game that hasn't been played, in a league with the term. */
+                rest_home?: boolean;
+                /** @description Away side off the longer break. Only for a game that hasn't been played, in a league with the term. */
+                rest_away?: boolean;
+            };
             header?: never;
             path: {
                 league: string;

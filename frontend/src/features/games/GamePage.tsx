@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import {
   useGetGameQuery,
@@ -14,6 +14,7 @@ import {
 } from "./curve";
 import { EpaTable } from "./Epa";
 import { Explainer } from "./Explainer";
+import { MatchupTerms } from "./MatchupTerms";
 import {
   points as pointsOf,
   probability,
@@ -49,8 +50,31 @@ import {
  */
 export function GamePage() {
   const { league = "", gameId = "" } = useParams();
-  const game = useGetGameQuery({ league, gameId });
+  // The what-if lives in the query string for the reason the matchup pickers
+  // do (DESIGN.md §3): a game asked about with a quarterback ruled out is a
+  // shareable, linkable thing, and RTK Query caches each combination.
+  const [params, setParams] = useSearchParams();
+  const stated = {
+    qbOutHome: params.get("qb_out_home") === "1",
+    qbOutAway: params.get("qb_out_away") === "1",
+    restHome: params.get("rest_home") === "1",
+    restAway: params.get("rest_away") === "1",
+  };
+  const game = useGetGameQuery({ league, gameId, ...stated });
+  // `data` rather than `currentData`, so ticking a box keeps the game on the
+  // page while its new number is fetched instead of blanking it to a spinner.
+  // What that costs is a moment where the prediction is the previous one, and
+  // `isFetching` is what says so -- see `MatchupTerms`.
   const detail = game.data;
+
+  const update = (next: Record<string, string | null>) => {
+    const merged = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null) merged.delete(key);
+      else merged.set(key, value);
+    }
+    setParams(merged, { replace: true });
+  };
 
   // Skipped until the game says a fit exists for its league -- only football
   // has one, and asking for a basketball game's curve is a request that can
@@ -201,6 +225,13 @@ export function GamePage() {
           </div>
         )}
       </dl>
+
+      <MatchupTerms
+        detail={detail}
+        stated={stated}
+        pending={game.isFetching}
+        onChange={update}
+      />
 
       {detail.has_win_probability && (
         <>

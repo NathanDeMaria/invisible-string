@@ -804,8 +804,8 @@ pydantic = "^2.12.5"
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "a653519b90062d63a0800476436e7b884a69cba3"
-resolved_reference = "a653519b90062d63a0800476436e7b884a69cba3"
+reference = "8acc1464e1b068c3e17d543631b092028825b8c3"
+resolved_reference = "8acc1464e1b068c3e17d543631b092028825b8c3"
 
 [[package]]
 name = "certifi"
@@ -3390,4 +3390,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "21ad267c5542e16db3129c9ffd98b31dd575b793047ef97cb9c50f604b946953"
+content-hash = "0d8cb0ba1cff6f7b7fd0f218cd91a68c87733a867dcd910903610272532d3b22"

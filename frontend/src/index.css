@@ -1141,3 +1141,33 @@ table.ratings,
 .timeline-readout .quiet {
   color: var(--muted);
 }
+
+/* The game page's what-if: two captioned rows of two, rather than four long
+   labels wrapping three-and-one. Its own block instead of `.controls`, which
+   stacks a caption above each control and carries margins sized for one row
+   of pickers rather than a pair of rows. */
+.terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  margin: 0.35rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.terms > .caption {
+  /* Wide enough for both captions, so the two rows' checkboxes line up. */
+  flex: 0 0 8rem;
+}
+
+.terms label.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.terms label.toggle > input {
+  margin: 0;
+}
