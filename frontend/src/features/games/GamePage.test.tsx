@@ -423,3 +423,87 @@ describe("GamePage", () => {
     expect(back.getAttribute("href")).toMatch(/^\/games\?day=.+&league=nfl$/);
   });
 });
+
+/**
+ * The two game-level things the football models price. A played game reports
+ * what was true of it; an unplayed one is a what-if, and ticking a box has to
+ * reach the request -- a checkbox that only changed its own tick would be a
+ * control over nothing.
+ */
+describe("the matchup terms", () => {
+  it("offers a toggle per side on a game nobody has played", async () => {
+    renderApp(<GamePage />, at("nfl", "g1nfl"));
+
+    expect(
+      await screen.findByRole("checkbox", { name: "Detroit Lions QB out" }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Minnesota Vikings QB out" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Detroit Lions off a bye" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Minnesota Vikings off a bye" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves the model's number when a quarterback is ruled out", async () => {
+    renderApp(<GamePage />, at("nfl", "g1nfl"));
+
+    const model = (await screen.findByText("The model")).closest("div");
+    expect(model).toHaveTextContent("60% Detroit Lions");
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Minnesota Vikings QB out" }),
+    );
+
+    // The away side losing its quarterback is the home side's edge, so this
+    // has to go up -- and it can only have gone up by reaching the API.
+    await waitFor(() =>
+      expect(screen.getByText("The model").closest("div")).toHaveTextContent(
+        "70% Detroit Lions",
+      ),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Minnesota Vikings QB out" }),
+    ).toBeChecked();
+  });
+
+  it("keeps the what-if in the url, so it can be linked", async () => {
+    renderApp(<GamePage />, at("nfl", "g1nfl"));
+
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: "Detroit Lions off a bye" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("rest_home=1"),
+    );
+  });
+
+  it("reports what was true of a game that has been played", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const qbs = (await screen.findByText("Quarterbacks")).closest("div");
+    expect(qbs).toHaveTextContent("Both started");
+    // Rest is the one thing nobody can say about a finished game here.
+    expect(screen.getByText("Rest").closest("div")).toHaveTextContent("—");
+  });
+
+  it("offers no what-if on a game that has been played", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    await screen.findByText("Quarterbacks");
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("says nothing at all for a league that prices none of it", async () => {
+    renderApp(<GamePage />, at("mens", "g0"));
+
+    await screen.findByText("Ratings");
+    expect(
+      screen.queryByRole("heading", { name: "Matchup" }),
+    ).not.toBeInTheDocument();
+  });
+});

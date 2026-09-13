@@ -65,6 +65,13 @@ from app.games import (
     get_games_source,
     window_bounds,
 )
+from app.matchup import (
+    MatchupFacts,
+    MatchupOverrides,
+    has_matchup_terms,
+    played_facts,
+    stated_sources,
+)
 from app.releases import (
     ReleaseNotFound,
     ReleaseStore,
@@ -206,12 +213,27 @@ class GameDetail(GameRow):
     season: int | None
     week: int | None
     has_win_probability: bool
+    # The matchup terms for this game: what they were if it has been played,
+    # what the request stated if it hasn't. None for a league whose models
+    # price none of them -- see `app.matchup`.
+    matchup: MatchupFacts | None
+
+
+_stated = "Only for a game that hasn't been played, in a league with the term."
 
 
 @router.get("/games/{league}/{game_id}")
 def get_game(
     league: str,
     game_id: str,
+    qb_out_home: bool = Query(default=False, description=f"Home QB out. {_stated}"),
+    qb_out_away: bool = Query(default=False, description=f"Away QB out. {_stated}"),
+    rest_home: bool = Query(
+        default=False, description=f"Home side off the longer break. {_stated}"
+    ),
+    rest_away: bool = Query(
+        default=False, description=f"Away side off the longer break. {_stated}"
+    ),
     source: GamesSource = Depends(get_games_source),
     store: ReleaseStore = Depends(get_release_store),
     artifacts: ArtifactStore = Depends(get_artifact_store),
@@ -226,6 +248,14 @@ def get_game(
     404 for a game outside the week either side of today (see
     `app.games.find_game`): the horizon is a cost cap, and a link that
     outlived it should say so rather than render an empty page.
+
+    The four matchup flags make this a what-if: the same release, asked about
+    the same fixture with a quarterback ruled out or a side off a bye. They are
+    refused on a game that has been played, which is not squeamishness about
+    counterfactuals -- a completed game shows the forecast that was made before
+    it (see the module docstring), and that forecast is a stored number no flag
+    can reach. Answering a what-if with it would be silently ignoring the
+    request.
     """
     try:
         game = find_game(source, league, game_id)
@@ -239,16 +269,55 @@ def get_game(
             detail=(f"no {league} game {game_id} in the week either side of today"),
         )
 
+    overrides = MatchupOverrides(
+        qb_out_home=qb_out_home,
+        qb_out_away=qb_out_away,
+        rest_home=rest_home,
+        rest_away=rest_away,
+    )
+    if overrides.stated():
+        if not has_matchup_terms(league):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{league} models price no quarterback or rest term",
+            )
+        if game.completed:
+            raise HTTPException(
+                status_code=422,
+                detail="this game has been played; what it shows is the forecast "
+                "made before it, which no what-if can change",
+            )
+
     # `find_game` searches the widest window this API will serve, so the
     # stored predictions are read over the same span -- a game page reached
     # from the far edge of the table must show the number the table did.
     since, until = window_bounds(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+    try:
+        prediction = _Models(store, artifacts, since, until).predict(game, overrides)
+    except MatchupUnsupported as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     return GameDetail(
         **game.model_dump(),
         day=game.day,
-        prediction=_Models(store, artifacts, since, until).predict(game),
+        prediction=prediction,
         has_win_probability=fit_for(league) is not None,
+        matchup=_facts(game, overrides),
     )
+
+
+def _facts(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupFacts | None:
+    """What the page shows beside the prediction.
+
+    Read for a game that has been played, echoed back for one that hasn't --
+    the page's toggles are then rendered from the response rather than from
+    what it sent, so the two cannot disagree about what was applied.
+    """
+    if not has_matchup_terms(game.league):
+        return None
+    if game.completed:
+        return played_facts(game)
+    return overrides.facts()
 
 
 class _Stored(NamedTuple):
@@ -274,6 +343,43 @@ class _LeagueModel:
     # What this model said before each game in the window, by game id, out of
     # `predictions.parquet`. Empty for a model published without one.
     stored: dict[str, _Stored]
+
+
+class MatchupUnsupported(RuntimeError):
+    """A what-if was asked of a model that can't be told anything.
+
+    Its own type because the case is ordinary rather than a bug: `sources` is
+    a parameter of the rating families that price matchup terms, and a league
+    whose default release is some other class has none. The endpoint turns it
+    into a 422, the way `/api/predict` refuses a `home_advantage` override for
+    a model without the parameter.
+    """
+
+
+def _stated_predictor(
+    model: _LeagueModel, game: ScheduledGame, overrides: MatchupOverrides
+) -> Predictor:
+    """The same model, rebuilt to see the matchup the reader described.
+
+    Through the predictor's own normalized ratings rather than a second
+    `rating_predictor()` off the release: those ratings have already been
+    denormalized once, so this cannot drift from the number the page showed a
+    moment ago over how a rating round-trips. Rebuilding at all is a dict
+    assignment plus the release's parameters, which is what the window's
+    per-league cache already pays once.
+    """
+    try:
+        return type(model.predictor).from_ratings(
+            model.release.league,
+            model.predictor.ratings,
+            **model.release.params,
+            sources=stated_sources(game, overrides),
+        )
+    except TypeError as exc:
+        raise MatchupUnsupported(
+            f"{model.release.model} can't be told about a matchup: "
+            f"{model.release.predictor_class} takes no sources"
+        ) from exc
 
 
 class _Models:
@@ -306,7 +412,9 @@ class _Models:
         # prediction, for the same reason.
         self._mismatched: set[str] = set()
 
-    def predict(self, game: ScheduledGame) -> GamePrediction | None:
+    def predict(
+        self, game: ScheduledGame, overrides: MatchupOverrides | None = None
+    ) -> GamePrediction | None:
         model = self._for(game.league)
         if model is None:
             return None
@@ -330,9 +438,17 @@ class _Models:
             self._report_mismatch(model, game)
             return None
 
+        # Outside the guard below on purpose. A release whose predictor class
+        # takes no sources can't answer a what-if at all, and that is a fact
+        # about the request worth a 422 -- not one row quietly losing its
+        # number, which is what the blanket except is for.
+        predictor = model.predictor
+        if overrides is not None and overrides.stated():
+            predictor = _stated_predictor(model, game, overrides)
+
         try:
             prob = predict_matchup(
-                model.predictor,
+                predictor,
                 home=game.home,
                 away=game.away,
                 neutral_site=game.neutral,

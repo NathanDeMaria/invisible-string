@@ -287,6 +287,16 @@
             ],
             "title": "Market Spread"
           },
+          "matchup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchupFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "neutral": {
             "title": "Neutral",
             "type": "boolean"
@@ -349,7 +359,8 @@
           "prediction",
           "season",
           "week",
-          "has_win_probability"
+          "has_win_probability",
+          "matchup"
         ],
         "title": "GameDetail",
         "type": "object"
@@ -948,6 +959,49 @@
           "home_delta"
         ],
         "title": "LuckySwing",
+        "type": "object"
+      },
+      "MatchupFacts": {
+        "description": "What the matchup terms say about one game.\n\nSigned per side rather than as cassandra's single differential, because a\npage renders two teams and \"the home team is missing its quarterback\" is\nthe fact a reader has; that both being out is worth nothing to either side\nis the model's business, not the page's.\n\n`rest_home` and `rest_away` are None when nobody can say. That is every\ncompleted game today: deciding who came off a bye needs when each side last\nplayed, and the games source keeps a window of days around today rather\nthan a season -- see `app.seasons`, whose season cache is deliberately\ntrimmed to that horizon. A team on a normal week played inside it and one\noff a bye did not, so walking what is there would answer \"nobody was\nrested\" for precisely the games where somebody was. None says \"not known\"\ninstead, which is the one honest answer available until that cache is\nwidened.",
+        "properties": {
+          "qb_out_away": {
+            "title": "Qb Out Away",
+            "type": "boolean"
+          },
+          "qb_out_home": {
+            "title": "Qb Out Home",
+            "type": "boolean"
+          },
+          "rest_away": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Away"
+          },
+          "rest_home": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Home"
+          }
+        },
+        "required": [
+          "qb_out_home",
+          "qb_out_away",
+          "rest_home",
+          "rest_away"
+        ],
+        "title": "MatchupFacts",
         "type": "object"
       },
       "Metrics": {
@@ -1766,7 +1820,7 @@
     },
     "/api/games/{league}/{game_id}": {
       "get": {
-        "description": "Everything this app knows about one game.\n\nThe same row `/api/games` builds, from the same window and the same\nrelease -- a game page that disagreed with the table it was reached from\nwould be worse than no game page. What it adds is the partition its plays\nlive in, and whether there's a model that could draw them.\n\n404 for a game outside the week either side of today (see\n`app.games.find_game`): the horizon is a cost cap, and a link that\noutlived it should say so rather than render an empty page.",
+        "description": "Everything this app knows about one game.\n\nThe same row `/api/games` builds, from the same window and the same\nrelease -- a game page that disagreed with the table it was reached from\nwould be worse than no game page. What it adds is the partition its plays\nlive in, and whether there's a model that could draw them.\n\n404 for a game outside the week either side of today (see\n`app.games.find_game`): the horizon is a cost cap, and a link that\noutlived it should say so rather than render an empty page.\n\nThe four matchup flags make this a what-if: the same release, asked about\nthe same fixture with a quarterback ruled out or a side off a bye. They are\nrefused on a game that has been played, which is not squeamishness about\ncounterfactuals -- a completed game shows the forecast that was made before\nit (see the module docstring), and that forecast is a stored number no flag\ncan reach. Answering a what-if with it would be silently ignoring the\nrequest.",
         "operationId": "get_game_api_games__league___game_id__get",
         "parameters": [
           {
@@ -1785,6 +1839,54 @@
             "schema": {
               "title": "Game Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Home QB out. Only for a game that hasn't been played, in a league with the term.",
+            "in": "query",
+            "name": "qb_out_home",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Home QB out. Only for a game that hasn't been played, in a league with the term.",
+              "title": "Qb Out Home",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Away QB out. Only for a game that hasn't been played, in a league with the term.",
+            "in": "query",
+            "name": "qb_out_away",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Away QB out. Only for a game that hasn't been played, in a league with the term.",
+              "title": "Qb Out Away",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Home side off the longer break. Only for a game that hasn't been played, in a league with the term.",
+            "in": "query",
+            "name": "rest_home",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Home side off the longer break. Only for a game that hasn't been played, in a league with the term.",
+              "title": "Rest Home",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Away side off the longer break. Only for a game that hasn't been played, in a league with the term.",
+            "in": "query",
+            "name": "rest_away",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Away side off the longer break. Only for a game that hasn't been played, in a league with the term.",
+              "title": "Rest Away",
+              "type": "boolean"
             }
           }
         ],

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.games import MatchupUnsupported
 from app.artifacts import ArtifactStore, LocalArtifactStore, get_artifact_store
 from app.games import (
     GamesSource,
@@ -564,3 +565,174 @@ class TestAPredictorThatThrowsMidWindow:
         # A busy night is hundreds of games; one traceback each is a log
         # nobody reads.
         assert caplog.text.count("predictor failed for mens") == 1
+
+
+class Football:
+    """The mens fixture release, relabelled a football one and priced.
+
+    Two synthetic parts, both necessary and neither interesting. The league
+    name, because `has_matchup_terms` is the gate and only football passes it.
+    The two weights, because a term worth 0 cannot move a number, and a test
+    that toggled one and asserted nothing changed would pass for the wrong
+    reason -- which is the live state of the published fits, and exactly why
+    this has to be stated here rather than read off a release.
+
+    Everything else is the real fixture: a real predictor class over real
+    ratings, rebuilt through the same `from_ratings` production calls. The
+    teams are consequently basketball ones, which costs the test nothing.
+    """
+
+    def __init__(self, inner: ReleaseStore, **params: float) -> None:
+        self._inner = inner
+        self._params = params or {"qb_out_penalty": 40.0, "rest_advantage": 6.0}
+
+    def list_leagues(self) -> list[str]:
+        return ["nfl"]
+
+    def list_models(self, league: str) -> list[str]:
+        return self._inner.list_models("mens")
+
+    def get_latest(self, league: str, model: str):
+        release = self._inner.get_latest("mens", model)
+        return release.model_copy(
+            update={"league": "nfl", "params": {**release.params, **self._params}}
+        )
+
+
+NOTHING_STATED = {
+    "qb_out_home": False,
+    "qb_out_away": False,
+    "rest_home": False,
+    "rest_away": False,
+}
+
+
+class TestTheMatchupTerms:
+    """Stating a quarterback or a bye, and reading back what was true."""
+
+    def kickoff(self, store: ReleaseStore, **kwargs) -> TestClient:
+        source = StubGames(game(league="nfl", game_id="g1", **kwargs))
+        return client_for(source, Football(store))
+
+    def prob(self, client: TestClient, **flags: bool) -> float:
+        response = client.get("/api/games/nfl/g1", params=flags)
+        assert response.status_code == 200, response.text
+        return response.json()["prediction"]["home_win_prob"]
+
+    def test_a_league_without_the_terms_reports_none(self, store: ReleaseStore) -> None:
+        """Not four falses: "no such signal" isn't "nobody is out"."""
+        source = StubGames(game(game_id="g1"))
+        detail = client_for(source, store).get("/api/games/mens/g1").json()
+
+        assert detail["matchup"] is None
+
+    def test_a_fixture_starts_with_nothing_stated(self, store: ReleaseStore) -> None:
+        detail = self.kickoff(store).get("/api/games/nfl/g1").json()
+
+        assert detail["matchup"] == NOTHING_STATED
+
+    def test_stating_nothing_predicts_exactly_as_before(
+        self, store: ReleaseStore
+    ) -> None:
+        """The defaults have to be the untouched model, or every page moves."""
+        client = self.kickoff(store)
+
+        assert self.prob(client) == self.prob(
+            client, qb_out_home=False, rest_away=False
+        )
+
+    def test_an_out_away_quarterback_helps_the_home_team(
+        self, store: ReleaseStore
+    ) -> None:
+        client = self.kickoff(store)
+
+        assert self.prob(client, qb_out_away=True) > self.prob(client)
+
+    def test_an_out_home_quarterback_hurts_it(self, store: ReleaseStore) -> None:
+        client = self.kickoff(store)
+
+        assert self.prob(client, qb_out_home=True) < self.prob(client)
+
+    def test_two_out_quarterbacks_are_nobody_s_edge(self, store: ReleaseStore) -> None:
+        client = self.kickoff(store)
+
+        assert self.prob(client, qb_out_home=True, qb_out_away=True) == pytest.approx(
+            self.prob(client)
+        )
+
+    def test_a_rested_home_side_is_favored_more(self, store: ReleaseStore) -> None:
+        client = self.kickoff(store)
+
+        assert self.prob(client, rest_home=True) > self.prob(client)
+        assert self.prob(client, rest_away=True) < self.prob(client)
+
+    def test_the_response_echoes_what_was_applied(self, store: ReleaseStore) -> None:
+        """The page renders its toggles from this, so it can't disagree."""
+        detail = (
+            self.kickoff(store)
+            .get("/api/games/nfl/g1", params={"qb_out_away": True, "rest_home": True})
+            .json()
+        )
+
+        assert detail["matchup"] == {
+            **NOTHING_STATED,
+            "qb_out_away": True,
+            "rest_home": True,
+        }
+
+    def test_a_played_game_reports_what_was_true(self, store: ReleaseStore) -> None:
+        """The index has never heard of this id, so both are fine and rest is
+        the one thing nobody can say -- see `MatchupFacts`."""
+        client = self.kickoff(
+            store,
+            days=-1,
+            completed=True,
+            home_score=21,
+            away_score=17,
+            status="STATUS_FINAL",
+        )
+        detail = client.get("/api/games/nfl/g1").json()
+
+        assert detail["matchup"] == {
+            "qb_out_home": False,
+            "qb_out_away": False,
+            "rest_home": None,
+            "rest_away": None,
+        }
+
+    def test_a_played_game_refuses_a_what_if(self, store: ReleaseStore) -> None:
+        """It shows the forecast made before it, which no flag can reach."""
+        client = self.kickoff(
+            store,
+            days=-1,
+            completed=True,
+            home_score=21,
+            away_score=17,
+            status="STATUS_FINAL",
+        )
+        response = client.get("/api/games/nfl/g1", params={"qb_out_home": True})
+
+        assert response.status_code == 422
+        assert "has been played" in response.json()["detail"]
+
+    def test_a_league_without_the_terms_refuses_one(self, store: ReleaseStore) -> None:
+        source = StubGames(game(game_id="g1"))
+        response = client_for(source, store).get(
+            "/api/games/mens/g1", params={"qb_out_home": True}
+        )
+
+        assert response.status_code == 422
+        assert "no quarterback or rest term" in response.json()["detail"]
+
+    def test_a_model_that_cannot_be_told_is_a_422(self, store: ReleaseStore) -> None:
+        """Not a row quietly losing its number: the request asked for
+        something this release's class has no parameter for."""
+        client = self.kickoff(store)
+        with patch(
+            "app.api.games._stated_predictor",
+            side_effect=MatchupUnsupported("takes no sources"),
+        ):
+            response = client.get("/api/games/nfl/g1", params={"qb_out_home": True})
+
+        assert response.status_code == 422
+        assert "takes no sources" in response.json()["detail"]
