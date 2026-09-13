@@ -62,6 +62,12 @@ log = logging.getLogger(__name__)
 # which caps its own per-game cache for the same reason.
 MAX_CACHED_WINDOWS = 32
 
+# How many teams' game lists to keep. Unbounded in principle for the same
+# reason the windows are -- a key per team, and the college leagues have
+# hundreds -- and a smaller cap than the windows because each entry is a
+# team's whole schedule rather than a few days of one.
+MAX_CACHED_TEAMS = 16
+
 # How far past the requested days the prediction read reaches.
 #
 # The window is a span of days in `GAME_TZ` and the column is a timestamp
@@ -79,6 +85,18 @@ class ArtifactStore(Protocol):
     def predictions(
         self, league: str, model: str, since: date, until: date
     ) -> pd.DataFrame: ...
+
+    def team_predictions(self, league: str, model: str, team: str) -> pd.DataFrame:
+        """Every game one team has played, out of the same file.
+
+        The third way to read `predictions.parquet`, and the one the file is
+        *not* sorted for: a team's games are spread over every row group in
+        it. So this reads the file rather than a range of it, and what keeps
+        that affordable is the other half of the same trick -- the filter goes
+        to Arrow, which materializes one team's few hundred rows instead of
+        sixteen seasons of them.
+        """
+        ...
 
 
 def _empty(columns: Sequence[str]) -> pd.DataFrame:
@@ -166,6 +184,22 @@ def _predictions(
     return table.to_pandas()
 
 
+def _team(path: str, filesystem: Any | None, team: str) -> pd.DataFrame:
+    """One team's games out of `predictions.parquet`.
+
+    Either side of the fixture: cassandra stores a game once, under whichever
+    team was home, so a team's schedule is the union of the two columns rather
+    than a lookup in one.
+
+    Best-effort like `_read`, and for the same reason -- a team page whose
+    game list is missing is a page with a chart on it, not a 502.
+    """
+    import pyarrow.dataset as ds
+
+    where = (ds.field("home_team") == team) | (ds.field("away_team") == team)
+    return _read(path, PREDICTION_COLUMNS, filesystem, where)
+
+
 class LocalArtifactStore:
     """Reads the artifacts from a directory laid out the way the bucket is.
 
@@ -209,6 +243,9 @@ class LocalArtifactStore:
             None,
         )
 
+    def team_predictions(self, league: str, model: str, team: str) -> pd.DataFrame:
+        return _team(str(predictions_path(self._root, league, model)), None, team)
+
 
 class S3ArtifactStore:
     """Reads `{prefix}{league}/{model}/*.parquet` out of the artifact bucket.
@@ -246,6 +283,9 @@ class S3ArtifactStore:
         self._windows: OrderedDict[
             tuple[str, str, date, date], tuple[pd.DataFrame, float]
         ] = OrderedDict()
+        self._teams: OrderedDict[tuple[str, str, str], tuple[pd.DataFrame, float]] = (
+            OrderedDict()
+        )
 
     @property
     def filesystem(self) -> Any:
@@ -293,6 +333,34 @@ class S3ArtifactStore:
             self._windows.move_to_end(key)
             while len(self._windows) > MAX_CACHED_WINDOWS:
                 self._windows.popitem(last=False)
+        return frame
+
+    def team_predictions(self, league: str, model: str, team: str) -> pd.DataFrame:
+        """One team's games, cached per team and bounded like the windows.
+
+        Per team rather than per league, even though one read of the file
+        could answer for all of them: holding a league's whole prediction
+        history to serve one team page is the trade `_read_season` was cut
+        down for. A few hundred rows a team, capped, is the version that
+        can't grow into the memory the service hasn't got.
+        """
+        key = (league, model, team)
+        with self._lock:
+            hit = self._teams.get(key)
+            if hit is not None and not self._expired(hit[1]):
+                self._teams.move_to_end(key)
+                return hit[0]
+
+        frame = _team(
+            f"{self._bucket}/{self._prefix}{league}/{model}/predictions.parquet",
+            self.filesystem,
+            team,
+        )
+        with self._lock:
+            self._teams[key] = (frame, time.monotonic())
+            self._teams.move_to_end(key)
+            while len(self._teams) > MAX_CACHED_TEAMS:
+                self._teams.popitem(last=False)
         return frame
 
     def _expired(self, checked_at: float) -> bool:

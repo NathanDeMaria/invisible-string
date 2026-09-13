@@ -1404,6 +1404,147 @@
         "title": "SeasonObject",
         "type": "object"
       },
+      "TeamGameRow": {
+        "description": "One game, as the team this list is about played it.\n\n`season` and `week` are the model's own partition for the game, which is\nwhat the game page needs to find it outside the days the schedule source\nkeeps in reach (`app.games.find_game`). They are on the wire so a link\ninto that page can carry the season rather than making it search.\n\n`team_score` and `opponent_score` are None together for a game that hasn't\nbeen played -- a run predicts fixtures as well as results, so the newest\nrows in the file are often games with nothing to report yet.\n\n`win_prob` is this team's, and `predicted_spread` and `market_spread` are\nquoted from its side in the market's convention: negative means this team\nwas favoured. The same convention `/api/games` uses for a row, turned\naround for whichever team the page is about.",
+        "properties": {
+          "date": {
+            "format": "date-time",
+            "title": "Date",
+            "type": "string"
+          },
+          "game_id": {
+            "title": "Game Id",
+            "type": "string"
+          },
+          "home": {
+            "title": "Home",
+            "type": "boolean"
+          },
+          "market_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Spread"
+          },
+          "neutral": {
+            "title": "Neutral",
+            "type": "boolean"
+          },
+          "opponent": {
+            "title": "Opponent",
+            "type": "string"
+          },
+          "opponent_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opponent Score"
+          },
+          "predicted_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Spread"
+          },
+          "season": {
+            "title": "Season",
+            "type": "integer"
+          },
+          "team_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Score"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          },
+          "win_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Prob"
+          }
+        },
+        "required": [
+          "game_id",
+          "date",
+          "season",
+          "week",
+          "opponent",
+          "home",
+          "neutral",
+          "team_score",
+          "opponent_score",
+          "win_prob",
+          "predicted_spread",
+          "market_spread"
+        ],
+        "title": "TeamGameRow",
+        "type": "object"
+      },
+      "TeamGamesResponse": {
+        "properties": {
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/TeamGameRow"
+            },
+            "title": "Games",
+            "type": "array"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "team": {
+            "title": "Team",
+            "type": "string"
+          }
+        },
+        "required": [
+          "league",
+          "model",
+          "run_id",
+          "team",
+          "games"
+        ],
+        "title": "TeamGamesResponse",
+        "type": "object"
+      },
       "TeamRow": {
         "properties": {
           "defense": {
@@ -1859,7 +2000,7 @@
     },
     "/api/games/{league}/{game_id}": {
       "get": {
-        "description": "Everything this app knows about one game.\n\nThe same row `/api/games` builds, from the same window and the same\nrelease -- a game page that disagreed with the table it was reached from\nwould be worse than no game page. What it adds is the partition its plays\nlive in, and whether there's a model that could draw them.\n\n404 for a game outside the week either side of today (see\n`app.games.find_game`): the horizon is a cost cap, and a link that\noutlived it should say so rather than render an empty page.\n\nThe four matchup flags make this a what-if: the same release, asked about\nthe same fixture with a quarterback ruled out or a side off a bye. They are\nrefused on a game that has been played, which is not squeamishness about\ncounterfactuals -- a completed game shows the forecast that was made before\nit (see the module docstring), and that forecast is a stored number no flag\ncan reach. Answering a what-if with it would be silently ignoring the\nrequest.",
+        "description": "Everything this app knows about one game.\n\nThe same row `/api/games` builds, from the same window and the same\nrelease -- a game page that disagreed with the table it was reached from\nwould be worse than no game page. What it adds is the partition its plays\nlive in, and whether there's a model that could draw them.\n\nA game outside the week either side of today needs its `season`, and 404s\nwithout one (see `app.games.find_game`). The horizon still bounds what the\n*window* builds; naming the season buys one game out of one season file\nrather than a wider window, which is what lets a team page link to every\ngame it lists instead of only the fortnight of them in reach.\n\nThe four matchup flags make this a what-if: the same release, asked about\nthe same fixture with a quarterback ruled out or a side off a bye. They are\nrefused on a game that has been played, which is not squeamishness about\ncounterfactuals -- a completed game shows the forecast that was made before\nit (see the module docstring), and that forecast is a stored number no flag\ncan reach. Answering a what-if with it would be silently ignoring the\nrequest.",
         "operationId": "get_game_api_games__league___game_id__get",
         "parameters": [
           {
@@ -1878,6 +2019,24 @@
             "schema": {
               "title": "Game Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "The season the game is in. Only needed for a game outside the week either side of today, which can't be found without it.",
+            "in": "query",
+            "name": "season",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The season the game is in. Only needed for a game outside the week either side of today, which can't be found without it.",
+              "title": "Season"
             }
           },
           {
@@ -1974,6 +2133,24 @@
             "schema": {
               "title": "Game Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "The season the game is in. Only needed for a game outside the week either side of today, exactly as on the game itself.",
+            "in": "query",
+            "name": "season",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The season the game is in. Only needed for a game outside the week either side of today, exactly as on the game itself.",
+              "title": "Season"
             }
           }
         ],
@@ -2271,6 +2448,73 @@
           }
         },
         "summary": "Get Ratings"
+      }
+    },
+    "/api/leagues/{league}/teams/{team}/games": {
+      "get": {
+        "description": "Every game this model has a stored prediction for, for one team.\n\nThe whole career in one response, for the reason the history endpoint\nserves a whole line: it is a few hundred rows, which is smaller than the\nratings table the page was reached from, and a season picker that went\nback to the network to narrow what it already had would be slower and no\nsmaller.\n\nThe model follows the page's selection, like the chart above it. A game\nlist showing elo's forecasts under glicko's rank would be two models\nwearing one heading.",
+        "operationId": "get_team_games_api_leagues__league__teams__team__games_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "title": "Team",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the league's lowest-Brier model.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the league's lowest-Brier model.",
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamGamesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Team Games"
       }
     },
     "/api/predict": {

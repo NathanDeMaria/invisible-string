@@ -12,6 +12,8 @@ import type {
   LeagueSummary,
   PredictResponse,
   RatingsResponse,
+  TeamGameRow,
+  TeamGamesResponse,
   VolumeResponse,
   WinProbabilityResponse,
 } from "../services/api";
@@ -594,6 +596,7 @@ export const games: GamesResponse = {
 export const detailFor = (
   row: GameRow,
   stated?: URLSearchParams,
+  season = 2026,
 ): GameDetail => {
   const football = row.league === "nfl" || row.league === "ncaafb";
   const on = (flag: string) => stated?.get(flag) === "true";
@@ -608,7 +611,7 @@ export const detailFor = (
 
   return {
     ...row,
-    season: 2026,
+    season,
     week: 3,
     has_win_probability: football,
     prediction:
@@ -756,6 +759,122 @@ export const winProbability: WinProbabilityResponse = {
   trained_on_this_season: false,
 };
 
+// -- one team's games -------------------------------------------------
+//
+// Mirrors backend/tests/fixtures/models/mens/glicko_tuned/predictions.json,
+// turned around to face Duke the way the API turns it: `win_prob` is Duke's
+// and both spreads are from Duke's side, so a negative one is a game Duke was
+// favoured in whether they were home or away.
+
+const teamGame = (
+  overrides: Partial<TeamGameRow> &
+    Pick<TeamGameRow, "game_id" | "date" | "season" | "opponent">,
+): TeamGameRow => ({
+  week: 1,
+  home: true,
+  neutral: false,
+  team_score: null,
+  opponent_score: null,
+  win_prob: null,
+  predicted_spread: null,
+  market_spread: null,
+  ...overrides,
+});
+
+/**
+ * Duke's games, newest first, across the two seasons the chart draws.
+ *
+ * Four rows because four things have to render differently: a win, a loss, a
+ * game nobody has played yet, and one from a season the games API can only
+ * reach if the link names it -- which is what the season on every link is for.
+ */
+export const dukeGames: TeamGamesResponse = {
+  league: "mens",
+  model: "glicko_tuned",
+  run_id: "r1",
+  team: "Duke",
+  games: [
+    // Not played. The run forecasts fixtures as well as results, so the newest
+    // rows in the file have no score to show.
+    teamGame({
+      game_id: "g0",
+      date: "2026-08-23T00:00:00Z",
+      season: 2026,
+      opponent: "Houston",
+      home: false,
+      win_prob: 0.37,
+      predicted_spread: 3.7,
+      market_spread: 2.5,
+    }),
+    // Away, and lost. Every number here is the complement of the one the file
+    // stores, which is the flip the API does.
+    teamGame({
+      game_id: "401710103",
+      date: "2026-08-22T02:00:00Z",
+      season: 2026,
+      opponent: "Houston",
+      home: false,
+      team_score: 59,
+      opponent_score: 61,
+      win_prob: 0.45,
+      predicted_spread: 1.75,
+      market_spread: 1.5,
+    }),
+    // Home, and won.
+    teamGame({
+      game_id: "401710101",
+      date: "2026-08-21T01:00:00Z",
+      season: 2026,
+      opponent: "North Carolina",
+      team_score: 78,
+      opponent_score: 71,
+      win_prob: 0.62,
+      predicted_spread: -5.5,
+      market_spread: -4.5,
+    }),
+    // Last season, which is the row the games window cannot reach at all.
+    teamGame({
+      game_id: "401700101",
+      date: "2025-12-19T23:45:00Z",
+      season: 2025,
+      week: 6,
+      opponent: "Vermont",
+      team_score: 90,
+      opponent_score: 55,
+      win_prob: 0.94,
+      predicted_spread: -22.5,
+      market_spread: -21.5,
+    }),
+  ],
+};
+
+/**
+ * The games only reachable by naming a season.
+ *
+ * Kept beside the season rather than inside the row, because that is the shape
+ * of the read: `GameRow` has no season on it, and the API finds these by
+ * looking in one season's file. The handler below serves one *only* when the
+ * request names the season it is actually in -- naming the wrong one has to
+ * miss, or a test can't tell a link that carries the season from one that
+ * merely carries something.
+ */
+const archived: { season: number; row: GameRow }[] = [
+  {
+    season: 2025,
+    row: gameRow(-250, {
+      game_id: "401700101",
+      home: "Duke",
+      away: "Vermont",
+      completed: true,
+      status: "STATUS_FINAL",
+      home_score: 90,
+      away_score: 55,
+      market_spread: -21.5,
+      prediction: predicted(-22.5, 0.94),
+    }),
+  },
+];
+
 /**
  * Duke's rating over two seasons: six weeks of 2025 and two of 2026.
  *
@@ -844,13 +963,41 @@ export const handlers = [
     });
   }),
   http.get("/api/games/:league/:gameId", ({ params, request }) => {
-    const row = games.games.find(
-      (game) => game.league === params.league && game.game_id === params.gameId,
-    );
+    const q = new URL(request.url).searchParams;
+    const matches = (game: GameRow) =>
+      game.league === params.league && game.game_id === params.gameId;
+    // The window first, then the season file -- and only when the request
+    // named a season, because that is the whole rule the team page's links
+    // are built around.
+    const asked = q.get("season");
+    const old = asked
+      ? archived.find(
+          (entry) => String(entry.season) === asked && matches(entry.row),
+        )
+      : undefined;
+    const row = games.games.find(matches) ?? old?.row;
     if (!row) {
       return HttpResponse.json({ detail: "not found" }, { status: 404 });
     }
-    return HttpResponse.json(detailFor(row, new URL(request.url).searchParams));
+    return HttpResponse.json(detailFor(row, q, old?.season));
+  }),
+  http.get("/api/leagues/:league/teams/:team/games", ({ params, request }) => {
+    if (params.league !== "mens") {
+      return HttpResponse.json({ detail: "not found" }, { status: 404 });
+    }
+    // elo has no predictions artifact, exactly as in the backend fixtures:
+    // the page loses its game list and keeps its chart.
+    if (new URL(request.url).searchParams.get("model") === "elo") {
+      return HttpResponse.json({ ...dukeGames, model: "elo", games: [] });
+    }
+    if (params.team !== "Duke") {
+      return HttpResponse.json({
+        ...dukeGames,
+        team: String(params.team),
+        games: [],
+      });
+    }
+    return HttpResponse.json(dukeGames);
   }),
   http.get("/api/games/:league/:gameId/win-probability", ({ params }) => {
     if (params.league !== "nfl") {

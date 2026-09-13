@@ -390,6 +390,15 @@ table.ratings,
   cursor: help;
 }
 
+/* An offense or a defense rating, which carries how settled it is in a title
+   rather than in two more columns of the table. Undecorated for the reason
+   `.delta` is: a dotted rule under every second number in a table of numbers
+   reads as something wrong with them rather than as an affordance. */
+.ratings .unit {
+  text-decoration: none;
+  cursor: help;
+}
+
 .ratings .move .places {
   display: block;
   font-size: 0.75rem;
@@ -534,8 +543,13 @@ table.ratings,
   text-decoration-color: var(--accent);
 }
 
+/* The second line of a cell whose first line is the thing itself: a day under
+   a matchup, a duration under a job. The team page's game list is a `.ratings`
+   table carrying `.games` rows, so it is named here too -- without it the day
+   sits inline and reads as part of the opponent's name. */
 .games .when,
-.games .of {
+.games .of,
+.ratings .when {
   display: block;
   font-size: 0.75rem;
   color: var(--muted);

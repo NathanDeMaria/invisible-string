@@ -6,10 +6,13 @@ import type { RootState } from "../../app/store";
 import {
   useGetHistoryQuery,
   useGetRatingsQuery,
+  useGetTeamGamesQuery,
   type HistoryPoint,
+  type TeamGameRow,
   type TeamRow,
   type UnitRating,
 } from "../../services/api";
+import { probability, spread } from "../games/format";
 import {
   movementTitle,
   placeMove,
@@ -48,6 +51,16 @@ export function TeamPage() {
     teams: team,
     model: model ?? undefined,
   });
+  // The third query, and the only one that isn't about the rating: what this
+  // team actually played. Its own request because it reads its own artifact
+  // -- a model published without `predictions.parquet` loses its game list
+  // and keeps its chart, which is the same degradation the chart makes on its
+  // own file.
+  const played = useGetTeamGamesQuery({
+    league,
+    team,
+    model: model ?? undefined,
+  });
 
   const [season, setSeason] = useState<number | "all">("all");
 
@@ -55,10 +68,15 @@ export function TeamPage() {
     () => history.data?.series[0]?.points ?? [],
     [history.data],
   );
-  const years = useMemo(
-    () => [...new Set(points.map((point) => point.year))].sort((a, b) => a - b),
-    [points],
-  );
+  // Every season either artifact knows about. The union rather than the
+  // chart's own, because the two files are published separately: a model with
+  // games and no history should still offer the picker, and it now narrows
+  // both halves of the page rather than only the line.
+  const years = useMemo(() => {
+    const charted = points.map((point) => point.year);
+    const played_in = (played.data?.games ?? []).map((row) => row.season);
+    return [...new Set([...charted, ...played_in])].sort((a, b) => a - b);
+  }, [points, played.data]);
   const shown = useMemo(
     () =>
       season === "all"
@@ -66,6 +84,11 @@ export function TeamPage() {
         : points.filter((point) => point.year === season),
     [points, season],
   );
+
+  const games = useMemo(() => {
+    const all = played.data?.games ?? [];
+    return season === "all" ? all : all.filter((row) => row.season === season);
+  }, [played.data, season]);
 
   const standing = ratings.data?.ratings.find((row) => row.team === team);
   const since = ratings.data?.movement_since?.date ?? null;
@@ -88,6 +111,31 @@ export function TeamPage() {
 
       {standing && <Standing row={standing} since={since} />}
 
+      {/* Above both sections, because it narrows both. */}
+      {years.length > 1 && (
+        <div className="controls">
+          <div className="field">
+            <label htmlFor="team-season">Season</label>
+            <select
+              id="team-season"
+              value={season}
+              onChange={(e) =>
+                setSeason(
+                  e.target.value === "all" ? "all" : Number(e.target.value),
+                )
+              }
+            >
+              <option value="all">All seasons</option>
+              {[...years].reverse().map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <h3>Rating over time</h3>
       {history.isLoading ? (
         <p className="loading">Loading&hellip;</p>
@@ -101,32 +149,22 @@ export function TeamPage() {
         </p>
       ) : (
         <>
-          {years.length > 1 && (
-            <div className="controls">
-              <div className="field">
-                <label htmlFor="team-season">Season</label>
-                <select
-                  id="team-season"
-                  value={season}
-                  onChange={(e) =>
-                    setSeason(
-                      e.target.value === "all" ? "all" : Number(e.target.value),
-                    )
-                  }
-                >
-                  <option value="all">All seasons</option>
-                  {[...years].reverse().map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
           <RatingTimeline team={team} points={shown} />
           <SeasonTable points={shown} />
         </>
+      )}
+
+      <h3>Games</h3>
+      {played.isLoading ? (
+        <p className="loading">Loading&hellip;</p>
+      ) : games.length === 0 ? (
+        <p className="empty">
+          {played.data && played.data.games.length > 0
+            ? `Nothing in ${season}.`
+            : `No games published for ${played.data?.model ?? "this model"} yet.`}
+        </p>
+      ) : (
+        <GameTable league={league} rows={games} />
       )}
     </section>
   );
@@ -222,6 +260,103 @@ function Unit({
       </dd>
     </div>
   );
+}
+
+/**
+ * What the team played, and what was said about it beforehand.
+ *
+ * The counterpart to the chart: the line says a rating moved, and this says
+ * what moved it. Every row is a link into the game's own page, and every link
+ * carries the season -- the games API finds a game near today on its own and
+ * needs the season for anything older, which is most of this list
+ * (`app.games.find_game`).
+ *
+ * Two numbers a game long, not four: what the model made the team, and what
+ * the market did. Both from this team's side (the API turns an away row
+ * around), so a column of them can be read straight down without working out
+ * who was at home on each line.
+ */
+function GameTable({ league, rows }: { league: string; rows: TeamGameRow[] }) {
+  return (
+    <table className="ratings">
+      <caption className="meta">
+        Newest first. Both spreads are from this team&rsquo;s side, so a
+        negative number is one it was favoured by.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Game</th>
+          <th scope="col" className="num">
+            Result
+          </th>
+          <th scope="col" className="num">
+            Win prob
+          </th>
+          <th scope="col" className="num">
+            Model
+          </th>
+          <th scope="col" className="num">
+            Market
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.game_id}>
+            <td>
+              <Link
+                className="job-name"
+                to={`/games/${league}/${row.game_id}?season=${row.season}`}
+              >
+                {row.neutral ? "vs" : row.home ? "vs" : "@"} {row.opponent}
+              </Link>
+              <span className="when">{gameDay(row.date)}</span>
+            </td>
+            <Result row={row} />
+            <td className="num">{probability(row.win_prob)}</td>
+            <td className="num">{spread(row.predicted_spread)}</td>
+            <td className="num">{spread(row.market_spread)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * The score, and which way it went.
+ *
+ * A game with no score is one the run forecast and nobody has played yet --
+ * the newest rows in the file are often those -- so the cell says nothing
+ * rather than calling it a loss.
+ */
+function Result({ row }: { row: TeamGameRow }) {
+  if (row.team_score == null || row.opponent_score == null) {
+    return (
+      <td className="num">
+        <span className="quiet">&mdash;</span>
+      </td>
+    );
+  }
+  const won = row.team_score > row.opponent_score;
+  return (
+    <td className="num">
+      <span className={won ? "up" : "down"}>{won ? "W" : "L"}</span>{" "}
+      {row.team_score}&ndash;{row.opponent_score}
+    </td>
+  );
+}
+
+/** A game's day, in the zone the games are filed under. */
+function gameDay(at: string): string {
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleDateString(undefined, {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /**
