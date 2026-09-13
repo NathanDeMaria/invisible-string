@@ -20,10 +20,20 @@ are different claims, and a basketball game page should say the first by
 showing nothing at all.
 """
 
-from cassandra.predictor import QB_LEAGUES, MatchupSources, QbOutIndex, StatedRest
+from datetime import datetime
+from typing import NamedTuple
+
+from cassandra.predictor import (
+    QB_LEAGUES,
+    MatchupSources,
+    QbOutIndex,
+    RestLedger,
+    StatedRest,
+)
+from endgame.types import Game
 from pydantic import BaseModel
 
-from app.games import ScheduledGame
+from app.games import PlayedGame, ScheduledGame
 
 
 class MatchupFacts(BaseModel):
@@ -34,15 +44,14 @@ class MatchupFacts(BaseModel):
     the fact a reader has; that both being out is worth nothing to either side
     is the model's business, not the page's.
 
-    `rest_home` and `rest_away` are None when nobody can say. That is every
-    completed game today: deciding who came off a bye needs when each side last
-    played, and the games source keeps a window of days around today rather
-    than a season -- see `app.seasons`, whose season cache is deliberately
-    trimmed to that horizon. A team on a normal week played inside it and one
-    off a bye did not, so walking what is there would answer "nobody was
-    rested" for precisely the games where somebody was. None says "not known"
-    instead, which is the one honest answer available until that cache is
-    widened.
+    `rest_home` and `rest_away` are None when nobody can say, which is a
+    narrow case and not the same as False. Both are False for two sides on
+    level rest -- an ordinary week, which is most games. Both are None for a
+    game either side is playing first this season: `RestLedger` prices that at
+    0 because "we have no idea" and "level" are the same number to a model
+    about to add nothing either way, but a page that rendered a season opener
+    as "nobody was rested" would be stating a fact it doesn't have. Also None
+    for a game whose season the source has no schedule for.
     """
 
     qb_out_home: bool
@@ -130,17 +139,98 @@ def stated_sources(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupS
     )
 
 
-def played_facts(game: ScheduledGame) -> MatchupFacts:
+def played_facts(game: ScheduledGame, schedule: list[PlayedGame]) -> MatchupFacts:
     """What was true of a game that has been played.
 
     The quarterback index is keyed by ESPN's own game id and ships in the
-    package, so this is a dict lookup and costs no request to anything. Rest is
-    None: see `MatchupFacts`.
+    package, so that half is a dict lookup and costs no request to anything.
+
+    Rest is worked out by walking `schedule` -- the season this game belongs
+    to -- into a real `RestLedger` and asking it, rather than by comparing
+    dates here. The ledger is where the thresholds live: five days to count as
+    a bye, twenty for a gap that is more likely a missing row than a rest, and
+    "no idea" rather than "extremely rested" for a side whose first game this
+    is. Re-deriving any of that here would be a second copy to drift from the
+    one the model actually prices with.
     """
     index = QbOutIndex.for_league(game.league)
+    rested = _rested_side(game, schedule)
     return MatchupFacts(
         qb_out_home=index.is_out(game.game_id, game.home),
         qb_out_away=index.is_out(game.game_id, game.away),
-        rest_home=None,
-        rest_away=None,
+        rest_home=None if rested is None else rested > 0,
+        rest_away=None if rested is None else rested < 0,
     )
+
+
+def _rested_side(game: ScheduledGame, schedule: list[PlayedGame]) -> float | None:
+    """+1 if the home side came off the longer break, -1 the away, 0 neither.
+
+    None when nobody can say, which is not the same as 0 and must not render
+    as one. Two ways to get there: a source with no schedule for this season at
+    all, and a game where either side hasn't played yet -- a season opener,
+    where `RestLedger` answers 0 because "we have no idea" and "level" are the
+    same number to a model that is about to add zero either way. The page has
+    to tell them apart, so this asks the ledger what it knows first.
+
+    Games on the day itself are left out rather than filtered by id. A team
+    does not play twice in a day, so the only same-day game either side is in
+    is this one -- and the replay records a game *after* predicting it, so
+    counting it here would be the game contributing to its own rest.
+    """
+    if not schedule:
+        return None
+
+    ledger = RestLedger()
+    seen: set[str] = set()
+    for played in schedule:
+        if played.completed and played.date < game.start:
+            ledger.record(_as_game(played))
+            seen.update((played.home, played.away))
+
+    # Asked of what was recorded rather than of the ledger, whose own answer
+    # for a team it has never seen is 0 -- the same 0 it gives two sides on
+    # level rest, because a model adding zero either way has no reason to
+    # separate them. A page does.
+    if game.home not in seen or game.away not in seen:
+        return None
+    return ledger.rested_side(_Played(home=game.home, away=game.away, date=game.start))
+
+
+def _as_game(played: PlayedGame) -> Game:
+    """A `PlayedGame` in the shape `RestLedger.record` is typed for.
+
+    `record` notes that both sides played on a date and reads nothing else --
+    which is why `PlayedGame` carries nothing else. The scores and the id here
+    are placeholders for fields that are never looked at, and `completed` is
+    True because the caller has already filtered to games that were.
+    """
+    return Game(
+        home=played.home,
+        home_score=0,
+        away=played.away,
+        away_score=0,
+        neutral_site=False,
+        completed=True,
+        date=played.date,
+        game_id="",
+        status="",
+    )
+
+
+class _Played(NamedTuple):
+    """The pre-game half of a played game, as `RestLedger` reads it."""
+
+    home: str
+    away: str
+    date: datetime
+
+    @property
+    def neutral_site(self) -> bool:
+        """Unread by the rest term, which applies at a neutral site too."""
+        return False
+
+    @property
+    def game_id(self) -> str:
+        """Unread by the rest term, which is keyed by team and date."""
+        return ""

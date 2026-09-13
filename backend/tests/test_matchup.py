@@ -6,10 +6,11 @@ quarterback out?" gets the answer the reader gave, and the key those questions
 are asked under is exactly the thing most likely to drift.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from app.games import ScheduledGame
+from app.games import PlayedGame, ScheduledGame
 from app.matchup import (
+    MatchupFacts,
     MatchupOverrides,
     has_matchup_terms,
     matchup_game_id,
@@ -128,14 +129,68 @@ class TestWhetherAnythingWasStated:
         assert MatchupOverrides(rest_away=True).stated()
 
 
+def played(team: str, days_before: int, completed: bool = True) -> PlayedGame:
+    """A game `team` was in, that many days before the one under test."""
+    return PlayedGame(
+        date=game().start - timedelta(days=days_before),
+        home=team,
+        away="Some Other Team",
+        completed=completed,
+    )
+
+
 class TestWhatWasTrue:
+    def facts(self, *schedule: PlayedGame) -> MatchupFacts:
+        return played_facts(game(completed=True), list(schedule))
+
     def test_a_game_the_index_never_saw_has_both_quarterbacks(self) -> None:
         """Every fixture, and every game of a league with no index built."""
-        facts = played_facts(game(completed=True))
+        facts = self.facts()
         assert (facts.qb_out_home, facts.qb_out_away) == (False, False)
 
-    def test_rest_is_not_known_for_a_played_game(self) -> None:
-        """Not False. The window has no room for a bye -- see `MatchupFacts`."""
-        facts = played_facts(game(completed=True))
+    def test_an_ordinary_week_is_level_rest(self) -> None:
+        """Both False, not None: nobody was rested is a fact about this game."""
+        facts = self.facts(played(HOME, 7), played(AWAY, 7))
+        assert (facts.rest_home, facts.rest_away) == (False, False)
+
+    def test_a_home_side_off_a_bye_is_rested(self) -> None:
+        facts = self.facts(played(HOME, 14), played(AWAY, 7))
+        assert (facts.rest_home, facts.rest_away) == (True, False)
+
+    def test_an_away_side_off_a_bye_is_rested(self) -> None:
+        facts = self.facts(played(HOME, 7), played(AWAY, 14))
+        assert (facts.rest_home, facts.rest_away) == (False, True)
+
+    def test_a_side_playing_its_first_game_is_not_known(self) -> None:
+        """A season opener. `RestLedger` prices it 0, but 0 here would be the
+        page claiming the two arrived level when nobody knows."""
+        facts = self.facts(played(HOME, 7))
         assert facts.rest_home is None
         assert facts.rest_away is None
+
+    def test_a_season_the_source_has_no_schedule_for_is_not_known(self) -> None:
+        facts = self.facts()
+        assert facts.rest_home is None
+        assert facts.rest_away is None
+
+    def test_a_called_off_game_is_not_a_game_anybody_played(self) -> None:
+        """The season file carries cancelled games beside the played ones, and
+        counting one would cost the team after it the bye it actually had."""
+        facts = self.facts(
+            played(HOME, 7),
+            played(AWAY, 7, completed=False),
+            played(AWAY, 14),
+        )
+        assert (facts.rest_home, facts.rest_away) == (False, True)
+
+    def test_a_gap_too_long_to_be_a_bye_reads_as_missing_data(self) -> None:
+        """cassandra's own guard, and the reason this walks a real ledger
+        rather than subtracting two dates here."""
+        facts = self.facts(played(HOME, 40), played(AWAY, 7))
+        assert (facts.rest_home, facts.rest_away) == (False, False)
+
+    def test_the_game_itself_never_counts_toward_its_own_rest(self) -> None:
+        """A same-day row is this game. Recording it would leave both sides
+        zero days off and every week reading as level."""
+        facts = self.facts(played(HOME, 0), played(HOME, 14), played(AWAY, 7))
+        assert (facts.rest_home, facts.rest_away) == (True, False)

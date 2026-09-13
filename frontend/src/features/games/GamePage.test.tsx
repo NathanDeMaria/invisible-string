@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { winProbability } from "../../test/handlers";
+import { detailFor, games, winProbability } from "../../test/handlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { GamePage } from "./GamePage";
@@ -487,8 +487,34 @@ describe("the matchup terms", () => {
 
     const qbs = (await screen.findByText("Quarterbacks")).closest("div");
     expect(qbs).toHaveTextContent("Both started");
-    // Rest is the one thing nobody can say about a finished game here.
-    expect(screen.getByText("Rest").closest("div")).toHaveTextContent("—");
+    // Worked out from the season's schedule, not stated -- and a real answer
+    // rather than a blank, which is the whole reason the schedule is read.
+    expect(screen.getByText("Rest").closest("div")).toHaveTextContent(
+      "Chicago Bears off the longer break",
+    );
+  });
+
+  it("says so when nobody can tell who was rested", async () => {
+    // A season opener: neither side has played, so there is no gap to
+    // compare. A blank here, where "level" would be a claim nobody has.
+    server.use(
+      http.get("/api/games/nfl/g-1", () =>
+        HttpResponse.json({
+          ...detailFor(games.games.find((g) => g.game_id === "g-1")!),
+          matchup: {
+            qb_out_home: false,
+            qb_out_away: false,
+            rest_home: null,
+            rest_away: null,
+          },
+        }),
+      ),
+    );
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const rest = (await screen.findByText("Rest")).closest("div");
+    expect(rest).toHaveTextContent("—");
+    expect(rest).toHaveTextContent(/nobody had played yet/);
   });
 
   it("offers no what-if on a game that has been played", async () => {

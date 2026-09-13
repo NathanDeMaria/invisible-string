@@ -525,7 +525,10 @@ export const games: GamesResponse = {
  * null says everywhere else. A played football game reports what was true; an
  * unplayed one reports what has been stated, which starts as nothing.
  */
-const detailFor = (row: GameRow, stated?: URLSearchParams): GameDetail => {
+export const detailFor = (
+  row: GameRow,
+  stated?: URLSearchParams,
+): GameDetail => {
   const football = row.league === "nfl" || row.league === "ncaafb";
   const on = (flag: string) => stated?.get(flag) === "true";
   // The real API prices these through the model; the fake just has to move
@@ -553,10 +556,11 @@ const detailFor = (row: GameRow, stated?: URLSearchParams): GameDetail => {
       ? {
           qb_out_home: on("qb_out_home"),
           qb_out_away: on("qb_out_away"),
-          // Never known for a game that has been played -- the window this
-          // API serves can't tell a bye from an ordinary week.
-          rest_home: row.completed ? null : on("rest_home"),
-          rest_away: row.completed ? null : on("rest_away"),
+          // A played game's rest is read off the season schedule rather than
+          // stated: the fixture below is a home side off the longer break, so
+          // the page has something other than "level" to render.
+          rest_home: row.completed ? true : on("rest_home"),
+          rest_away: row.completed ? false : on("rest_away"),
         }
       : null,
   };

@@ -22,6 +22,7 @@ from app.games import (
     GamesUnavailable,
     GameWindow,
     LocalGamesSource,
+    PlayedGame,
     ScheduledGame,
     as_aware,
     game_day,
@@ -67,12 +68,23 @@ def game(
 class StubGames:
     """A source that answers with whatever the test handed it."""
 
-    def __init__(self, *games: ScheduledGame) -> None:
+    def __init__(
+        self, *games: ScheduledGame, schedule: list[PlayedGame] | None = None
+    ) -> None:
         self._games = list(games)
+        self._schedule = schedule or []
 
     def window(self, days_back: int, days_ahead: int) -> GameWindow:
         since, until = window_bounds(days_back, days_ahead)
         return GameWindow(since=since, until=until, games=self._games)
+
+    def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
+        """Whatever the test handed it, unfiltered.
+
+        A real source returns one league's one season; a test that passes a
+        schedule at all is already asking about one game.
+        """
+        return self._schedule
 
 
 # A model published before the parquet artifacts existed, which is what the
@@ -304,6 +316,11 @@ class TestGamesEndpoint:
 
         class Broken:
             def window(self, days_back: int, days_ahead: int) -> GameWindow:
+                raise GamesUnavailable("could not read s3: AccessDenied")
+
+            def season_schedule(self, league: str, season: int) -> list[PlayedGame]:
+                # Unreachable here -- the window throws first -- but a source
+                # is the whole protocol or it isn't one.
                 raise GamesUnavailable("could not read s3: AccessDenied")
 
         response = client_for(Broken(), store).get("/api/games")
@@ -680,25 +697,68 @@ class TestTheMatchupTerms:
             "rest_home": True,
         }
 
-    def test_a_played_game_reports_what_was_true(self, store: ReleaseStore) -> None:
-        """The index has never heard of this id, so both are fine and rest is
-        the one thing nobody can say -- see `MatchupFacts`."""
-        client = self.kickoff(
-            store,
-            days=-1,
-            completed=True,
-            home_score=21,
-            away_score=17,
-            status="STATUS_FINAL",
+    def played(
+        self, store: ReleaseStore, schedule: list[PlayedGame] | None = None
+    ) -> TestClient:
+        """Yesterday's game, with a season so the schedule is worth asking for."""
+        source = StubGames(
+            game(
+                league="nfl",
+                game_id="g1",
+                days=-1,
+                completed=True,
+                home_score=21,
+                away_score=17,
+                status="STATUS_FINAL",
+            ).model_copy(update={"season": 2026}),
+            schedule=schedule,
         )
-        detail = client.get("/api/games/nfl/g1").json()
+        return client_for(source, Football(store))
 
+    def test_a_played_game_reports_what_was_true(self, store: ReleaseStore) -> None:
+        """The whole point of the season schedule: a bye is a week outside the
+        widest window this API serves, so reading only the window would answer
+        "nobody was rested" for exactly the games where somebody was."""
+        kickoff = datetime.now(UTC) - timedelta(days=1)
+        detail = (
+            self.played(
+                store,
+                schedule=[
+                    PlayedGame(
+                        date=kickoff - timedelta(days=14),
+                        home="Duke",
+                        away="Someone",
+                        completed=True,
+                    ),
+                    PlayedGame(
+                        date=kickoff - timedelta(days=7),
+                        home="Houston",
+                        away="Someone",
+                        completed=True,
+                    ),
+                ],
+            )
+            .get("/api/games/nfl/g1")
+            .json()
+        )
+
+        # Duke is home and came off the fortnight; Houston played a week ago.
         assert detail["matchup"] == {
             "qb_out_home": False,
             "qb_out_away": False,
-            "rest_home": None,
-            "rest_away": None,
+            "rest_home": True,
+            "rest_away": False,
         }
+
+    def test_a_played_game_with_no_schedule_cannot_say(
+        self, store: ReleaseStore
+    ) -> None:
+        """Null rather than false: a source that knows nothing about the season
+        has not established that nobody was rested."""
+        detail = self.played(store).get("/api/games/nfl/g1").json()
+
+        assert detail["matchup"]["rest_home"] is None
+        assert detail["matchup"]["rest_away"] is None
 
     def test_a_played_game_refuses_a_what_if(self, store: ReleaseStore) -> None:
         """It shows the forecast made before it, which no flag can reach."""
