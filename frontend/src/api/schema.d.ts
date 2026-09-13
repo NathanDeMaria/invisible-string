@@ -871,9 +871,11 @@ export interface components {
         };
         /** TeamRow */
         TeamRow: {
+            defense?: components["schemas"]["UnitRating"] | null;
             /** Losses */
             losses: number;
             movement?: components["schemas"]["Movement"] | null;
+            offense?: components["schemas"]["UnitRating"] | null;
             /** Rank */
             rank: number;
             /** Rating */
@@ -907,6 +909,20 @@ export interface components {
             processed_game_ids?: string[];
             /** Season Year */
             season_year: number;
+        };
+        /**
+         * UnitRating
+         * @description One side of a team, on the same scale as `TeamRating.rating`.
+         *
+         *     `rd` is not optional here the way it is on the team: only a Glicko rates
+         *     sides, and the deviation is what the model reads to decide how much a
+         *     side has to say. See `predictor.types.Unit`.
+         */
+        UnitRating: {
+            /** Rating */
+            rating: number;
+            /** Rd */
+            rd: number;
         };
         /** ValidationError */
         ValidationError: {

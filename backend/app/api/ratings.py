@@ -15,7 +15,7 @@ from app.releases import (
     pick_default,
     resolve_release,
 )
-from app.schema import Metrics, ModelRelease, TeamRating, TrainedThrough
+from app.schema import Metrics, ModelRelease, TeamRating, TrainedThrough, UnitRating
 from app.teams import still_playing
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,25 @@ class TeamRow(BaseModel):
     # snapshot of a season, or a team whose first game was this week. A row
     # that says nothing is right where a zero would be a claim.
     movement: Movement | None = None
+    # The two halves of a team, where the model rates them separately.
+    #
+    # Both None for every model that rates a team by whether it won, which is
+    # all of them but the compound Glicko: its children are rated on EPA per
+    # play rather than on the result, so a team has an offense and a defense
+    # with deviations of their own. None for a team that model has no plays
+    # for, too -- those sit on their record alone, and a pair of numbers there
+    # would be a reading of evidence that doesn't exist.
+    #
+    # Named rather than a `dict[str, UnitRating]` of whatever a model happens
+    # to publish. These are the two fields `TeamRating` declares (cassandra
+    # owns that schema, `app.schema`), so a bag here would be this app
+    # inventing a shape upstream doesn't have, and every reader of it would
+    # then have to handle keys no model emits. The generic version is worth
+    # building the day a second kind of subrating exists -- and on that day it
+    # is a change to cassandra's schema first, which is where it would have to
+    # start anyway.
+    offense: UnitRating | None = None
+    defense: UnitRating | None = None
 
 
 class RatingsResponse(BaseModel):
@@ -180,6 +199,8 @@ def get_ratings(
                 wins=r.wins,
                 losses=r.losses,
                 movement=moved.get(team),
+                offense=r.offense,
+                defense=r.defense,
             )
             for rank, team, r in ranked
         ],

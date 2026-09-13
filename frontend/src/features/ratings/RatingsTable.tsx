@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import type { TeamRow } from "../../services/api";
+import type { TeamRow, UnitRating } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
 
 interface Props {
@@ -10,6 +10,12 @@ interface Props {
   /** Glicko has a rating deviation; Elo doesn't, so the column is dropped. */
   showRd: boolean;
   /**
+   * Whether this model rates a team's two halves apart. Only the compound
+   * Glicko does, so for every other model the pair of columns is dropped
+   * rather than filled with dashes the width of a rating.
+   */
+  showUnits: boolean;
+  /**
    * When the week every movement is measured from ended, or null where the
    * history can't say -- a model published without one, or the first week of
    * a season. Null drops the column rather than filling it with dashes.
@@ -17,7 +23,13 @@ interface Props {
   since: string | null;
 }
 
-export function RatingsTable({ rows, league, showRd, since }: Props) {
+export function RatingsTable({
+  rows,
+  league,
+  showRd,
+  showUnits,
+  since,
+}: Props) {
   if (rows.length === 0) {
     return <p className="empty">No teams match that search.</p>;
   }
@@ -37,6 +49,16 @@ export function RatingsTable({ rows, league, showRd, since }: Props) {
             <th scope="col" className="num">
               RD
             </th>
+          )}
+          {showUnits && (
+            <>
+              <th scope="col" className="num">
+                Off
+              </th>
+              <th scope="col" className="num">
+                Def
+              </th>
+            </>
           )}
           <th scope="col" className="num">
             W&ndash;L
@@ -66,6 +88,12 @@ export function RatingsTable({ rows, league, showRd, since }: Props) {
             </td>
             <td className="num">{row.rating.toFixed(1)}</td>
             {showRd && <td className="num">{row.rd?.toFixed(1) ?? "—"}</td>}
+            {showUnits && (
+              <>
+                <UnitCell unit={row.offense} />
+                <UnitCell unit={row.defense} />
+              </>
+            )}
             <td className="num">
               {row.wins}&ndash;{row.losses}
             </td>
@@ -74,6 +102,33 @@ export function RatingsTable({ rows, league, showRd, since }: Props) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * One side of a team, on the same scale as the rating beside it.
+ *
+ * The deviation goes in the title rather than in a column of its own: two more
+ * numeric columns would double what this table asks a reader to hold, and how
+ * settled a side's number is matters at the moment you doubt it rather than at
+ * a glance.
+ *
+ * A dash for a team the model rates on its record alone. The column exists
+ * because *some* team in this league has units, which is not a promise that
+ * every one does -- a team with no plays on file has earned nothing to show.
+ */
+function UnitCell({ unit }: { unit: UnitRating | null | undefined }) {
+  if (!unit) {
+    return (
+      <td className="num">
+        <span className="quiet">&mdash;</span>
+      </td>
+    );
+  }
+  return (
+    <td className="num">
+      <abbr title={`RD ${unit.rd.toFixed(1)}`}>{unit.rating.toFixed(1)}</abbr>
+    </td>
   );
 }
 

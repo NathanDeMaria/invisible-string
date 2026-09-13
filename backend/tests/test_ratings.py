@@ -150,7 +150,12 @@ class TestListLeagues:
         self, client: TestClient
     ) -> None:
         body = client.get("/api/leagues").json()
-        assert [entry["league"] for entry in body] == ["mens", "wnba", "womens"]
+        assert [entry["league"] for entry in body] == [
+            "mens",
+            "ncaafb",
+            "wnba",
+            "womens",
+        ]
 
     def test_marks_exactly_one_default_per_league(self, client: TestClient) -> None:
         for entry in client.get("/api/leagues").json():
@@ -213,6 +218,60 @@ class TestRatings:
 
     def test_unknown_model_404s(self, client: TestClient) -> None:
         assert client.get("/api/leagues/mens/ratings?model=nope").status_code == 404
+
+
+class TestUnitRatings:
+    """The offense and the defense, where a model rates them apart.
+
+    The ncaafb fixture is a compound Glicko: its children are rated on EPA per
+    play rather than on the result, so a team carries a pair of Glicko numbers
+    under its record. Every other fixture is a model that rates the result
+    alone, and those have to come back as nulls rather than as zeroes.
+    """
+
+    def test_served_for_a_model_that_rates_units(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        georgia = next(r for r in rows if r["team"] == "Georgia")
+        assert georgia["offense"] == {"rating": 1861.0, "rd": 74.5}
+        assert georgia["defense"] == {"rating": 1923.8, "rd": 69.1}
+
+    def test_null_for_a_model_that_rates_only_the_result(
+        self, client: TestClient
+    ) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        assert all(r["offense"] is None and r["defense"] is None for r in rows)
+
+    def test_null_for_a_team_the_model_has_no_plays_for(
+        self, client: TestClient
+    ) -> None:
+        """Alabama is in the fixture on its record alone.
+
+        A team the play-by-play index never had a game for has earned nothing
+        under the parent, and the release carries no units for it. Nulls rather
+        than the team's own rating copied into both sides, which would read as
+        a measurement.
+        """
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        alabama = next(r for r in rows if r["team"] == "Alabama")
+        assert alabama["rating"] == 1751.9
+        assert alabama["offense"] is None
+        assert alabama["defense"] is None
+
+    def test_the_units_are_not_the_rank(self, client: TestClient) -> None:
+        """The best offense in the fixture isn't the top of the table.
+
+        Georgia leads on a defense nobody else has and Ohio State has the
+        better offense, so a bug that served the team rating under both names
+        -- or sorted the units by rank -- fails here rather than looking
+        plausible.
+        """
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        assert rows[0]["team"] == "Georgia"
+        rated = [r for r in rows if r["offense"]]
+        best_offense = max(rated, key=lambda r: r["offense"]["rating"])
+        best_defense = max(rated, key=lambda r: r["defense"]["rating"])
+        assert best_offense["team"] == "Ohio State"
+        assert best_defense["team"] == "Georgia"
 
 
 class TestMovement:

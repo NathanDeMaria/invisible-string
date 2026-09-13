@@ -39,6 +39,7 @@ from cassandra.serving import (
     ModelRelease,
     TeamRating,
     TrainedThrough,
+    UnitRating,
     history_path,
     predictions_path,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "ModelRelease",
     "TeamRating",
     "TrainedThrough",
+    "UnitRating",
     "history_path",
     "predictions_path",
 ]

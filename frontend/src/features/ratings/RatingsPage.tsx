@@ -31,6 +31,15 @@ export function RatingsPage() {
   // model name, so a new predictor class doesn't need a change here.
   const showRd = (ratings.data?.ratings ?? []).some((row) => row.rd != null);
 
+  // Same rule for the two halves of a team: only the compound Glicko rates
+  // them, and asking the rows rather than the model name means a league that
+  // starts publishing one gets the columns without a change here. Measured
+  // over the whole table rather than the filtered rows, so typing into the
+  // search box can't take a column away mid-scroll.
+  const showUnits = (ratings.data?.ratings ?? []).some(
+    (row) => row.offense != null || row.defense != null,
+  );
+
   if (ratings.isError) {
     return <p className="error">No ratings published for {league} yet.</p>;
   }
@@ -80,6 +89,7 @@ export function RatingsPage() {
           rows={rows}
           league={league}
           showRd={showRd}
+          showUnits={showUnits}
           since={ratings.data?.movement_since?.date ?? null}
         />
       )}
