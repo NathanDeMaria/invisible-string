@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.distributions import router as distributions_router
 from app.api.games import router as games_router
 from app.api.history import router as history_router
 from app.api.jobs import router as jobs_router
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(games_router)
     app.include_router(team_games_router)
+    app.include_router(distributions_router)
     app.include_router(win_probability_router)
 
     @app.get("/healthz")

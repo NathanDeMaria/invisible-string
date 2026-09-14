@@ -578,3 +578,83 @@ describe("a game older than the window", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("where a game's numbers sit in the league", () => {
+  const at = (league: string, id: string) => ({
+    route: `/games/${league}/${id}`,
+    path: "/games/:league/:gameId",
+  });
+
+  /**
+   * The fixture distributions are straight ramps, so these percentiles are
+   * arithmetic rather than a restatement of the fixture: `epa_per_play` runs
+   * -1.00 to 1.00 across 101 checkpoints, so +0.3711 lands at 68.6 and rounds
+   * to the 69th, and +0.1713 lands at 58.6 and rounds to the 59th.
+   */
+  it("labels each offense's EPA with its percentile", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const table = (await screen.findByText("While it mattered")).closest(
+      "table",
+    );
+    await waitFor(() =>
+      expect(
+        within(table!).getByRole("row", { name: /Chicago Bears/ }),
+      ).toHaveTextContent("69th"),
+    );
+    expect(
+      within(table!).getByRole("row", { name: /Green Bay Packers/ }),
+    ).toHaveTextContent("59th");
+  });
+
+  it("says what the percentile is a percentile of", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // "69th" on its own is a claim with no population behind it, and the
+    // population is too long to print beside every number.
+    const label = await screen.findByTitle(/69th of 2,850 team-games/);
+    expect(label).toHaveTextContent("69th");
+    expect(label.getAttribute("title")).toContain("2021–2025");
+  });
+
+  it("labels the control share too", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // `game_control` ramps 0 to 1, so a 42% share is exactly the 42nd.
+    expect(await screen.findByText(/42nd percentile for a side/)).toBeVisible();
+  });
+
+  it("leaves the numbers unlabelled when the league has no shapes", async () => {
+    // Every basketball league is in this state permanently, and a football
+    // league is in it until the artifact is first published. The table keeps
+    // its numbers and simply says nothing about where they sit.
+    server.use(
+      http.get("/api/leagues/:league/distributions", () =>
+        HttpResponse.json({ detail: "not found" }, { status: 404 }),
+      ),
+    );
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const table = (await screen.findByText("While it mattered")).closest(
+      "table",
+    );
+    const bears = within(table!).getByRole("row", { name: /Chicago Bears/ });
+    expect(bears).toHaveTextContent("+0.37");
+    expect(bears).not.toHaveTextContent("69th");
+    expect(screen.queryByText(/percentile for a side/)).toBeNull();
+  });
+
+  it("asks for no distribution at all for a league with no fit", async () => {
+    // Skipped on the same condition as the curve. A basketball game page
+    // sending a request that can only 404 is a round trip for nothing.
+    const asked: string[] = [];
+    server.events.on("request:start", ({ request }) => {
+      if (request.url.includes("/distributions")) asked.push(request.url);
+    });
+
+    renderApp(<GamePage />, at("mens", "g0"));
+    await screen.findByRole("heading", { name: /Duke/ });
+
+    expect(asked).toEqual([]);
+  });
+});

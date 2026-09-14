@@ -128,6 +128,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/leagues/{league}/distributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Distributions
+         * @description Every metric this league has a published shape for.
+         *
+         *     The artifact goes out as it was stored, `seasons` included. A percentile
+         *     is meaningless without the population behind it, and a page that says
+         *     "83rd percentile" while declining to say what of is making a claim it
+         *     can't support -- so the window travels with the numbers rather than being
+         *     a constant the page also happens to know.
+         */
+        get: operations["get_distributions_api_leagues__league__distributions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/leagues/{league}/history": {
         parameters: {
             query?: never;
@@ -621,6 +647,33 @@ export interface components {
             /** Window Days */
             window_days: number;
         };
+        /**
+         * LeagueDistributions
+         * @description Every metric this league has a shape for, and what built them.
+         */
+        LeagueDistributions: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** League */
+            league: string;
+            /** Metrics */
+            metrics: {
+                [key: string]: components["schemas"]["MetricDistribution"];
+            };
+            /** Run Id */
+            run_id: string;
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Seasons */
+            seasons: number[];
+        };
         /** LeagueSummary */
         LeagueSummary: {
             /** League */
@@ -708,6 +761,23 @@ export interface components {
             rest_away: boolean | null;
             /** Rest Home */
             rest_home: boolean | null;
+        };
+        /**
+         * MetricDistribution
+         * @description One metric's shape, as the value at each percentile.
+         *
+         *     `unit` names what one observation was -- "team-game" for every metric here
+         *     so far -- because `n` on its own can't distinguish a metric sampled once
+         *     per game from one sampled once per side, and those are different claims
+         *     about the same season.
+         */
+        MetricDistribution: {
+            /** N */
+            n: number;
+            /** Unit */
+            unit: string;
+            /** Values */
+            values: number[];
         };
         /**
          * Metrics
@@ -1289,6 +1359,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeagueSummary"][];
+                };
+            };
+        };
+    };
+    get_distributions_api_leagues__league__distributions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                league: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeagueDistributions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

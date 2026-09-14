@@ -1,9 +1,11 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  useGetDistributionsQuery,
   useGetGameQuery,
   useGetWinProbabilityQuery,
   type GameDetail,
+  type LeagueDistributions,
 } from "../../services/api";
 import { atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
 import {
@@ -13,6 +15,7 @@ import {
   seasonRange,
 } from "./curve";
 import { EpaTable } from "./Epa";
+import { percentileLabel, percentileOf } from "./percentile";
 import { Explainer } from "./Explainer";
 import { MatchupTerms } from "./MatchupTerms";
 import {
@@ -88,6 +91,15 @@ export function GamePage() {
   // only 404.
   const curve = useGetWinProbabilityQuery(
     { league, gameId, season },
+    { skip: !detail?.has_win_probability },
+  );
+  // What the league's metrics usually look like, so the numbers below can say
+  // where this game sits. Skipped on the same condition as the curve, because
+  // these describe play-level metrics and a league with no fit has none of
+  // them -- and a 404 here costs nothing anyway: the labels simply don't
+  // render, which is the state every basketball game page is in permanently.
+  const shapes = useGetDistributionsQuery(
+    { league },
     { skip: !detail?.has_win_probability },
   );
 
@@ -275,6 +287,14 @@ export function GamePage() {
                         curve.data.adjusted_control,
                         curve.data.home,
                       )}
+                      {/* In the sentence rather than beside a number, because
+                          here there is no number to sit beside -- the share
+                          is spelled out in words. The home side's, which is
+                          the one the sentence is about. */}
+                      {controlPercentile(
+                        curve.data.control?.home,
+                        shapes.data,
+                      ) ?? ""}
                       .
                     </>
                   }
@@ -354,7 +374,7 @@ export function GamePage() {
                       doesn&rsquo;t care who won, which is why it can disagree
                       with the shares above.
                     </Explainer>
-                    <EpaTable curve={curve.data} />
+                    <EpaTable curve={curve.data} shapes={shapes.data} />
                     <Explainer summary="How to read the two columns">
                       The first weights each snap by how much the game was still
                       in doubt, so it describes <em>this game</em>; the second
@@ -399,4 +419,27 @@ function winner(game: GameDetail): string {
   if (game.home_score == null || game.away_score == null) return "";
   if (game.home_score === game.away_score) return "tied";
   return `${game.home_score > game.away_score ? game.home : game.away} won`;
+}
+
+/**
+ * The control share's percentile, as a clause to hang off the sentence.
+ *
+ * Returns null rather than an empty string when there is nothing to say, so
+ * the caller decides what a missing label looks like -- which here is the
+ * sentence ending exactly where it always did.
+ *
+ * Read against the same population the EPA labels use: a team-game, over the
+ * seasons the artifact names. Control is a share, so the two sides of one
+ * game sit either side of the median by construction -- the number is worth
+ * printing because "58% of the game" doesn't say on its own whether that is a
+ * comfortable win or a rout.
+ */
+function controlPercentile(
+  share: number | null | undefined,
+  shapes: LeagueDistributions | undefined,
+): string | null {
+  const label = percentileLabel(
+    percentileOf(shapes?.metrics["game_control"]?.values, share),
+  );
+  return label && ` — ${label} percentile for a side`;
 }

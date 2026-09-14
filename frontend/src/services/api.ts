@@ -38,6 +38,8 @@ export type LuckyBounces = components["schemas"]["LuckyBounces"];
 export type LuckySwing = components["schemas"]["LuckySwing"];
 export type EpaPerPlay = components["schemas"]["EpaPerPlay"];
 export type ExpectedPointsFit = components["schemas"]["ExpectedPointsFit"];
+export type LeagueDistributions = components["schemas"]["LeagueDistributions"];
+export type MetricDistribution = components["schemas"]["MetricDistribution"];
 
 export interface RatingsArgs {
   league: string;
@@ -197,6 +199,15 @@ export const api = createApi({
     // The team page's game list. One request for the whole career: a few
     // hundred rows, and smaller than the ratings table the page came from --
     // so the season picker filters what it already has, like the chart's.
+    // The shape of a league's metrics, for saying where one game sits among
+    // every other. One request per league rather than one per number: the
+    // page already holds the metrics, and this is the population they are
+    // measured against. 404s for every league without a play-level model,
+    // which is every basketball league -- the page then renders its numbers
+    // with no label beside them.
+    getDistributions: builder.query<LeagueDistributions, { league: string }>({
+      query: ({ league }) => `leagues/${league}/distributions`,
+    }),
     getTeamGames: builder.query<TeamGamesResponse, TeamGamesArgs>({
       query: ({ league, team, model }) => ({
         url: `leagues/${league}/teams/${encodeURIComponent(team)}/games`,
@@ -231,4 +242,5 @@ export const {
   useGetGameQuery,
   useGetWinProbabilityQuery,
   useGetTeamGamesQuery,
+  useGetDistributionsQuery,
 } = api;
