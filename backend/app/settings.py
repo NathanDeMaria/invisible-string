@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     # up and long enough that re-opening a finished one costs nothing.
     plays_cache_ttl_seconds: float = 300.0
 
+    # The per-league metric distributions (`app.distributions`), in the same
+    # artifact bucket under their own prefix. The longest TTL here by a wide
+    # margin, and the object it guards is the smallest: a hundred checkpoints
+    # per metric over five seasons barely moves when a week is added to it, so
+    # it is rebuilt about once a season rather than nightly.
+    distributions_prefix: str = "distributions/"
+    distributions_cache_ttl_seconds: float = 900.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

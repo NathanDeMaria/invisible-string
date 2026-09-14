@@ -22,6 +22,11 @@ from endgame.types import Week
 from fastapi.testclient import TestClient
 
 from app.artifacts import ArtifactStore, LocalArtifactStore, get_artifact_store
+from app.distributions import (
+    DistributionStore,
+    LocalDistributionStore,
+    get_distribution_store,
+)
 from app.games import GamesSource, LocalGamesSource, get_games_source
 from app.jobs import JobsSource, LocalJobsSource, get_jobs_source
 from app.main import create_app
@@ -91,12 +96,24 @@ def plays_source() -> PlaysSource:
 
 
 @pytest.fixture
+def distributions() -> DistributionStore:
+    """The metric shapes, which only nfl has one of in the fixtures.
+
+    Football is the only place these come from -- they describe play-level
+    metrics -- so every other league 404ing here is the state the page is
+    built to render rather than a gap in the fixtures.
+    """
+    return LocalDistributionStore(FIXTURES)
+
+
+@pytest.fixture
 def client(
     store: ReleaseStore,
     artifacts: ArtifactStore,
     jobs_source: JobsSource,
     games_source: GamesSource,
     plays_source: PlaysSource,
+    distributions: DistributionStore,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_release_store] = lambda: store
@@ -104,6 +121,7 @@ def client(
     app.dependency_overrides[get_jobs_source] = lambda: jobs_source
     app.dependency_overrides[get_games_source] = lambda: games_source
     app.dependency_overrides[get_plays_source] = lambda: plays_source
+    app.dependency_overrides[get_distribution_store] = lambda: distributions
     return TestClient(app)
 
 

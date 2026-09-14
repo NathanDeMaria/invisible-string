@@ -1,8 +1,20 @@
-import type { WinProbabilityResponse } from "../../services/api";
+import type {
+  LeagueDistributions,
+  WinProbabilityResponse,
+} from "../../services/api";
 import { perPlay } from "./format";
+import { percentileLabel, percentileOf } from "./percentile";
+import { seasonRange } from "./curve";
 
 interface Props {
   curve: WinProbabilityResponse;
+  /**
+   * The league's metric shapes, for saying where these numbers sit among
+   * every other game. Undefined for a league with none published, and for the
+   * moment before the request lands -- both of which drop the labels and
+   * leave the table exactly as it was.
+   */
+  shapes?: LeagueDistributions;
 }
 
 /**
@@ -31,7 +43,7 @@ interface Props {
  * 34 of them live" is part of the number rather than a caveat on it -- the
  * same job `GameControl.seconds` does for the pair above.
  */
-export function EpaTable({ curve }: Props) {
+export function EpaTable({ curve, shapes }: Props) {
   const epa = curve.epa;
   if (!epa) return null;
   const rows = [
@@ -74,7 +86,21 @@ export function EpaTable({ curve }: Props) {
         {rows.map((row) => (
           <tr key={row.team}>
             <th scope="row">{row.team}</th>
-            <td className="num">{perPlay(row.weighted)}</td>
+            <td className="num">
+              {perPlay(row.weighted)}
+              {/* Under the number rather than in a column of its own, the way
+                  the snap count carries its own denominator: it is the same
+                  number said again in the league's terms, not a second
+                  measurement. Only on this column -- the flat one is
+                  explicitly the estimate of the *team* rather than of this
+                  game, and a per-game percentile against it would be
+                  answering a question the column isn't asking. */}
+              <Percentile
+                shapes={shapes}
+                metric="epa_per_play"
+                value={row.weighted}
+              />
+            </td>
             <td className="num quiet">{perPlay(row.flat)}</td>
             <td className="num">
               {row.plays}
@@ -87,5 +113,42 @@ export function EpaTable({ curve }: Props) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Where one number sits in its league, as an ordinal.
+ *
+ * Renders nothing at all when it can't be placed -- no artifact for this
+ * league, no distribution for this metric, no value to look up. That is the
+ * ordinary case rather than the exceptional one (only football has these at
+ * all), so the absence has to look like a table that was always this shape
+ * rather than like something that failed to load.
+ *
+ * The population goes in the title. "83rd percentile" is a claim that means
+ * nothing without what it is 83rd *of*, and the answer -- five seasons of
+ * team-games -- is too long to print beside every number and too important to
+ * drop.
+ */
+function Percentile({
+  shapes,
+  metric,
+  value,
+}: {
+  shapes: LeagueDistributions | undefined;
+  metric: string;
+  value: number | null | undefined;
+}) {
+  const distribution = shapes?.metrics[metric];
+  const label = percentileLabel(percentileOf(distribution?.values, value));
+  if (!distribution || !label) return null;
+
+  return (
+    <span
+      className="of"
+      title={`${label} of ${distribution.n.toLocaleString()} ${distribution.unit}s, ${seasonRange(shapes.seasons)}`}
+    >
+      {label}
+    </span>
   );
 }

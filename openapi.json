@@ -869,6 +869,53 @@
         "title": "JobsResponse",
         "type": "object"
       },
+      "LeagueDistributions": {
+        "description": "Every metric this league has a shape for, and what built them.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricDistribution"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Seasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "run_id",
+          "created_at",
+          "seasons",
+          "metrics"
+        ],
+        "title": "LeagueDistributions",
+        "type": "object"
+      },
       "LeagueSummary": {
         "properties": {
           "league": {
@@ -1002,6 +1049,33 @@
           "rest_away"
         ],
         "title": "MatchupFacts",
+        "type": "object"
+      },
+      "MetricDistribution": {
+        "description": "One metric's shape, as the value at each percentile.\n\n`unit` names what one observation was -- \"team-game\" for every metric here\nso far -- because `n` on its own can't distinguish a metric sampled once\nper game from one sampled once per side, and those are different claims\nabout the same season.",
+        "properties": {
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "unit",
+          "n",
+          "values"
+        ],
+        "title": "MetricDistribution",
         "type": "object"
       },
       "Metrics": {
@@ -2287,6 +2361,46 @@
           }
         },
         "summary": "List Leagues"
+      }
+    },
+    "/api/leagues/{league}/distributions": {
+      "get": {
+        "description": "Every metric this league has a published shape for.\n\nThe artifact goes out as it was stored, `seasons` included. A percentile\nis meaningless without the population behind it, and a page that says\n\"83rd percentile\" while declining to say what of is making a claim it\ncan't support -- so the window travels with the numbers rather than being\na constant the page also happens to know.",
+        "operationId": "get_distributions_api_leagues__league__distributions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueDistributions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Distributions"
       }
     },
     "/api/leagues/{league}/history": {

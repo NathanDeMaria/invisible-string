@@ -11,6 +11,7 @@ import type {
   JobsResponse,
   LeagueSummary,
   PredictResponse,
+  LeagueDistributions,
   RatingsResponse,
   TeamGameRow,
   TeamGamesResponse,
@@ -759,6 +760,35 @@ export const winProbability: WinProbabilityResponse = {
   trained_on_this_season: false,
 };
 
+// -- what a metric usually looks like ----------------------------------
+
+/**
+ * The nfl metric shapes, as deliberately straight ramps.
+ *
+ * The real artifact is 101 checkpoints off five seasons and has the shape you
+ * would expect. These don't, on purpose: a linear ramp makes the percentile
+ * of any value arithmetic a test can state in its own assertion, so a test
+ * that says "69th" is checking the lookup rather than restating whatever the
+ * fixture happened to contain.
+ *
+ * `epa_per_play` runs -1.00 to 1.00 in steps of 0.02, and `game_control` runs
+ * 0 to 1 in steps of 0.01 -- so a control share *is* its own percentile.
+ */
+const ramp = (from: number, to: number): number[] =>
+  Array.from({ length: 101 }, (_, i) => from + ((to - from) * i) / 100);
+
+export const nflDistributions: LeagueDistributions = {
+  schema_version: 1,
+  league: "nfl",
+  run_id: "20260901-014420",
+  created_at: "2026-09-01T01:44:20Z",
+  seasons: [2021, 2022, 2023, 2024, 2025],
+  metrics: {
+    epa_per_play: { unit: "team-game", n: 2850, values: ramp(-1, 1) },
+    game_control: { unit: "team-game", n: 2850, values: ramp(0, 1) },
+  },
+};
+
 // -- one team's games -------------------------------------------------
 //
 // Mirrors backend/tests/fixtures/models/mens/glicko_tuned/predictions.json,
@@ -980,6 +1010,15 @@ export const handlers = [
       return HttpResponse.json({ detail: "not found" }, { status: 404 });
     }
     return HttpResponse.json(detailFor(row, q, old?.season));
+  }),
+  http.get("/api/leagues/:league/distributions", ({ params }) => {
+    // Only football has play-level metrics to describe, so every other league
+    // 404s permanently -- which is the state the page renders by leaving its
+    // numbers unlabelled rather than an error it reports.
+    if (params.league !== "nfl") {
+      return HttpResponse.json({ detail: "not found" }, { status: 404 });
+    }
+    return HttpResponse.json(nflDistributions);
   }),
   http.get("/api/leagues/:league/teams/:team/games", ({ params, request }) => {
     if (params.league !== "mens") {
