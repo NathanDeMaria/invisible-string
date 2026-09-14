@@ -12,7 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
-from cassandra.predictor import UnknownPredictorClass, load_predictor_class
+from cassandra.predictor import QbOutIndex, UnknownPredictorClass, load_predictor_class
+from cassandra.predictor.qb_out import QbOutFile
 from pydantic import ValidationError
 
 from app.schema import ModelRelease
@@ -53,12 +54,42 @@ def parse_release(raw: str | bytes, league: str, model: str) -> ModelRelease:
         ) from exc
 
 
+def parse_qb_out(raw: str | bytes, league: str) -> QbOutIndex:
+    """The league's published quarterback index, as the models read it.
+
+    `models/{league}/qb_out.json` is the same `QbOutFile` the sweep wrote
+    and the football models were replayed with, published beside the
+    league's models so that what a page says was true of a played game is
+    what the model priced. Validated with cassandra's own schema, like a
+    release, and for the same reason.
+    """
+    try:
+        return QbOutIndex(QbOutFile.model_validate(json.loads(raw)).games)
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ReleaseUnreadable(
+            f"{league}/qb_out.json does not match the current QbOutFile schema"
+        ) from exc
+
+
 class ReleaseStore(Protocol):
     def list_leagues(self) -> list[str]: ...
 
     def list_models(self, league: str) -> list[str]: ...
 
     def get_latest(self, league: str, model: str) -> ModelRelease: ...
+
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        """Who was missing their quarterback, by game, for a league.
+
+        Empty when the bucket has no index for the league -- which is every
+        league but football, and football before a sweep has run. Empty is
+        the index the models replay with in that case too, so the page and
+        the number agree; what it must never be is empty *because the file
+        was looked for on the wrong machine*. `QbOutIndex.for_league` reads
+        `~/.cassandra`, and a container that called it told every page both
+        quarterbacks had started for a month.
+        """
+        ...
 
 
 def pick_default(releases: Sequence[ModelRelease]) -> ModelRelease:
@@ -178,6 +209,14 @@ class LocalReleaseStore:
         except FileNotFoundError as exc:
             raise ReleaseNotFound(f"no release for {league}/{model}") from exc
         return parse_release(raw, league, model)
+
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        path = self._models_dir / league / "qb_out.json"
+        try:
+            raw = path.read_text()
+        except FileNotFoundError:
+            return QbOutIndex()
+        return parse_qb_out(raw, league)
 
 
 def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:

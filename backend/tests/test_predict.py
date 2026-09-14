@@ -15,6 +15,7 @@ have, because nothing about the response looks wrong.
 
 import httpx
 import pytest
+from cassandra.predictor import QbOutIndex
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -46,6 +47,9 @@ class _OneReleaseStore:
     def get_latest(self, league: str, model: str) -> ModelRelease:
         return self._release
 
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        return QbOutIndex()
+
 
 def _fixture_release(league: str = "mens", model: str = "glicko_tuned"):
     return LocalReleaseStore(FIXTURES).get_latest(league, model)
@@ -69,6 +73,9 @@ class _FutureBestStore:
 
     def list_models(self, league: str) -> list[str]:
         return self._inner.list_models(league)
+
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        return self._inner.get_qb_out(league)
 
     def get_latest(self, league: str, model: str) -> ModelRelease:
         release = self._inner.get_latest(league, model)

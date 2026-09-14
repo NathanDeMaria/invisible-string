@@ -139,11 +139,17 @@ def stated_sources(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupS
     )
 
 
-def played_facts(game: ScheduledGame, schedule: list[PlayedGame]) -> MatchupFacts:
+def played_facts(
+    game: ScheduledGame, schedule: list[PlayedGame], index: QbOutIndex
+) -> MatchupFacts:
     """What was true of a game that has been played.
 
-    The quarterback index is keyed by ESPN's own game id and ships in the
-    package, so that half is a dict lookup and costs no request to anything.
+    `index` is the league's published quarterback index, keyed by ESPN's own
+    game id -- `ReleaseStore.get_qb_out`, read from the bucket beside the
+    releases. Handed in rather than looked up here because the lookup that
+    used to be here, `QbOutIndex.for_league`, reads a file under
+    `~/.cassandra` that only exists on a machine that ran the sweep: in the
+    container it was empty, and every played game read "Both started".
 
     Rest is worked out by walking `schedule` -- the season this game belongs
     to -- into a real `RestLedger` and asking it, rather than by comparing
@@ -153,7 +159,6 @@ def played_facts(game: ScheduledGame, schedule: list[PlayedGame]) -> MatchupFact
     is. Re-deriving any of that here would be a second copy to drift from the
     one the model actually prices with.
     """
-    index = QbOutIndex.for_league(game.league)
     rested = _rested_side(game, schedule)
     return MatchupFacts(
         qb_out_home=index.is_out(game.game_id, game.home),

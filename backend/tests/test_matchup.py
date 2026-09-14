@@ -8,6 +8,8 @@ are asked under is exactly the thing most likely to drift.
 
 from datetime import UTC, datetime, timedelta
 
+from cassandra.predictor import QbOutIndex
+
 from app.games import PlayedGame, ScheduledGame
 from app.matchup import (
     MatchupFacts,
@@ -140,12 +142,27 @@ def played(team: str, days_before: int, completed: bool = True) -> PlayedGame:
 
 
 class TestWhatWasTrue:
-    def facts(self, *schedule: PlayedGame) -> MatchupFacts:
-        return played_facts(game(completed=True), list(schedule))
+    def facts(
+        self, *schedule: PlayedGame, index: QbOutIndex | None = None
+    ) -> MatchupFacts:
+        return played_facts(game(completed=True), list(schedule), index or QbOutIndex())
 
     def test_a_game_the_index_never_saw_has_both_quarterbacks(self) -> None:
         """Every fixture, and every game of a league with no index built."""
         facts = self.facts()
+        assert (facts.qb_out_home, facts.qb_out_away) == (False, False)
+
+    def test_the_index_says_who_was_out(self) -> None:
+        """The published index, handed in -- the one the model priced with."""
+        played = game(completed=True)
+        away_out = self.facts(index=QbOutIndex({played.game_id: [AWAY]}))
+        assert (away_out.qb_out_home, away_out.qb_out_away) == (False, True)
+
+        both = self.facts(index=QbOutIndex({played.game_id: [HOME, AWAY]}))
+        assert (both.qb_out_home, both.qb_out_away) == (True, True)
+
+    def test_a_game_the_index_knows_under_another_id_is_not_this_one(self) -> None:
+        facts = self.facts(index=QbOutIndex({"some-other-game": [HOME]}))
         assert (facts.qb_out_home, facts.qb_out_away) == (False, False)
 
     def test_an_ordinary_week_is_level_rest(self) -> None:

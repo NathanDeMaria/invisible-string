@@ -324,12 +324,15 @@ def get_game(
         day=game.day,
         prediction=prediction,
         has_win_probability=fit_for(league) is not None,
-        matchup=_facts(source, game, overrides),
+        matchup=_facts(source, store, game, overrides),
     )
 
 
 def _facts(
-    source: GamesSource, game: ScheduledGame, overrides: MatchupOverrides
+    source: GamesSource,
+    store: ReleaseStore,
+    game: ScheduledGame,
+    overrides: MatchupOverrides,
 ) -> MatchupFacts | None:
     """What the page shows beside the prediction.
 
@@ -351,7 +354,7 @@ def _facts(
     schedule = (
         [] if game.season is None else source.season_schedule(game.league, game.season)
     )
-    return played_facts(game, schedule)
+    return played_facts(game, schedule, store.get_qb_out(game.league))
 
 
 class _Stored(NamedTuple):

@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from cassandra.predictor import QbOutIndex
 from fastapi.testclient import TestClient
 
 from app.api.games import MatchupUnsupported
@@ -598,6 +599,9 @@ class Drifted:
     def list_models(self, league: str) -> list[str]:
         return self._inner.list_models(league)
 
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        return self._inner.get_qb_out(league)
+
     def get_latest(self, league: str, model: str):
         release = self._inner.get_latest(league, model)
         return release.model_copy(
@@ -657,8 +661,14 @@ class Football:
     teams are consequently basketball ones, which costs the test nothing.
     """
 
-    def __init__(self, inner: ReleaseStore, **params: float) -> None:
+    def __init__(
+        self,
+        inner: ReleaseStore,
+        qb_out: QbOutIndex | None = None,
+        **params: float,
+    ) -> None:
         self._inner = inner
+        self._qb_out = qb_out if qb_out is not None else QbOutIndex()
         self._params = params or {"qb_out_penalty": 40.0, "rest_advantage": 6.0}
 
     def list_leagues(self) -> list[str]:
@@ -672,6 +682,9 @@ class Football:
         return release.model_copy(
             update={"league": "nfl", "params": {**release.params, **self._params}}
         )
+
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        return self._qb_out
 
 
 NOTHING_STATED = {
@@ -807,6 +820,36 @@ class TestTheMatchupTerms:
             "rest_home": True,
             "rest_away": False,
         }
+
+    def test_a_played_game_reads_its_quarterbacks_off_the_published_index(
+        self, store: ReleaseStore
+    ) -> None:
+        """From the store, which reads the bucket -- not from a file on the
+        machine, which is where this used to look and never find anything.
+        The stored prediction beside it was already priced with this index;
+        the page saying "Both started" next to it was the bug."""
+        source = StubGames(
+            game(
+                league="nfl",
+                game_id="401752895",
+                days=-1,
+                completed=True,
+                home_score=21,
+                away_score=28,
+                status="STATUS_FINAL",
+            ).model_copy(update={"season": 2025})
+        )
+        index = QbOutIndex({"401752895": ["Houston"]})
+        detail = (
+            client_for(source, Football(store, qb_out=index))
+            .get("/api/games/nfl/401752895")
+            .json()
+        )
+
+        assert (detail["matchup"]["qb_out_home"], detail["matchup"]["qb_out_away"]) == (
+            False,
+            True,
+        )
 
     def test_a_played_game_with_no_schedule_cannot_say(
         self, store: ReleaseStore

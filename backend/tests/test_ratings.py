@@ -333,3 +333,22 @@ class TestMovement:
         body = client.get("/api/leagues/mens/ratings?model=elo").json()
         assert body["movement_since"] is None
         assert all(row["movement"] is None for row in body["ratings"])
+
+
+class TestTheLocalQuarterbackIndex:
+    """The local store reads `models/{league}/qb_out.json` the way the S3
+    one does, from the same layout, so a fixture directory and the bucket
+    answer the game page identically."""
+
+    def test_reads_the_fixture_index(self, store: ReleaseStore) -> None:
+        index = store.get_qb_out("ncaafb")
+        assert index.is_out("401752895", "Nebraska Cornhuskers")
+
+    def test_a_league_without_one_is_empty(self, store: ReleaseStore) -> None:
+        assert len(store.get_qb_out("mens")) == 0
+
+    def test_a_league_dir_holding_the_index_still_lists_only_models(
+        self, store: ReleaseStore
+    ) -> None:
+        """The file sits beside the model directories; it isn't one."""
+        assert "qb_out.json" not in store.list_models("ncaafb")
