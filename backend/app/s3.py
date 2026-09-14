@@ -18,8 +18,9 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+from cassandra.predictor import QbOutIndex
 
-from app.releases import ReleaseNotFound, parse_release
+from app.releases import ReleaseNotFound, parse_qb_out, parse_release
 from app.schema import ModelRelease
 
 # S3 answers a matching If-None-Match with 304, which botocore raises rather
@@ -37,6 +38,15 @@ class _Cached:
 @dataclass
 class _CachedListing:
     names: list[str]
+    checked_at: float
+
+
+@dataclass
+class _CachedIndex:
+    index: QbOutIndex
+    # Empty for a league with no index in the bucket, which then re-checks
+    # on the TTL like everything else rather than on every request.
+    etag: str
     checked_at: float
 
 
@@ -61,6 +71,7 @@ class S3ReleaseStore:
         self._lock = threading.Lock()
         self._releases: dict[tuple[str, str], _Cached] = {}
         self._listings: dict[str, _CachedListing] = {}
+        self._qb_out: dict[str, _CachedIndex] = {}
 
     # -- listing ---------------------------------------------------------
 
@@ -127,6 +138,42 @@ class S3ReleaseStore:
                 checked_at=time.monotonic(),
             )
         return release
+
+    # -- the quarterback index -------------------------------------------
+
+    def get_qb_out(self, league: str) -> QbOutIndex:
+        """`{prefix}{league}/qb_out.json`, cached the way a release is.
+
+        The same TTL and conditional GET: it is one small object that moves
+        when a publish lands, which is when the releases beside it do.
+        """
+        key = f"{self._prefix}{league}/qb_out.json"
+
+        with self._lock:
+            hit = self._qb_out.get(league)
+        if hit is not None and not self._expired(hit.checked_at):
+            return hit.index
+
+        try:
+            response = self._get_object(key, if_none_match=hit.etag if hit else None)
+        except _NotModifiedError:
+            assert hit is not None
+            with self._lock:
+                hit.checked_at = time.monotonic()
+            return hit.index
+        except ReleaseNotFound:
+            # No index for this league. Cached as empty so a basketball
+            # league's game pages don't each cost a GET that 404s.
+            index, etag = QbOutIndex(), ""
+        else:
+            index = parse_qb_out(response["Body"].read(), league)
+            etag = response.get("ETag", "")
+
+        with self._lock:
+            self._qb_out[league] = _CachedIndex(
+                index=index, etag=etag, checked_at=time.monotonic()
+            )
+        return index
 
     def _get_object(self, key: str, if_none_match: str | None) -> Any:
         kwargs: dict[str, Any] = {"Bucket": self._bucket, "Key": key}

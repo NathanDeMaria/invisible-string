@@ -31,6 +31,12 @@ def s3() -> Iterator[Any]:
                 Key=f"models/{league}/{model}/latest.json",
                 Body=path.read_bytes(),
             )
+        for path in FIXTURES.glob("*/qb_out.json"):
+            client.put_object(
+                Bucket=BUCKET,
+                Key=f"models/{path.parent.name}/qb_out.json",
+                Body=path.read_bytes(),
+            )
         yield client
 
 
@@ -177,3 +183,49 @@ class TestAgainstTheRestOfTheApp:
         """The same lowest-Brier rule the local store is tested for, so the
         two implementations can't disagree about what the API serves."""
         assert pick_default(latest_releases(store, "mens")).model == "glicko_tuned"
+
+
+class TestTheQuarterbackIndex:
+    """`models/{league}/qb_out.json`, read from the bucket beside the releases.
+
+    The point of reading it here at all: the models replay against this
+    file, and the game page says of a played game what it says. Read off the
+    container's disk instead -- `QbOutIndex.for_league` -- it was empty, and
+    every page said both quarterbacks had started.
+    """
+
+    def test_reads_a_league_s_index(self, store: S3ReleaseStore) -> None:
+        index = store.get_qb_out("ncaafb")
+        assert index.is_out("401752895", "Nebraska Cornhuskers")
+        assert not index.is_out("401752895", "UCLA Bruins")
+
+    def test_a_league_without_one_is_empty_not_an_error(
+        self, store: S3ReleaseStore
+    ) -> None:
+        assert len(store.get_qb_out("mens")) == 0
+
+    def test_a_missing_index_is_cached_like_a_present_one(self, s3: Any) -> None:
+        """A basketball game page shouldn't cost a 404 per request."""
+        client = CountingClient(s3)
+        store = S3ReleaseStore(bucket=BUCKET, client=client, ttl_seconds=60)
+        store.get_qb_out("mens")
+        store.get_qb_out("mens")
+        assert client.get_object_calls == 1
+
+    def test_revalidates_conditionally_after_the_ttl(self, s3: Any) -> None:
+        client = CountingClient(s3)
+        store = S3ReleaseStore(bucket=BUCKET, client=client, ttl_seconds=0)
+        store.get_qb_out("ncaafb")
+        store.get_qb_out("ncaafb")
+        assert client.get_object_calls == 2
+        assert client.conditional_calls == 1
+
+    def test_picks_up_a_new_index_after_the_ttl(self, s3: Any) -> None:
+        store = S3ReleaseStore(bucket=BUCKET, client=s3, ttl_seconds=0)
+        assert not store.get_qb_out("ncaafb").is_out("g2", "LSU Tigers")
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="models/ncaafb/qb_out.json",
+            Body=json.dumps({"league": "ncaafb", "games": {"g2": ["LSU Tigers"]}}),
+        )
+        assert store.get_qb_out("ncaafb").is_out("g2", "LSU Tigers")
