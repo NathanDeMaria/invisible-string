@@ -2631,3 +2631,110 @@ and the EPA table are the page, not commentary on it.
 
 [lucky]: https://github.com/NathanDeMaria/the-lucky-ones
 [lucky-split]: https://github.com/NathanDeMaria/the-lucky-ones/pull/1
+
+---
+
+## 17. Reaching it from the keyboard
+
+Both of the pages this app is mostly about are lists you scan: ~360 teams in a
+league, a night's slate of games. And it is a thing someone opens every
+morning rather than once — which is the profile where a hand leaving the
+keyboard costs something, and where a reader will learn four letters if the
+four letters are worth learning.
+
+| key | where | what |
+|---|---|---|
+| `g` `r` `m` `j` | anywhere | Games, Ratings, Matchup, Job health |
+| `?` | anywhere | the shortcut sheet |
+| `Tab` `↑` `↓` `Home` `End` | a table of teams or games | move through the rows |
+| `Enter` | a row | open the team or the game |
+| `/` | the leaderboard | the filter box |
+| `↓` / `Esc` | the filter box | into the rows / clear it |
+| `1`…`9` | the leaderboard | switch league |
+| `←` `→` `t` | games | a day back, a day on, back to today |
+| `1`…`9` `0` | games | one league, or all of them |
+
+### 17.1 Letters, not chords
+
+`g` goes to Games rather than `g` then `g`, and nothing is behind Ctrl or Cmd.
+A prefixed chord is what an app reaches for when it has run out of letters,
+and this one has four sections. Ctrl and Cmd belong to the browser and the OS:
+binding Cmd-R here would cost reload to buy something `r` already does.
+
+The price of single letters is that they are only available while the reader
+isn't typing, which is the one rule the dispatcher enforces for everybody
+(`useKeyboard`). Three things are never a shortcut: a keystroke going into a
+text field, where `g` means the letter g; a chord; and a key something nearer
+the keystroke has already handled, which is how a table row's `↑` moves a row
+without the page also scrolling.
+
+A date input counts as typing, and that is the useful case rather than an edge
+one — inside it the arrows move between the month and the day, and stepping
+the whole page instead would be the one place `←` was wrong. A checkbox
+doesn't count: it eats space, not letters, so the shortcuts still work from
+the neutral-site toggle.
+
+### 17.2 The digits mean a league, in whichever sense the page has one
+
+`1` is the first league both on the leaderboard and on the games page, but the
+two are different actions: under Ratings it is a *tab*, and it carries the
+panel with it the way the tabs themselves do, so switching league while
+comparing two matchups lands on the matchup. On the games page it is the
+league *filter*, which narrows a slate that is already loaded, and `0` is the
+"All leagues" at the top of the same select.
+
+So each is bound by the page that owns the meaning, and the section keys back
+off where a page has its own: the App binds digits only under Ratings. The
+alternative — one global binding that asks which page it is on — puts the
+games page's league list in the header's hands, where it isn't.
+
+The same split settles the arrows. `↑` and `↓` belong to the rows, because a
+list is what they are for; `←` and `→` step the day, and keep doing it from
+inside the table, where nothing else wanted them.
+
+### 17.3 A row is the tab stop, not the link inside it
+
+Every row of every table of teams or games is focusable, and arrows, `Home`,
+`End` and `Enter` work on the focused one (`useRowKeys`).
+
+**It costs no stops.** Each of these rows already had exactly one thing in the
+tab order — the link in its first cell, into the team's page or the game's. So
+the row taking that place leaves a 360-team leaderboard exactly as long to tab
+past as it was, and the link goes to `tabIndex={-1}`. What changes is that the
+focused thing is now the whole line, which is what a reader is reading, and
+that there is somewhere to hang `Enter` and the arrows.
+
+**Not a roving `tabIndex`.** The ARIA grid pattern makes the table one tab
+stop and the arrows the only way to move inside it. That is the right trade
+for a spreadsheet and the wrong one here: it would take away the plain `Tab`
+walk down the teams, which is what a keyboard reader tries first, to save
+presses in a table nobody has to tab through anyway.
+
+**Movement reads the DOM, not an index.** Filtering the leaderboard or
+stepping a day rebuilds the rows underneath the focused one, and a remembered
+index would point at whatever moved into its place. `nextElementSibling` is
+the order as it actually is.
+
+The leaderboard's filter and its first row hand focus back and forth: `/` to
+type, `↓` or `Enter` into the names it narrowed, `↑` from the first of them
+back into the box. Narrowing and scanning are one gesture, and `Esc` empties
+the filter rather than only leaving it — which is what a search field's `Esc`
+means everywhere else, and a second press gives the page back its keys.
+
+### 17.4 The sheet is the documentation
+
+`?` opens the list of every shortcut, and it is a header button too. A set of
+shortcuts whose only way in is one of the shortcuts is a set most readers
+never find out about.
+
+The list lives in one file (`features/keys/shortcuts.ts`) while each key is
+bound where it acts, because what `1` does depends on which page is asking
+(§17.2). That is a seam, and worth naming: a key added to a page without a
+line in that file is a key nobody will find. The trade is against binding
+everything centrally, which would mean the header owning state that belongs to
+the pages — a worse coupling than a list that has to be kept honest.
+
+While the sheet is up the other keys are held off. Navigating out from behind
+a modal leaves the reader on a page they can't see, under a sheet describing
+the one they left. Closing it puts focus back on whatever it was taken from,
+which for a `?` pressed while walking the leaderboard is the row they were on.

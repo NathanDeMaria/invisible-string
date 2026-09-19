@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { useKeyboard } from "../keys/useKeyboard";
 import { useGetGamesQuery, type GameRow } from "../../services/api";
 import { type AtsCall, atsCall, modelEdge } from "./ats";
 import { GameTable } from "./GameTable";
@@ -175,6 +176,31 @@ export function GamesPage() {
       byLeagueThenRating(league ? all.filter((g) => g.league === league) : all),
     [all, league],
   );
+
+  // The controls above, as keys. A slate is read a day at a time, so the day
+  // is what the arrows move -- and they keep working from inside the table,
+  // where the up and down ones are already spoken for by the rows. `t` is the
+  // Today button; the digits are the league select, in the order it lists
+  // them, with `0` for the "All leagues" at its top.
+  //
+  // Each one is bound only where the control it mirrors would be usable: at
+  // the horizon the arrows are disabled and so are these, and pressing a
+  // digit for a league that isn't playing would empty the page with no
+  // visible cause.
+  useKeyboard({
+    ArrowLeft: offset > -MAX_BACK ? () => goTo(shiftDay(day, -1)) : undefined,
+    ArrowRight: offset < MAX_AHEAD ? () => goTo(shiftDay(day, 1)) : undefined,
+    t: offset !== 0 ? () => goTo(today) : undefined,
+    "0": () => update({ league: null }),
+    ...Object.fromEntries(
+      leagues
+        .slice(0, 9)
+        .map((name, index) => [
+          String(index + 1),
+          () => update({ league: name }),
+        ]),
+    ),
+  });
 
   const priced = listed.some((game) => modelEdge(game) !== null);
   // Every finished, lined game on the page, graded. Worth counting now that

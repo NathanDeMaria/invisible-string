@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -5,11 +6,14 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 
 import { GamePage } from "./features/games/GamePage";
 import { GamesPage } from "./features/games/GamesPage";
 import { JobsPage } from "./features/jobs/JobsPage";
+import { ShortcutsDialog } from "./features/keys/ShortcutsDialog";
+import { useKeyboard } from "./features/keys/useKeyboard";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
@@ -18,7 +22,9 @@ import { useGetLeaguesQuery } from "./services/api";
 
 export function App() {
   const { data: leagues } = useGetLeaguesQuery();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Changing league keeps the panel you were looking at. Sending someone
   // comparing two leagues' matchups back to the leaderboard every time would
@@ -36,10 +42,55 @@ export function App() {
       ? "jobs"
       : "ratings";
 
+  // Which league `r` and `m` mean. Every page that is about one says so
+  // somewhere -- in the path under the league tabs, in the path of a game,
+  // in the games page's filter -- and the ones that aren't about any (jobs,
+  // an unfiltered slate) should send you back to the league you were last
+  // looking at rather than to the default one.
+  //
+  // Written during render, like the games page's last-rendered day and for
+  // the same reason: an effect would settle it a pass late, which here is a
+  // keystroke that goes to the wrong league the first time it's pressed.
+  const remembered = useRef("mens");
+  const here = leagueIn(pathname, search);
+  if (here) remembered.current = here;
+  const league = remembered.current;
+
+  // The section keys. Held off while the help sheet is open, which has only
+  // one key of its own and shouldn't have every other one firing behind it.
+  useKeyboard(
+    {
+      g: () => navigate("/games"),
+      r: () => navigate(`/${league}/ratings`),
+      m: () => navigate(`/${league}/matchup`),
+      j: () => navigate("/jobs"),
+      "?": () => setHelpOpen(true),
+      // A league a press at a time, in the order the tabs are in. Only under
+      // Ratings: on the games page the same digits pick the league *filter*,
+      // which is that page's own binding, and on /jobs there is no league to
+      // pick.
+      ...(section === "ratings" ? leagueKeys(leagues, panel, navigate) : {}),
+    },
+    !helpOpen,
+  );
+
   return (
     <div className="app">
       <header>
-        <h1>invisible string</h1>
+        <div className="titlebar">
+          <h1>invisible string</h1>
+          {/* The sheet is reachable by mouse too. A set of shortcuts whose
+              only way in is one of the shortcuts is a set most readers never
+              find out about. */}
+          <button
+            type="button"
+            className="keys-hint"
+            aria-haspopup="dialog"
+            onClick={() => setHelpOpen(true)}
+          >
+            <kbd>?</kbd> Shortcuts
+          </button>
+        </div>
         <nav aria-label="Section">
           <NavLink to="/games">Games</NavLink>
           <Link
@@ -85,6 +136,44 @@ export function App() {
           </Route>
         </Routes>
       </main>
+
+      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );
+}
+
+/**
+ * The league a URL is about, or null where it is about none.
+ *
+ * The games page is two of those cases at once: a game's path names its
+ * league, and the slate's `?league=` names the one being looked at. Both are
+ * a league the reader is currently in, which is all this is asked for.
+ */
+function leagueIn(pathname: string, search: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "games") {
+    return parts[1] ?? new URLSearchParams(search).get("league") ?? null;
+  }
+  if (!parts[0] || parts[0] === "jobs") return null;
+  return parts[0];
+}
+
+/**
+ * `1` through `9`, bound to the league tabs in the order they're drawn.
+ *
+ * The panel comes along for the ride, for the same reason the tabs carry it:
+ * switching league while comparing two matchups should land on the matchup.
+ * A digit past the end of the list binds to nothing rather than to the last
+ * league, so a tenth press does nothing instead of something surprising.
+ */
+function leagueKeys(
+  leagues: { league: string }[] | undefined,
+  panel: string,
+  go: (to: string) => void,
+): Record<string, () => void> {
+  const bindings: Record<string, () => void> = {};
+  (leagues ?? []).slice(0, 9).forEach((entry, index) => {
+    bindings[String(index + 1)] = () => go(`/${entry.league}/${panel}`);
+  });
+  return bindings;
 }

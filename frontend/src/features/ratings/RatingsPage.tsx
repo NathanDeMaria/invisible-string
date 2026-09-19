@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useParams } from "react-router-dom";
 
 import type { RootState } from "../../app/store";
+import { useKeyboard } from "../keys/useKeyboard";
 import { useGetLeaguesQuery, useGetRatingsQuery } from "../../services/api";
 import { weekEnding } from "./movement";
 import { RatingsTable } from "./RatingsTable";
@@ -15,6 +16,18 @@ export function RatingsPage() {
 
   const leagues = useGetLeaguesQuery();
   const ratings = useGetRatingsQuery({ league, model: model ?? undefined });
+
+  // The filter and the top of the table, which hand focus to each other: `/`
+  // to type, Down to step into the names it left, Up from the first of them
+  // to go back to typing. A leaderboard is a thing you narrow and then walk,
+  // and those are the two halves of doing that without a mouse.
+  const filter = useRef<HTMLInputElement>(null);
+  const firstRow = useRef<HTMLTableRowElement>(null);
+  const toFilter = useCallback(() => filter.current?.focus(), []);
+
+  useKeyboard({
+    "/": () => filter.current?.focus(),
+  });
 
   const models =
     leagues.data?.find((entry) => entry.league === league)?.models ?? [];
@@ -48,11 +61,29 @@ export function RatingsPage() {
     <>
       <div className="controls">
         <input
+          ref={filter}
           type="search"
           placeholder="Filter teams"
           value={search}
           aria-label="Filter teams"
           onChange={(e) => dispatch(searchChanged(e.target.value))}
+          onKeyDown={(e) => {
+            // Down leaves the box for the rows it just narrowed, and Enter
+            // does the same -- a filter you have finished typing into has
+            // nothing else to submit, and the teams are what you wanted.
+            if (e.key === "ArrowDown" || e.key === "Enter") {
+              e.preventDefault();
+              firstRow.current?.focus();
+            }
+            // Escape empties the filter rather than only leaving it, which is
+            // what a search field's Escape means everywhere else. A second
+            // press, on an already-empty box, gives the page back the keys.
+            if (e.key === "Escape") {
+              e.preventDefault();
+              if (search) dispatch(searchChanged(""));
+              else e.currentTarget.blur();
+            }
+          }}
         />
         <select
           aria-label="Model"
@@ -91,6 +122,8 @@ export function RatingsPage() {
           showRd={showRd}
           showUnits={showUnits}
           since={ratings.data?.movement_since?.date ?? null}
+          firstRowRef={firstRow}
+          onExitTop={toFilter}
         />
       )}
     </>
