@@ -13,6 +13,7 @@ import {
   type UnitRating,
 } from "../../services/api";
 import { probability, spread } from "../games/format";
+import { useRowKeys } from "../keys/useRowKeys";
 import {
   movementTitle,
   placeMove,
@@ -277,6 +278,10 @@ function Unit({
  * who was at home on each line.
  */
 function GameTable({ league, rows }: { league: string; rows: TeamGameRow[] }) {
+  // Walked with the arrows and opened with Enter, like every other table of
+  // games on the site (`useRowKeys`).
+  const rowKeys = useRowKeys();
+
   return (
     <table className="ratings">
       <caption className="meta">
@@ -301,23 +306,23 @@ function GameTable({ league, rows }: { league: string; rows: TeamGameRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row.game_id}>
-            <td>
-              <Link
-                className="job-name"
-                to={`/games/${league}/${row.game_id}?season=${row.season}`}
-              >
-                {row.neutral ? "vs" : row.home ? "vs" : "@"} {row.opponent}
-              </Link>
-              <span className="when">{gameDay(row.date)}</span>
-            </td>
-            <Result row={row} />
-            <td className="num">{probability(row.win_prob)}</td>
-            <td className="num">{spread(row.predicted_spread)}</td>
-            <td className="num">{spread(row.market_spread)}</td>
-          </tr>
-        ))}
+        {rows.map((row) => {
+          const path = `/games/${league}/${row.game_id}?season=${row.season}`;
+          return (
+            <tr key={row.game_id} {...rowKeys(path)}>
+              <td>
+                <Link className="job-name" tabIndex={-1} to={path}>
+                  {row.neutral ? "vs" : row.home ? "vs" : "@"} {row.opponent}
+                </Link>
+                <span className="when">{gameDay(row.date)}</span>
+              </td>
+              <Result row={row} />
+              <td className="num">{probability(row.win_prob)}</td>
+              <td className="num">{spread(row.predicted_spread)}</td>
+              <td className="num">{spread(row.market_spread)}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

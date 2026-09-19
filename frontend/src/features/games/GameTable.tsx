@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { useRowKeys } from "../keys/useRowKeys";
 import type { GameRow } from "../../services/api";
 import { type AtsResult, atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
 import {
@@ -46,6 +47,10 @@ interface Props {
  * has one now (`app.artifacts`), so the dagger is gone rather than dimmed.
  */
 export function GameTable({ games }: Props) {
+  // A slate is a list you walk: Tab or the arrows down the rows, Enter into
+  // the game -- the same gesture the leaderboard takes (`useRowKeys`).
+  const rowKeys = useRowKeys();
+
   return (
     <table className="ratings games">
       <thead>
@@ -71,16 +76,14 @@ export function GameTable({ games }: Props) {
           // The same disagreement the mark grades, said before there's
           // anything to grade -- which is the state most of this page is in.
           const edge = modelEdge(game);
+          const path = `/games/${game.league}/${game.game_id}`;
           return (
-            <tr key={`${game.league}-${game.game_id}`}>
+            <tr key={`${game.league}-${game.game_id}`} {...rowKeys(path)}>
               <td>
                 {/* The matchup is the link, because it is what the row is
                     about -- and because a separate "details" affordance in a
                     four-column table is a fifth column. */}
-                <Link
-                  className="job-name"
-                  to={`/games/${game.league}/${game.game_id}`}
-                >
+                <Link className="job-name" tabIndex={-1} to={path}>
                   {game.away} {game.neutral ? "vs" : "@"} {game.home}
                 </Link>
                 <span className="when">

@@ -1,5 +1,7 @@
+import type { Ref } from "react";
 import { Link } from "react-router-dom";
 
+import { useRowKeys } from "../keys/useRowKeys";
 import type { TeamRow, UnitRating } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
 
@@ -21,6 +23,10 @@ interface Props {
    * a season. Null drops the column rather than filling it with dashes.
    */
   since: string | null;
+  /** The row the filter box's Down key hands focus to. */
+  firstRowRef?: Ref<HTMLTableRowElement>;
+  /** Where Up goes from that row -- back to the filter box. */
+  onExitTop?: () => void;
 }
 
 export function RatingsTable({
@@ -29,7 +35,14 @@ export function RatingsTable({
   showRd,
   showUnits,
   since,
+  firstRowRef,
+  onExitTop,
 }: Props) {
+  // Every row is a tab stop and an arrow stop, and Enter opens the team --
+  // see `useRowKeys`. Called before the early return below, because a hook
+  // has to be.
+  const rowKeys = useRowKeys({ onExitTop });
+
   if (rows.length === 0) {
     return <p className="empty">No teams match that search.</p>;
   }
@@ -71,17 +84,25 @@ export function RatingsTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row.team}>
+        {rows.map((row, index) => (
+          <tr
+            key={row.team}
+            ref={index === 0 ? firstRowRef : undefined}
+            {...rowKeys(teamPath(league, row.team))}
+          >
             <td className="num rank">{row.rank}</td>
             <td>
               {/* The name is the way into the team's own page, the same way a
                   matchup is the way into a game's. Coloured like text rather
                   than like a link: a table whose every second cell is blue
                   reads as a page of links rather than as a leaderboard. */}
+              {/* Out of the tab order, because the row it sits in is in it:
+                  one stop per team either way, and the focused thing is the
+                  whole line rather than six words of it. */}
               <Link
                 className="job-name"
-                to={`/${league}/teams/${encodeURIComponent(row.team)}`}
+                tabIndex={-1}
+                to={teamPath(league, row.team)}
               >
                 {row.team}
               </Link>
@@ -103,6 +124,11 @@ export function RatingsTable({
       </tbody>
     </table>
   );
+}
+
+/** Where a team's name leads, and where Enter on its row goes. */
+function teamPath(league: string, team: string): string {
+  return `/${league}/teams/${encodeURIComponent(team)}`;
 }
 
 /**
