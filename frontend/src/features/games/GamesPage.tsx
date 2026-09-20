@@ -22,8 +22,8 @@ import {
  * rather than a retention one. The picker is bounded by them rather than left
  * to offer days the endpoint would refuse.
  */
-const MAX_BACK = 7;
-const MAX_AHEAD = 7;
+const MAX_BACK = 10;
+const MAX_AHEAD = 10;
 
 /** One day's games, and which day they are -- what the page renders from. */
 interface Day {

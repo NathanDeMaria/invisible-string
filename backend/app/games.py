@@ -66,8 +66,8 @@ DEFAULT_DAYS_AHEAD = 1
 # odds side lists and reads a couple of objects per league per day, and this
 # page is about the days around today. Ask for a month and you want a
 # different page.
-MAX_DAYS_BACK = 7
-MAX_DAYS_AHEAD = 7
+MAX_DAYS_BACK = 10
+MAX_DAYS_AHEAD = 10
 
 
 class GamesUnavailable(RuntimeError):
