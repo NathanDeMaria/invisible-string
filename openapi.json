@@ -2026,7 +2026,7 @@
             "schema": {
               "default": 2,
               "description": "Days of finished games to include, counted in US Central time.",
-              "maximum": 7,
+              "maximum": 10,
               "minimum": 0,
               "title": "Back",
               "type": "integer"
@@ -2040,7 +2040,7 @@
             "schema": {
               "default": 1,
               "description": "Days of upcoming games beyond today. 0 is the rest of today.",
-              "maximum": 7,
+              "maximum": 10,
               "minimum": 0,
               "title": "Ahead",
               "type": "integer"
