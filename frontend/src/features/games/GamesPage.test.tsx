@@ -90,19 +90,19 @@ describe("GamesPage", () => {
     // grey out what the endpoint would refuse rather than let the page find
     // out afterwards.
     const field = await screen.findByLabelText("Day");
-    expect(field).toHaveAttribute("min", isoDay(-7));
-    expect(field).toHaveAttribute("max", isoDay(7));
+    expect(field).toHaveAttribute("min", isoDay(-10));
+    expect(field).toHaveAttribute("max", isoDay(10));
   });
 
   it("spends the arrows at the horizon rather than hiding them", async () => {
-    const { unmount } = renderApp(<GamesPage />, on(-7));
+    const { unmount } = renderApp(<GamesPage />, on(-10));
     await screen.findByRole("heading", { level: 3 });
 
     expect(screen.getByLabelText("Previous day")).toBeDisabled();
     expect(screen.getByLabelText("Next day")).toBeEnabled();
     unmount();
 
-    renderApp(<GamesPage />, on(7));
+    renderApp(<GamesPage />, on(10));
     await screen.findByRole("heading", { level: 3 });
     expect(screen.getByLabelText("Next day")).toBeDisabled();
     expect(screen.getByLabelText("Previous day")).toBeEnabled();
