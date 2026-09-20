@@ -17,10 +17,12 @@ import {
 } from "./format";
 
 /**
- * How far either side of today the API will answer for -- the backend's
- * `MAX_DAYS_BACK` and `MAX_DAYS_AHEAD` (DESIGN.md §13.2), which are a cost cap
- * rather than a retention one. The picker is bounded by them rather than left
- * to offer days the endpoint would refuse.
+ * How far either side of today the window this page preloads reaches -- the
+ * backend's `MAX_DAYS_BACK` and `MAX_DAYS_AHEAD` (DESIGN.md §13.2), a cost cap
+ * on the *window* rather than a retention ceiling or a limit on what a single
+ * day can answer for. The arrows stay inside it, stepping through days the
+ * window already covers; the date field does not, and a day past it costs its
+ * own `day=` request instead (`app.seasons.AwsGamesSource.day`).
  */
 const MAX_BACK = 10;
 const MAX_AHEAD = 10;
@@ -84,16 +86,23 @@ export function GamesPage() {
   const offset = daysBetween(today, day);
   const league = params.get("league") ?? ALL;
 
-  // One day, asked for as the offset the endpoint takes -- it has no `day=`,
-  // and it counts from its own today. Today itself is `back=0&ahead=0`, which
-  // is the cheapest window it can build and is now what the page opens on.
-  // A day further out costs the days in between, which is the price of not
-  // adding a parameter; nothing here can ask for more than the old picker's
-  // widest window did.
-  const games = useGetGamesQuery({
-    back: offset < 0 ? -offset : 0,
-    ahead: offset > 0 ? offset : 0,
-  });
+  // Two ways to ask for a day, at two different costs.
+  //
+  // Inside the horizon, as the offset the window endpoint takes: today itself
+  // is `back=0&ahead=0`, the cheapest window it can build, and a day further
+  // out costs the days in between -- which is why this stays capped at
+  // `MAX_BACK`/`MAX_AHEAD` rather than growing with wherever the picker sends
+  // it. Past the horizon, as a single `day=` instead: that read costs the
+  // same regardless of distance from today (`app.seasons.AwsGamesSource.day`),
+  // which is what lets the date field reach further than the window ever
+  // preloads -- at the price of its own request rather than one already
+  // covering nearby days.
+  const inWindow = offset >= -MAX_BACK && offset <= MAX_AHEAD;
+  const games = useGetGamesQuery(
+    inWindow
+      ? { back: offset < 0 ? -offset : 0, ahead: offset > 0 ? offset : 0 }
+      : { day },
+  );
 
   // Replace rather than push, like the matchup page: stepping through days is
   // adjusting the view you're on, not moving to another one, and a history
@@ -234,12 +243,10 @@ export function GamesPage() {
               id="games-day"
               type="date"
               value={day}
-              // The horizon, stated to the control rather than only enforced
-              // after the fact: the native picker greys out what the API
-              // can't answer for, which is a better refusal than a page that
-              // silently snaps back to today.
-              min={shiftDay(today, -MAX_BACK)}
-              max={shiftDay(today, MAX_AHEAD)}
+              // No min/max: unlike the arrows, this field isn't limited to the
+              // preloaded window. A day outside it costs its own `day=`
+              // request rather than one already covering nearby days, but
+              // it's still a day this page can answer for.
               onChange={(e) => goTo(e.target.value)}
             />
             <button
@@ -400,17 +407,14 @@ export function GamesPage() {
 /**
  * The day a `?day=` names, or today.
  *
- * Today for anything the API can't answer: a value that isn't a date, and a
- * date outside the week either side it serves. The second one is a link that
- * outlived its horizon rather than a typo, and today is a better answer to it
- * than an empty page that looks like a broken one.
+ * Today only for a value that isn't a date -- `2026-02-31` matches the shape
+ * and isn't one, and `Date` would roll it into March rather than refuse it,
+ * so `parseDay` checks by round trip instead. A day outside the window's
+ * horizon is no longer turned back here: it costs a `day=` request instead of
+ * a windowed one (see where `games` is built above), not a redirect to today.
  */
 function dayIn(raw: string | null, today: string): string {
-  const day = parseDay(raw);
-  if (day === null) return today;
-  const delta = daysBetween(today, day);
-  if (delta < -MAX_BACK || delta > MAX_AHEAD) return today;
-  return day;
+  return parseDay(raw) ?? today;
 }
 
 /**

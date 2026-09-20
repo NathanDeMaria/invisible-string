@@ -177,6 +177,19 @@ class PlayedGame(NamedTuple):
 class GamesSource(Protocol):
     def window(self, days_back: int, days_ahead: int) -> GameWindow: ...
 
+    def day(self, target: date) -> list["ScheduledGame"]:
+        """Every game of one specific day, reachable past the window's horizon.
+
+        The whole-day counterpart to `find_in_season`: a reader who has typed
+        a date rather than clicked to a known game has no id to look up, so
+        this walks the same season files `window` does but pools exactly the
+        one day asked for. Same trade as `find_in_season` makes for a single
+        game -- a read this cheap is safe to make regardless of how far the
+        day is from today, which is what lets the picker offer more days than
+        `window` could ever be asked to preload. See `AwsGamesSource.day`.
+        """
+        ...
+
     def find_in_season(
         self, league: str, game_id: str, season: int
     ) -> "ScheduledGame | None":
@@ -311,6 +324,19 @@ class LocalGamesSource:
         in_window = [g for g in shifted if since <= g.day <= until]
         in_window.sort(key=lambda g: (g.start, g.league, g.game_id))
         return GameWindow(since=since, until=until, games=in_window)
+
+    def day(self, target: date) -> list[ScheduledGame]:
+        """The fixture's own games for one day, shifted like `window`'s are.
+
+        No horizon to mind locally -- the fixture is small enough that
+        filtering all of it is free, the same shortcut `find_in_season` takes.
+        """
+        games = self._fixture()
+        offset = _fixture_offset(games)
+        shifted = [_shift(game, offset) for game in games]
+        in_day = [g for g in shifted if g.day == target]
+        in_day.sort(key=lambda g: (g.start, g.league, g.game_id))
+        return in_day
 
     def find_in_season(
         self, league: str, game_id: str, season: int

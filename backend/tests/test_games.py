@@ -86,6 +86,11 @@ class StubGames:
         since, until = window_bounds(days_back, days_ahead)
         return GameWindow(since=since, until=until, games=self._games)
 
+    def day(self, target: date) -> list[ScheduledGame]:
+        """Whatever the test handed it, filtered to one day -- the same
+        games `window` draws from, not the archive `find_in_season` reaches."""
+        return [g for g in self._games if g.day == target]
+
     def find_in_season(
         self, league: str, game_id: str, season: int
     ) -> ScheduledGame | None:
@@ -364,12 +369,34 @@ class TestGamesEndpoint:
         assert client.get("/api/games", params={"back": 30}).status_code == 422
         assert client.get("/api/games", params={"ahead": 30}).status_code == 422
 
+    def test_a_specific_day_is_not_capped(self, client: TestClient) -> None:
+        """`day=` is the way past `back`/`ahead`'s ceiling -- a single day
+        costs the same to read regardless of how far it is from today, so
+        nothing here should refuse it the way a wide `back` does."""
+        far_back = (date.today() - timedelta(days=400)).isoformat()
+        response = client.get("/api/games", params={"day": far_back})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["since"] == body["until"] == far_back
+
+    def test_a_day_answers_with_just_that_days_games(self, store: ReleaseStore) -> None:
+        old = game(game_id="old-one", days=-90)
+        today = game(game_id="today-one", days=0)
+        client = client_for(StubGames(old, today), store)
+
+        body = client.get("/api/games", params={"day": old.day.isoformat()}).json()
+
+        assert {g["game_id"] for g in body["games"]} == {"old-one"}
+
     def test_unreadable_upstream_is_a_502(self, store: ReleaseStore) -> None:
         """Not an empty 200: an offseason and an AccessDenied must not render
         the same, or the page reports a broken bucket as a quiet evening."""
 
         class Broken:
             def window(self, days_back: int, days_ahead: int) -> GameWindow:
+                raise GamesUnavailable("could not read s3: AccessDenied")
+
+            def day(self, target: date) -> list[ScheduledGame]:
                 raise GamesUnavailable("could not read s3: AccessDenied")
 
             def find_in_season(

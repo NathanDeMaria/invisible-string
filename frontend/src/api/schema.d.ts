@@ -1174,6 +1174,8 @@ export interface operations {
                 back?: number;
                 /** @description Days of upcoming games beyond today. 0 is the rest of today. */
                 ahead?: number;
+                /** @description A specific day, in place of back/ahead. Not bounded by MAX_DAYS_BACK/MAX_DAYS_AHEAD: a single day costs the same to read no matter how far it is from today (see app.seasons.AwsGamesSource.day), which is what lets the picker offer more days than the window preloads. back and ahead are ignored when this is given. */
+                day?: string | null;
             };
             header?: never;
             path?: never;

@@ -66,6 +66,11 @@ _SEASON_YEARS = 2
 # id rather than because the rows are large.
 MAX_CACHED_ROWS = 256
 
+# How many single days outside the window to keep built. Same shape as
+# `MAX_CACHED_ROWS`, one size down: a day is a handful of `ScheduledGame`s
+# rather than one, and the key is a date instead of a game id.
+MAX_CACHED_DAYS = 64
+
 # What S3 says when the object isn't there. `get_object` raises for both, and
 # a season a link names but nothing has written is a miss rather than the
 # outage `_upstream` turns a ClientError into.
@@ -97,6 +102,10 @@ class AwsGamesSource:
         # One row per old game anybody has opened a page for. See
         # `find_in_season` for why this is rows and the one above is seasons.
         self._rows: OrderedDict[tuple[str, str], ScheduledGame] = OrderedDict()
+        # One entry per day anybody has picked outside the window. See `day`
+        # for why this is separate from `_windows` and `_seasons` rather than
+        # a wider read through either of them.
+        self._days: OrderedDict[date, list[ScheduledGame]] = OrderedDict()
 
     def window(self, days_back: int, days_ahead: int) -> GameWindow:
         cached = self._cached(days_back, days_ahead)
@@ -170,6 +179,70 @@ class AwsGamesSource:
             while len(self._rows) > MAX_CACHED_ROWS:
                 self._rows.popitem(last=False)
         return row
+
+    def day(self, target: date) -> list[ScheduledGame]:
+        """Every game of one day, read and kept on its own.
+
+        `window` can only answer this by widening the horizon it reads every
+        season file for, and a wider horizon is exactly the cost `_read_season`
+        exists to cap -- a season file is the whole schedule, and building a
+        row for every game between here and a month-old date is most of the
+        way back to the outage that made the horizon a week wide in the first
+        place. This pools exactly the one day asked for instead, out of each
+        season file in turn, the same trade `find_in_season` makes for a
+        single game: the read is "one day's rows," never "everything between
+        here and today," so it costs the same whether the day is next week or
+        last year.
+
+        Checked against the window's own cache first, which answers for free
+        when the day is already inside it -- the ordinary case right at the
+        horizon's edge. Past that, this keeps *its own* small cache in `_days`
+        rather than writing a one-day horizon into `_seasons`: that cache
+        remembers the *window's* span, and a narrower read stored over it
+        would make the next `window()` call think its wider span is no longer
+        covered, forcing a re-read there for every read here.
+
+        Odds are read for the single day, the same one-day slice `_spreads`
+        takes inside a window -- so, like the games half, the cost is flat
+        rather than growing with how far the day is from today.
+        """
+        with self._lock:
+            cached = self._days.get(target)
+        if cached is not None:
+            return cached
+
+        horizon = (target, target)
+        games: list[ScheduledGame] = []
+        with _upstream("s3"):
+            years = sorted(_child_prefixes(self._s3, self._bucket, "seasons/"))
+            for year in years[-_SEASON_YEARS:]:
+                for obj in _list_objects(self._s3, self._bucket, f"seasons/{year}/"):
+                    match = _SEASON_KEY.match(obj["Key"])
+                    if match is None:
+                        continue
+                    key = obj["Key"]
+                    cached_season = self._seasons.get(key)
+                    if cached_season is not None and cached_season[1].covers(horizon):
+                        games.extend(cached_season[1].by_day.get(target, ()))
+                        continue
+                    season = self._read_season(key, match.group("league"), horizon)
+                    if season is None:
+                        continue
+                    games.extend(season.by_day.get(target, ()))
+            spreads = self._spreads(target, target)
+
+        priced = [
+            game.model_copy(update={"market_spread": spreads.get(game.game_id)})
+            for game in games
+        ]
+        priced.sort(key=lambda g: (g.start, g.league, g.game_id))
+
+        with self._lock:
+            self._days[target] = priced
+            self._days.move_to_end(target)
+            while len(self._days) > MAX_CACHED_DAYS:
+                self._days.popitem(last=False)
+        return priced
 
     def _read_one(self, key: str, league: str, game_id: str) -> ScheduledGame | None:
         """One season file, walked for one game. Best-effort like the rest."""

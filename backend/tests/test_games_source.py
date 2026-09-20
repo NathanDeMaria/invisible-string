@@ -647,3 +647,104 @@ class TestFindingOneOldGame:
 
         assert found is not None
         assert counting.gets_under("seasons/") == reads
+
+
+class TestDay:
+    """Reaching one whole day past the horizon, the way `find_in_season`
+    reaches one game past it.
+
+    `source` (the module fixture) already has an "ancient" mens game 30 days
+    back -- outside even the widest window this API serves -- and a
+    "last-season" game 300 days back in the *older* of the two season
+    prefixes, which is what proves this walks both rather than just the
+    current one.
+    """
+
+    def ancient_day(self) -> Any:
+        return datetime.now(GAME_TZ).date() - timedelta(days=30)
+
+    def test_finds_a_day_the_window_cannot_reach(self, source: AwsGamesSource) -> None:
+        found = source.day(self.ancient_day())
+
+        assert {g.game_id for g in found} == {"ancient"}
+
+    def test_a_day_with_nothing_on_it_is_empty(self, source: AwsGamesSource) -> None:
+        empty_day = datetime.now(GAME_TZ).date() - timedelta(days=31)
+
+        assert source.day(empty_day) == []
+
+    def test_prices_the_day_from_its_own_odds(self, s3: Any) -> None:
+        """The odds half is a one-day read too, not skipped for being old."""
+        old = datetime.now(GAME_TZ).date() - timedelta(days=60)
+        midnight = datetime.combine(old, datetime.min.time())
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="seasons/2026/mens.pkl",
+            Body=season_pickle([game(midnight.replace(hour=19), gid="old-priced")]),
+        )
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=f"odds/ncaabb/{old}/10-00.json",
+            Body=odds_pull(("old-priced", -3.5)),
+        )
+        source = AwsGamesSource(bucket=BUCKET, s3_client=s3)
+
+        found = source.day(old)
+
+        assert len(found) == 1
+        assert found[0].market_spread == -3.5
+
+    def test_walks_the_older_season_prefix_too(self, source: AwsGamesSource) -> None:
+        """`_games` checks the last `_SEASON_YEARS` prefixes, and `day` has to
+        agree with it -- a reader stepping the calendar past a season
+        boundary shouldn't lose the games on the other side of it."""
+        long_ago = datetime.now(GAME_TZ).date() - timedelta(days=300)
+
+        found = source.day(long_ago)
+
+        assert {g.game_id for g in found} == {"last-season"}
+
+    def test_builds_the_day_and_keeps_only_that(self, source: AwsGamesSource) -> None:
+        """The same trade `find_in_season` makes for one game: nothing about
+        the season file itself survives the call."""
+        source.day(self.ancient_day())
+
+        assert source._seasons == {}
+
+    def test_does_not_disturb_the_windows_own_cache(
+        self, source: AwsGamesSource
+    ) -> None:
+        """A day read outside the window must not leave a narrow horizon
+        behind for `window()` to trip over -- see `day`'s docstring."""
+        source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+        before = dict(source._seasons)
+
+        source.day(self.ancient_day())
+
+        assert source._seasons.keys() == before.keys()
+        for key, (etag, season) in before.items():
+            assert source._seasons[key] == (etag, season)
+
+    def test_a_cached_window_answers_the_day_for_free(self, s3: Any) -> None:
+        """The ordinary case right at the horizon's edge: a day already
+        inside a cached window costs nothing extra to read again this way."""
+        counting = CountingS3(s3)
+        source = AwsGamesSource(bucket=BUCKET, s3_client=counting)
+        source.window(MAX_DAYS_BACK, MAX_DAYS_AHEAD)
+        reads = counting.gets_under("seasons/")
+
+        yesterday = datetime.now(GAME_TZ).date() - timedelta(days=1)
+        found = source.day(yesterday)
+
+        assert {g.game_id for g in found} == {"yesterday"}
+        assert counting.gets_under("seasons/") == reads
+
+    def test_a_second_look_does_not_reread_the_file(self, s3: Any) -> None:
+        counting = CountingS3(s3)
+        source = AwsGamesSource(bucket=BUCKET, s3_client=counting)
+
+        source.day(self.ancient_day())
+        reads = counting.gets_under("seasons/")
+        source.day(self.ancient_day())
+
+        assert counting.gets_under("seasons/") == reads
