@@ -72,13 +72,26 @@ export interface WindowArgs {
 }
 
 /**
- * The window the games page asks for, in days either side of today.
- * `ahead: 0` is the rest of today; the backend caps both at a week.
+ * The window the games page preloads, in days either side of today.
+ * `ahead: 0` is the rest of today; the backend caps both at ten days.
  */
-export interface GamesArgs {
+export interface GamesWindowArgs {
   back: number;
   ahead: number;
 }
+
+/**
+ * One specific day, past the window's horizon.
+ *
+ * Not capped the way `GamesWindowArgs` is -- the backend reads a single day
+ * at the same cost regardless of how far it is from today, which is what lets
+ * the picker reach further than the window ever preloads.
+ */
+export interface GamesDayArgs {
+  day: string;
+}
+
+export type GamesArgs = GamesWindowArgs | GamesDayArgs;
 
 /**
  * One game, by the two things that name it on the wire -- plus the season,
@@ -156,8 +169,15 @@ export const api = createApi({
     // One query for the whole window across every league: the games come from
     // one place (endgame's bucket) and the page filters by league in the
     // browser, so switching leagues is instant and hits nothing.
+    //
+    // `day` is the other shape this takes, for a day past the window's
+    // horizon -- a distinct cache key from any window, so jumping out to an
+    // old date and back doesn't cost the window its cache entry.
     getGames: builder.query<GamesResponse, GamesArgs>({
-      query: ({ back, ahead }) => ({ url: "games", params: { back, ahead } }),
+      query: (args) =>
+        "day" in args
+          ? { url: "games", params: { day: args.day } }
+          : { url: "games", params: { back: args.back, ahead: args.ahead } },
     }),
     // The game page's two queries, against two endpoints, because they read
     // two upstreams: a season pickle for the schedule and a parquet object

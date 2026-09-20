@@ -1542,21 +1542,22 @@ same reason: the object is rewritten once a day, and between rewrites reading
 the window is free. Games are held grouped by day, so moving the window
 re-reads nothing.
 
-**Only the games within a week either side of today are ever built.** This is
-the part that matters, and getting it wrong is what took the endpoint down on
-the first deploy. A season file is the whole schedule; converting each of its
-games into a response model costs roughly fifteen times the pickle's own size
-in memory (measured: a 3.6 MB file of 55,000 games becomes 53 MB of models), and
-the cache held all of them, for every league and both seasons' prefixes, on a
-service with 0.5 GB. The first request to `/api/games` killed the container, and
-it did so every time.
+**Only the games within ten days either side of today are ever built by a
+window read.** This is the part that matters, and getting it wrong is what
+took the endpoint down on the first deploy. A season file is the whole
+schedule; converting each of its games into a response model costs roughly
+fifteen times the pickle's own size in memory (measured: a 3.6 MB file of
+55,000 games becomes 53 MB of models), and the cache held all of them, for
+every league and both seasons' prefixes, on a service with 0.5 GB. The first
+request to `/api/games` killed the container, and it did so every time.
 
-The horizon is the window cap — no request this API accepts can reach further —
-so the picker is still free, and a day is filtered out from the raw `Game`
-*before* a model is built. That turns a full season file into about fifteen days
-of rows. The horizon moves at midnight and the ETag doesn't, so a cache entry
-also records the span it was read for and is re-read when it stops covering the
-question.
+The horizon is the *window's* cap — no `back`/`ahead` request can reach
+further — so a day is filtered out from the raw `Game` *before* a model is
+built. That turns a full season file into about twenty-one days of rows rather
+than the whole schedule. The horizon moves at midnight and the ETag doesn't,
+so a cache entry also records the span it was read for and is re-read when it
+stops covering the question. A single day past it is a narrower question with
+its own answer below, not an exception carved into this one.
 
 §14 is the version of this that doesn't need a horizon at all — a query over rows
 has no equivalent of "the whole file is in memory now". Worth naming the asymmetry
@@ -1583,11 +1584,28 @@ number by half a point. Days are walked oldest-first and later pulls win, so
 tomorrow's games get their line from today's board.
 
 Neither cache is keyed the way the *window* is, so moving the window is nearly
-free — which is what lets §13.4 spend a request per day and step through a week
-without re-reading anything. The window itself is capped at a week either side
-— not a retention ceiling like §12.3's, since a season file holds everything,
-but a cost cap. That cap is also the day picker's horizon. A month of games is a
-different page.
+free — which is what lets §13.4 spend a request per day and step through it
+without re-reading anything. The window itself is capped at ten days either
+side — not a retention ceiling like §12.3's, since a season file holds
+everything, but a cost cap: reading it wider means building a row for every
+game in that much more of every season file, and reading that many more days
+of odds. A month-wide window is still a different page.
+
+**A single day is a different question, and doesn't pay that cost.**
+`AwsGamesSource.day` answers `GET /api/games?day=` by pooling exactly the one
+day asked for out of each season file, and reading odds for that one day —
+never "everything between here and today," so the read costs the same whether
+the day is next week or last year. It is `find_in_season`'s trade at a day's
+granularity instead of a game's: the horizon exists to cap what a *window*
+builds, and a single day was never the thing that took the endpoint down.
+Kept in its own small cache (`_days`, ordered like `_rows`) rather than
+folded into `_seasons`, which remembers the *window's* span — writing a
+one-day horizon over that would make the next `window()` call think its wider
+span was no longer covered, and force a re-read there for every read here.
+This is what lets the day picker (§13.4) reach past its own preloaded window
+instead of being bounded by it, at the price of an uncached request for
+whichever old day is asked for rather than one that already covers its
+neighbors.
 
 ### 13.3 A finished game shows the forecast that was made before it
 
@@ -1704,21 +1722,23 @@ matchup page: stepping through days is adjusting the view you're on, and a
 history entry per arrow press makes Back mean nothing.
 
 Today is the absence of the parameter rather than a spelling of it, so the
-page's own URL stays `/games` and a cleared date field is a way home. A `?day=`
-that isn't a date, or is one past the horizon, gets today: the second is a link
-that outlived the week the API serves, and today is a better answer to it than
-an empty page that looks like a broken one. The shape check alone isn't enough
-for the first — `2026-02-31` matches it, and `Date` rolls it into March rather
-than refusing — so the test is a round trip.
+page's own URL stays `/games` and a cleared date field is a way home. Only a
+`?day=` that isn't a date gets today: `2026-02-31` matches the shape and isn't
+one, and `Date` rolls it into March rather than refusing, so the test is a
+round trip rather than the regex alone.
 
-**The endpoint has no `day=`, so the page asks by offset.** `back=0&ahead=0` is
-today, and it is the cheapest window the API can build: the common case is now
-*less* work than the old four-day default. A day further out costs the days in
-between, since the window is anchored on today either way — but the widest
-request this page can make is still narrower than the old picker's, so this
-stays inside the envelope §13.2 spent so much to establish. A real `day=`
-parameter is the version that doesn't pay that at all, and it is a small
-backend change worth making the next time this page is opened.
+**A day past the window no longer gets today — it gets its own request.**
+That used to be the other case that fell back: a link past the week the API
+served had nothing to answer it with, and today was a better answer than an
+empty page that looked broken. §13.2's `day=` removed the reason for the
+fallback rather than widening it, so this now reads by offset only far enough
+to know whether the day fits the *preloaded* window — `back=0&ahead=0` is
+today, still the cheapest read the API can build — and asks by `day=` instead
+once it doesn't. Both are the same endpoint and the same response shape; which
+one a given day costs is invisible from the page's own state, and the picker
+puts no bound on the date field to say otherwise. The arrows still do: they
+page through what the window already covers, so they stay capped at its
+horizon rather than walking a reader into a request per keystroke.
 
 **So the page now has to know what today is before it asks anything.** It used
 to read that off the response (`until` minus `days_ahead`), which meant the
@@ -2300,12 +2320,13 @@ for the full fortnight lists ~15 days of prefixes rather than one — bounded,
 behind the same TTL, and under its own cache key, so a reader clicking through
 several games pays it once.
 
-The other cost is that the horizon is the same one §13.2 set: a week either
-side of today. A link older than that 404s, and the page says so in those
-words rather than rendering an empty game. That is the honest version of a limit the games
-page already has — it cannot link to a game it cannot show either — and lifting
-it is the same change as giving `/api/games` a real `day=` parameter, which
-§13.4 already names as the next thing worth doing here.
+The other cost is that the horizon is the same one §13.2 set: ten days either
+side of today. A link older than that with no `season` 404s, and the page says
+so in those words rather than rendering an empty game — `season` is the way
+around it, straight to `find_in_season`, the same one-game read §13.2's `day`
+now has a whole-day counterpart of. Giving this path its own day-shaped escape
+— searching by date instead of requiring a season — is the version of that fix
+that doesn't need a link to already carry one.
 
 ### 16.6 Drawing it
 

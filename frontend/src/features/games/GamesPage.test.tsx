@@ -83,15 +83,15 @@ describe("GamesPage", () => {
     expect(screen.getByLabelText("Day")).toHaveValue(isoDay(-2));
   });
 
-  it("offers the calendar only the days the API answers for", async () => {
+  it("puts no bound on the calendar, unlike the window it preloads", async () => {
     renderApp(<GamesPage />, { route: "/games" });
 
-    // A cost cap rather than a retention one (§13.2), but the control should
-    // grey out what the endpoint would refuse rather than let the page find
-    // out afterwards.
+    // The window is a cost cap on what's preloaded (§13.2), not a limit on
+    // what a day can answer for -- so unlike the old picker, this one has
+    // nothing to grey out.
     const field = await screen.findByLabelText("Day");
-    expect(field).toHaveAttribute("min", isoDay(-10));
-    expect(field).toHaveAttribute("max", isoDay(10));
+    expect(field).not.toHaveAttribute("min");
+    expect(field).not.toHaveAttribute("max");
   });
 
   it("spends the arrows at the horizon rather than hiding them", async () => {
@@ -148,12 +148,20 @@ describe("GamesPage", () => {
     await headingIs("Today");
   });
 
-  it("ignores a day past the horizon", async () => {
-    // A link that outlived the week the API serves. Today is a better answer
-    // to it than an empty page that looks like a broken one.
-    renderApp(<GamesPage />, on(-30));
-    await headingIs("Today");
-    expect(screen.getByLabelText("Day")).toHaveValue(isoDay(0));
+  it("reaches a day past the window through its own request", async () => {
+    // Two weeks back is outside the ten-day window this page preloads, so
+    // this only renders if the page fell back to a `day=` request rather
+    // than asking for a window wide enough to cover it.
+    renderApp(<GamesPage />, on(-15));
+
+    expect(await screen.findByText(/Baylor @ Gonzaga/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Day")).toHaveValue(isoDay(-15));
+
+    // The arrows still page through the preloaded window rather than walking
+    // deep history a day at a time -- stepping further back from here is
+    // spent, the way it is at the window's own edge.
+    expect(screen.getByLabelText("Previous day")).toBeDisabled();
+    expect(screen.getByLabelText("Next day")).toBeEnabled();
   });
 
   it("groups the day by league, best game first inside each", async () => {

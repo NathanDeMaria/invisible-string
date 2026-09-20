@@ -579,6 +579,17 @@ export const games: GamesResponse = {
       market_spread: -3.5,
       prediction: predicted(-4.1, 0.6),
     }),
+    // Two weeks back -- past the window this fixture otherwise covers, and
+    // only reachable through a `day=` request rather than `back`/`ahead`.
+    gameRow(-15, {
+      game_id: "g-15",
+      home: "Gonzaga",
+      away: "Baylor",
+      completed: true,
+      status: "STATUS_FINAL",
+      home_score: 80,
+      away_score: 76,
+    }),
   ],
 };
 
@@ -974,6 +985,20 @@ export const handlers = [
   }),
   http.get("/api/games", ({ request }) => {
     const q = new URL(request.url).searchParams;
+    const day = q.get("day");
+    // `day=` is the other shape this endpoint takes, for a day past the
+    // window -- answered from the fixture's own games rather than filtered by
+    // `back`/`ahead`, since a real `day=` request never carries them.
+    if (day) {
+      return HttpResponse.json({
+        ...games,
+        days_back: 0,
+        days_ahead: 0,
+        since: day,
+        until: day,
+        games: games.games.filter((game) => game.day === day),
+      });
+    }
     const back = Number(q.get("back") ?? 2);
     const ahead = Number(q.get("ahead") ?? 1);
     // Both ends are a real filter, not decoration. The page asks for one day

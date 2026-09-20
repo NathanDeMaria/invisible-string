@@ -158,38 +158,54 @@ _ahead = Query(
     description="Days of upcoming games beyond today. 0 is the rest of today.",
 )
 
+_day = Query(
+    default=None,
+    description=(
+        "A specific day, in place of back/ahead. Not bounded by "
+        "MAX_DAYS_BACK/MAX_DAYS_AHEAD: a single day costs the same to read no "
+        "matter how far it is from today (see app.seasons.AwsGamesSource.day), "
+        "which is what lets the picker offer more days than the window "
+        "preloads. back and ahead are ignored when this is given."
+    ),
+)
+
 
 @router.get("/games")
 def get_games(
     back: int = _back,
     ahead: int = _ahead,
+    day: date | None = _day,
     source: GamesSource = Depends(get_games_source),
     store: ReleaseStore = Depends(get_release_store),
     artifacts: ArtifactStore = Depends(get_artifact_store),
 ) -> GamesResponse:
     try:
-        window = source.window(back, ahead)
+        if day is not None:
+            games, since, until = source.day(day), day, day
+        else:
+            window = source.window(back, ahead)
+            games, since, until = window.games, window.since, window.until
     except GamesUnavailable as exc:
         # 502 for the reason an unreadable release is one (see api/ratings):
         # nothing the caller can change, and nothing a retry fixes.
         log.warning("serving 502 for games: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    # The window the games came from, so the stored predictions are read over
+    # The days the games came from, so the stored predictions are read over
     # exactly the days being rendered.
-    models = _Models(store, artifacts, window.since, window.until)
+    models = _Models(store, artifacts, since, until)
     return GamesResponse(
         days_back=back,
         days_ahead=ahead,
-        since=window.since,
-        until=window.until,
+        since=since,
+        until=until,
         games=[
             GameRow(
                 **game.model_dump(),
                 day=game.day,
                 prediction=models.predict(game),
             )
-            for game in window.games
+            for game in games
         ],
     )
 
