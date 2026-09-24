@@ -780,8 +780,8 @@ sync = ["aiohttp (>=3.8)", "endgame-aws"]
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/call-it-what-you-want.git"
-reference = "15f23685a42466d3273a18430c19d2b5daee2586"
-resolved_reference = "15f23685a42466d3273a18430c19d2b5daee2586"
+reference = "090767f122c6808ca3a0ccfb5305d04f5d7772e7"
+resolved_reference = "090767f122c6808ca3a0ccfb5305d04f5d7772e7"
 
 [[package]]
 name = "cassandra"
@@ -795,17 +795,18 @@ develop = false
 
 [package.dependencies]
 aiofiles = "^25.1.0"
-call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "15f23685a42466d3273a18430c19d2b5daee2586"}
+call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "090767f122c6808ca3a0ccfb5305d04f5d7772e7"}
 endgame = {git = "https://github.com/NathanDeMaria/EndGame.git", rev = "9ec6c0f43018f43b5eb037ad8856aefaff6bd93c", subdirectory = "py-endgame"}
 numpy = "^2.4.0"
 pandas = "^2.3.3"
 pydantic = "^2.12.5"
+say-youll-remember-me = {git = "https://github.com/NathanDeMaria/say-youll-remember-me.git", rev = "4ca747646aa2a2112889279f93ebc96ccd4e0122"}
 
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "b97be56502f3febf83d16597ef174ae3134d3975"
-resolved_reference = "b97be56502f3febf83d16597ef174ae3134d3975"
+reference = "ae9705267296e156cdadf2fe2cc3f54d8ada1b88"
+resolved_reference = "ae9705267296e156cdadf2fe2cc3f54d8ada1b88"
 
 [[package]]
 name = "certifi"
@@ -2737,6 +2738,28 @@ botocore = ">=1.37.4,<2.0a0"
 crt = ["botocore[crt] (>=1.37.4,<2.0a0)"]
 
 [[package]]
+name = "say-youll-remember-me"
+version = "0.1.0"
+description = "What changed about a team between seasons: head coaches, coordinators, quarterbacks."
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = []
+develop = false
+
+[package.dependencies]
+call-it-what-you-want = "*"
+
+[package.extras]
+plays = ["endgame-aws ; python_version >= \"3.14\"", "lucky-ones[data] ; python_version >= \"3.14\""]
+
+[package.source]
+type = "git"
+url = "https://github.com/NathanDeMaria/say-youll-remember-me.git"
+reference = "4ca747646aa2a2112889279f93ebc96ccd4e0122"
+resolved_reference = "4ca747646aa2a2112889279f93ebc96ccd4e0122"
+
+[[package]]
 name = "six"
 version = "1.17.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -3390,4 +3413,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "4165545b012bcc1c84ba087a4598460eab6c37b7c78ac97f3720b80e06527fde"
+content-hash = "97c09d89743d5cffbae8e7271034818d736885f890c0efbaaac662fe401b0f23"
