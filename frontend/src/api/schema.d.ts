@@ -434,6 +434,8 @@ export interface components {
             home_score: number | null;
             /** League */
             league: string;
+            /** Market Home Prob */
+            market_home_prob: number | null;
             /** Market Spread */
             market_spread: number | null;
             matchup: components["schemas"]["MatchupFacts"] | null;
@@ -491,6 +493,8 @@ export interface components {
             home_score: number | null;
             /** League */
             league: string;
+            /** Market Home Prob */
+            market_home_prob: number | null;
             /** Market Spread */
             market_spread: number | null;
             /** Neutral */

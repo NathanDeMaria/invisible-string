@@ -131,6 +131,10 @@ class GameRow(BaseModel):
     home_score: int | None
     away_score: int | None
     market_spread: float | None
+    # The markets' home win probability, the same side `home_win_prob` is
+    # quoted from, so the two sit in one row the way the spreads do. See
+    # `app.markets` for which price it is and when there is one.
+    market_home_prob: float | None
     # None for a league with no readable release, and for a game whose teams
     # that release has never rated.
     prediction: GamePrediction | None

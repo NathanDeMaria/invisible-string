@@ -276,6 +276,17 @@
             "title": "League",
             "type": "string"
           },
+          "market_home_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Home Prob"
+          },
           "market_spread": {
             "anyOf": [
               {
@@ -356,6 +367,7 @@
           "home_score",
           "away_score",
           "market_spread",
+          "market_home_prob",
           "prediction",
           "season",
           "week",
@@ -460,6 +472,17 @@
             "title": "League",
             "type": "string"
           },
+          "market_home_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Home Prob"
+          },
           "market_spread": {
             "anyOf": [
               {
@@ -508,6 +531,7 @@
           "home_score",
           "away_score",
           "market_spread",
+          "market_home_prob",
           "prediction"
         ],
         "title": "GameRow",

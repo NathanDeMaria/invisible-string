@@ -42,6 +42,7 @@
       "home_score": 64,
       "away_score": 70,
       "market_spread": 2.5,
+      "market_home_prob": 0.44,
       "season": 2026,
       "week": 1
     },
@@ -72,6 +73,7 @@
       "home_score": 78,
       "away_score": 71,
       "market_spread": -4.5,
+      "market_home_prob": 0.66,
       "season": 2026,
       "week": 1
     },
@@ -87,6 +89,7 @@
       "home_score": 10,
       "away_score": 14,
       "market_spread": 6.5,
+      "market_home_prob": 0.31,
       "season": 2026,
       "week": 3
     },
@@ -117,6 +120,7 @@
       "home_score": 61,
       "away_score": 59,
       "market_spread": -1.5,
+      "market_home_prob": 0.55,
       "season": 2026,
       "week": 1
     },

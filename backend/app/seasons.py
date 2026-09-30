@@ -28,7 +28,7 @@ from collections import OrderedDict
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, NamedTuple
 
 import boto3
@@ -47,6 +47,7 @@ from app.games import (
     game_day,
     window_bounds,
 )
+from app.markets import VENUES, home_probabilities
 
 log = logging.getLogger(__name__)
 
@@ -116,11 +117,9 @@ class AwsGamesSource:
         with _upstream("s3"):
             games = self._games(since, until)
             spreads = self._spreads(since, until)
+            markets = self._markets(since, until)
 
-        priced = [
-            game.model_copy(update={"market_spread": spreads.get(game.game_id)})
-            for game in games
-        ]
+        priced = [_priced(game, spreads, markets) for game in games]
         priced.sort(key=lambda g: (g.start, g.league, g.game_id))
         window = GameWindow(since=since, until=until, games=priced)
         with self._lock:
@@ -230,11 +229,9 @@ class AwsGamesSource:
                         continue
                     games.extend(season.by_day.get(target, ()))
             spreads = self._spreads(target, target)
+            markets = self._markets(target, target)
 
-        priced = [
-            game.model_copy(update={"market_spread": spreads.get(game.game_id)})
-            for game in games
-        ]
+        priced = [_priced(game, spreads, markets) for game in games]
         priced.sort(key=lambda g: (g.start, g.league, g.game_id))
 
         with self._lock:
@@ -432,6 +429,57 @@ class AwsGamesSource:
         if not isinstance(parsed, list):
             return {}
         return dict(_parse_odds(parsed))
+
+    # -- markets ---------------------------------------------------------
+
+    def _markets(self, since: date, until: date) -> dict[str, float]:
+        """game_id -> the markets' home win probability, over the window.
+
+        gold-rush files a game under its ESPN day in US Eastern, and the
+        window is cut in US Central, so a late game can sit a day either side
+        of the one this page puts it on -- a day of slack each way covers it.
+        One listing per venue and league, starting at the window, so a day
+        with no file costs nothing rather than a GET that 404s.
+
+        Kalshi's number wins where both venues have one (`app.markets.VENUES`
+        is in preference order, so it is read last and overwrites).
+
+        Best-effort as a whole, listing included, unlike the seasons: a market
+        price is one column, and an app deployed before its role can read
+        `markets/*` should render the page with that column empty rather than
+        turn a denied listing into the 502 `_upstream` would make of it.
+        """
+        try:
+            return self._read_markets(since, until)
+        except (ClientError, BotoCoreError) as exc:
+            log.warning("could not list markets: %s", exc)
+            return {}
+
+    def _read_markets(self, since: date, until: date) -> dict[str, float]:
+        first, last = since - timedelta(days=1), until + timedelta(days=1)
+        wanted = {f"{day.isoformat()}.json" for day in each_day(first, last)}
+        probabilities: dict[str, float] = {}
+        for venue in reversed(VENUES):
+            for league in _child_prefixes(self._s3, self._bucket, f"markets/{venue}/"):
+                prefix = f"markets/{venue}/{league}/"
+                for obj in _list_objects(
+                    self._s3,
+                    self._bucket,
+                    prefix,
+                    start_after=f"{prefix}{first.isoformat()}",
+                ):
+                    if obj["Key"][len(prefix) :] in wanted:
+                        probabilities.update(self._read_market(obj["Key"], venue))
+        return probabilities
+
+    def _read_market(self, key: str, venue: str) -> dict[str, float]:
+        """One day file, best-effort like `_read_odds`."""
+        try:
+            raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
+        except (ClientError, BotoCoreError):
+            log.warning("could not read markets at s3://%s/%s", self._bucket, key)
+            return {}
+        return home_probabilities(raw, venue)
 
     # -- cache -----------------------------------------------------------
 
@@ -658,10 +706,24 @@ def _child_prefixes(s3: Any, bucket: str, prefix: str) -> list[str]:
     return sorted(names)
 
 
-def _list_objects(s3: Any, bucket: str, prefix: str) -> list[Mapping[str, Any]]:
+def _priced(
+    game: ScheduledGame, spreads: dict[str, float], markets: dict[str, float]
+) -> ScheduledGame:
+    return game.model_copy(
+        update={
+            "market_spread": spreads.get(game.game_id),
+            "market_home_prob": markets.get(game.game_id),
+        }
+    )
+
+
+def _list_objects(
+    s3: Any, bucket: str, prefix: str, start_after: str | None = None
+) -> list[Mapping[str, Any]]:
     objects: list[Mapping[str, Any]] = []
     paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+    extra = {"StartAfter": start_after} if start_after else {}
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, **extra):
         objects.extend(page.get("Contents", []))
     return objects
 

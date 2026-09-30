@@ -323,6 +323,23 @@ class TestGamesEndpoint:
         assert row["prediction"]["predicted_spread"] < 0
         assert row["market_spread"] < 0
 
+    def test_the_market_is_quoted_from_the_home_side_too(
+        self, client: TestClient
+    ) -> None:
+        """Beside the model's `home_win_prob`, and on the same side of it.
+
+        Duke is the home favourite on every number in the row: the model's,
+        the book's spread and the markets' probability.
+        """
+        row = _game(client, "401710101")
+        assert row["home"] == "Duke"
+        assert row["market_home_prob"] == pytest.approx(0.66)
+        assert row["prediction"]["home_win_prob"] > 0.5
+
+    def test_a_game_with_no_market_price_says_so(self, client: TestClient) -> None:
+        # None rather than 0.5: no price and a coin flip are different claims.
+        assert _game(client, "401710106")["market_home_prob"] is None
+
     def test_unplayed_games_have_no_score(self, client: TestClient) -> None:
         # The season file stores 0-0 for a game that hasn't happened; passing
         # that through would render tonight's schedule as scoreless finals.

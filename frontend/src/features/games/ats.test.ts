@@ -36,6 +36,7 @@ const game = ({
   home_score: home,
   away_score: away,
   market_spread: line,
+  market_home_prob: null,
   prediction:
     model == null
       ? null

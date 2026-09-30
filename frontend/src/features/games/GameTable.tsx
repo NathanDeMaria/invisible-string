@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useRowKeys } from "../keys/useRowKeys";
 import type { GameRow } from "../../services/api";
 import { type AtsResult, atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
+import { marketGap, marketGapTitle } from "./market";
 import {
   points,
   probability,
@@ -34,6 +35,10 @@ interface Props {
  * One day's games: what's on, what the model says, what the market says, and
  * how it finished -- or, for a game with no result, what became of it.
  *
+ * The market column does the same for the model's win probability: the
+ * prediction markets' chance of a home win, with the model's gap from it
+ * under it.
+ *
  * The two spread columns sit next to each other on purpose. Both are quoted
  * from the home team's side (DESIGN.md §13), so the gap between them is
  * readable straight off the row -- which is the only reason to put a model's
@@ -63,6 +68,9 @@ export function GameTable({ games }: Props) {
             Line
           </th>
           <th scope="col" className="num">
+            Market
+          </th>
+          <th scope="col" className="num">
             Result
           </th>
         </tr>
@@ -76,6 +84,9 @@ export function GameTable({ games }: Props) {
           // The same disagreement the mark grades, said before there's
           // anything to grade -- which is the state most of this page is in.
           const edge = modelEdge(game);
+          // The same disagreement on the other number the row carries: the
+          // model's chance of a home win against the markets'.
+          const gap = marketGap(game);
           const path = `/games/${game.league}/${game.game_id}`;
           return (
             <tr key={`${game.league}-${game.game_id}`} {...rowKeys(path)}>
@@ -132,6 +143,25 @@ export function GameTable({ games }: Props) {
                   <span className="of">
                     <abbr className="edge" title={edgeTitle(edge)}>
                       {edge.home ? "home" : "away"} +{points(edge.points)}
+                    </abbr>
+                  </span>
+                )}
+              </td>
+              <td className="num">
+                {/* The prediction markets' chance of a home win, beside the
+                    book's spread the way the model's probability sits beside
+                    its own. Under it, the gap in the same "home +N" shorthand
+                    the line column uses -- here N is points of probability,
+                    and the note under the tables says so. A dash for a game
+                    no market has priced, which today is every game that
+                    hasn't been played. */}
+                <span className="rate">
+                  {probability(game.market_home_prob)}
+                </span>
+                {gap && (
+                  <span className="of">
+                    <abbr className="edge" title={marketGapTitle(gap)}>
+                      {gap.home ? "home" : "away"} +{gap.points}
                     </abbr>
                   </span>
                 )}

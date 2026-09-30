@@ -748,3 +748,144 @@ class TestDay:
         source.day(self.ancient_day())
 
         assert counting.gets_under("seasons/") == reads
+
+
+def market_day(*games: tuple[str, float, float], kickoff: datetime) -> bytes:
+    """A gold-rush day file: (game_id, home price, away price) an hour out."""
+    at = int((kickoff - timedelta(hours=1)).timestamp())
+    return json.dumps(
+        {
+            "fields": ["at", "price", "bid", "ask", "volume"],
+            "games": [
+                {
+                    "game_id": gid,
+                    "kickoff": kickoff.isoformat(),
+                    "home": {"prices": [[at, home, None, home, None]]},
+                    "away": {"prices": [[at, away, None, away, None]]},
+                }
+                for gid, home, away in games
+            ],
+        }
+    ).encode()
+
+
+class TestMarkets:
+    @pytest.fixture
+    def priced(self, s3: Any) -> Any:
+        today = datetime.now(GAME_TZ).date()
+        yesterday = today - timedelta(days=1)
+        kickoff = datetime.combine(yesterday, datetime.min.time(), tzinfo=GAME_TZ)
+        # Polymarket has both of yesterday's games, Kalshi one of them.
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=f"markets/polymarket/mens/{yesterday}.json",
+            Body=market_day(
+                ("yesterday", 0.6, 0.4), ("today", 0.3, 0.7), kickoff=kickoff
+            ),
+        )
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=f"markets/kalshi/mens/{yesterday}.json",
+            Body=market_day(("yesterday", 0.7, 0.3), kickoff=kickoff),
+        )
+        # Filed under the day after -- US Eastern against the window's US
+        # Central -- which the day of slack either side covers.
+        s3.put_object(
+            Bucket=BUCKET,
+            Key=f"markets/kalshi/nfl/{today + timedelta(days=1)}.json",
+            Body=market_day(("nfl-today", 0.45, 0.55), kickoff=kickoff),
+        )
+        # Far outside the window, and never opened.
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="markets/kalshi/mens/2020-01-01.json",
+            Body=market_day(("ancient", 0.5, 0.5), kickoff=kickoff),
+        )
+        return s3
+
+    def test_joins_the_market_by_game_id(self, priced: Any) -> None:
+        by_id = {
+            g.game_id: g
+            for g in AwsGamesSource(bucket=BUCKET, s3_client=priced).window(2, 1).games
+        }
+
+        assert by_id["today"].market_home_prob == pytest.approx(0.3)
+        assert by_id["nfl-today"].market_home_prob is not None
+        assert by_id["tomorrow"].market_home_prob is None
+
+    def test_kalshi_wins_where_both_venues_priced_a_game(self, priced: Any) -> None:
+        by_id = {
+            g.game_id: g
+            for g in AwsGamesSource(bucket=BUCKET, s3_client=priced).window(2, 1).games
+        }
+
+        # Kalshi's 0.7 against Polymarket's 0.6, fee and all.
+        home, away = 0.7 + 0.07 * 0.7 * 0.3, 0.3 + 0.07 * 0.3 * 0.7
+        assert by_id["yesterday"].market_home_prob == pytest.approx(
+            home / (home + away)
+        )
+
+    def test_a_single_day_gets_the_markets_too(self, priced: Any) -> None:
+        yesterday = datetime.now(GAME_TZ).date() - timedelta(days=1)
+        rows = AwsGamesSource(bucket=BUCKET, s3_client=priced).day(yesterday)
+
+        assert {g.game_id: g.market_home_prob is not None for g in rows} == {
+            "yesterday": True
+        }
+
+    def test_only_the_windows_files_are_opened(self, priced: Any) -> None:
+        counting = CountingS3(priced)
+        AwsGamesSource(bucket=BUCKET, s3_client=counting).window(2, 1)
+
+        assert counting.gets_under("markets/kalshi/mens/2020") == 0
+        assert counting.gets_under("markets/") == 3
+
+    def test_a_denied_market_read_costs_only_the_numbers(self, priced: Any) -> None:
+        # What the app looks like before its role can read markets/*: the
+        # schedule, scores and lines all still render.
+        source = AwsGamesSource(
+            bucket=BUCKET, s3_client=DeniesGetsUnder(priced, "markets/")
+        )
+        by_id = {g.game_id: g for g in source.window(2, 1).games}
+
+        assert by_id["yesterday"].market_spread == -6.5
+        assert all(g.market_home_prob is None for g in by_id.values())
+
+    def test_a_denied_market_listing_is_not_an_outage(self, priced: Any) -> None:
+        """The deploy-before-the-grant case: listing `markets/` is refused too.
+
+        Without the prefix in the role's ListBucket condition the listing is
+        what fails first, and a listing failure anywhere else is a 502. For
+        one column it must not be.
+        """
+        source = AwsGamesSource(
+            bucket=BUCKET, s3_client=DeniesListingUnder(priced, "markets/")
+        )
+        by_id = {g.game_id: g for g in source.window(2, 1).games}
+
+        assert by_id["yesterday"].market_spread == -6.5
+        assert all(g.market_home_prob is None for g in by_id.values())
+
+
+class DeniesListingUnder:
+    """Lists everything except one prefix, the way a ListBucket condition would."""
+
+    def __init__(self, inner: Any, prefix: str) -> None:
+        self._inner = inner
+        self._prefix = prefix
+
+    def get_object(self, **kwargs: Any) -> Any:
+        return self._inner.get_object(**kwargs)
+
+    def get_paginator(self, name: str) -> Any:
+        inner, prefix = self._inner.get_paginator(name), self._prefix
+
+        class _Paginator:
+            def paginate(self, **kwargs: Any) -> Any:
+                if kwargs.get("Prefix", "").startswith(prefix):
+                    raise ClientError(
+                        {"Error": {"Code": "AccessDenied"}}, "ListObjectsV2"
+                    )
+                return inner.paginate(**kwargs)
+
+        return _Paginator()
