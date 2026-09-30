@@ -35,6 +35,7 @@ const game = ({
   home_score: null,
   away_score: null,
   market_spread: null,
+  market_home_prob: null,
   prediction: rated
     ? {
         model: "glicko_tuned",

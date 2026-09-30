@@ -128,6 +128,11 @@ class ScheduledGame(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     market_spread: float | None = None
+    # The prediction markets' home win probability at their last read before
+    # kickoff, margin taken out -- `app.markets`. None for a game neither
+    # venue has a price on yet, which today is every game that hasn't been
+    # played: gold-rush pulls a day's games the morning after.
+    market_home_prob: float | None = None
     season: int | None = None
     week: int | None = None
 

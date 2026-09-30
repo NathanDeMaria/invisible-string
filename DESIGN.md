@@ -1892,6 +1892,55 @@ the second colours on the site (the first is the job dashboard's failure red,
 shape, each carries the full sentence in its `title`, and the note under the
 tables spells them out.
 
+### 13.7 The market column
+
+The Line column is a sportsbook's spread. The Market column is the prediction
+markets' number on the same game: the home team's chance of winning, from
+Kalshi's and Polymarket's prices, which [gold-rush](https://github.com/NathanDeMaria/gold-rush)
+pulls into the same bucket as the seasons and odds:
+
+```
+markets/{venue}/{league}/{YYYY-MM-DD}.json     one ESPN game day, US Eastern
+```
+
+**It is a probability, so it sits beside the model's probability.** The Model
+column already prints the model's home win chance under its spread; the
+Market column is the number to read that against, and under it is the gap in
+the same shorthand as the line's -- `home +3` is the model giving the home
+side three more points of win probability than the markets do. Measured
+between the two numbers as printed (whole percentages), so a reader who
+subtracts the columns gets it back, and a gap that rounds away isn't named.
+
+**Joined by game id, like the line.** gold-rush keys every game by ESPN's
+competition id, so a `mens.pkl` game finds its price in
+`markets/kalshi/mens/` with no mapping. Files are per US Eastern day and the
+window is cut in US Central, so `AwsGamesSource._markets` reads a day of slack
+either side, from one listing per venue and league that starts at the window
+-- a day with no file costs nothing.
+
+**Which price** is cassandra's, computed the same way so this page and a
+release's `market_brier_score` agree about a game (`app.markets`, re-derived
+rather than imported: `cassandra.markets` reads the bucket through
+`endgame_aws`, which a serving install leaves out). Kalshi's ask plus its taker
+fee, since the ask is what buying costs; Polymarket's one price; the margin
+taken out by normalizing the two sides; at the last hour before kickoff with
+both sides priced, skipping any hour whose two sides cost more than 1.10
+together (a market that has just opened, asks near a dollar both ways).
+Kalshi's number wins where both venues have one.
+
+**Finished games only, for now.** gold-rush pulls a day's games the morning
+after, so a game that hasn't been played has no file yet and the column shows
+a dash. A gold-rush pull of today's games writes the same file with prices up
+to that hour, so an intraday schedule there fills the upcoming rows in with
+nothing here changing -- "the last hour before kickoff" is simply the latest
+hour for a game that hasn't started.
+
+**Its own grant.** `markets/*` joins `seasons/*`, `odds/*` and
+`processed/plays/*` in the app role's GetObject and its ListBucket prefix
+condition (`infra/apprunner.tf`). Until that's applied the reads are denied,
+and the column is dashes while everything else on the page renders --
+`_read_market` is best-effort like `_read_odds`.
+
 ---
 
 ## 14. Games out of a database, not pickles

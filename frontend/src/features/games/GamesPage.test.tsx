@@ -594,7 +594,7 @@ describe("GamesPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the four columns a row needs", async () => {
+  it("keeps the five columns a row needs", async () => {
     renderApp(<GamesPage />, { route: "/games" });
     const table = (await screen.findAllByRole("table"))[0];
 
@@ -602,6 +602,26 @@ describe("GamesPage", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((h) => h.textContent),
-    ).toEqual(["Game", "Model", "Line", "Result"]);
+    ).toEqual(["Game", "Model", "Line", "Market", "Result"]);
+  });
+
+  it("puts the market's probability beside the model's, with the gap", async () => {
+    // Two days back: Duke, the model at 69% against the markets' 66%.
+    renderApp(<GamesPage />, on(-2));
+    const row = (await screen.findByText(/North Carolina @ Duke/)).closest(
+      "tr",
+    );
+    expect(row).not.toBeNull();
+    const cells = within(row as HTMLElement).getAllByRole("cell");
+
+    expect(cells[3]).toHaveTextContent("66%");
+    const gap = within(cells[3]).getByText("home +3");
+    expect(gap).toHaveAttribute(
+      "title",
+      "The model gives Duke 3 more points of win probability than the market does",
+    );
+    expect(
+      screen.getByText(/The market column is the prediction markets/),
+    ).toBeInTheDocument();
   });
 });

@@ -147,7 +147,7 @@ data "aws_iam_policy_document" "apprunner_job_health" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["seasons/*", "odds/*", "processed/plays/*"]
+      values   = ["seasons/*", "odds/*", "processed/plays/*", "markets/*"]
     }
   }
 
@@ -162,6 +162,10 @@ data "aws_iam_policy_document" "apprunner_job_health" {
   # parquet reader asks for the footer and then only the row groups that can
   # hold the game. IAM has nowhere to say that, so the grant is the same
   # GetObject the other two get.
+  #
+  # `markets/*` is gold-rush's: Kalshi's and Polymarket's hourly prices per
+  # game day, for the games page's market column (section 13.7). Its
+  # `_pulls/` summaries sit under the same prefix and are never opened.
   statement {
     effect  = "Allow"
     actions = ["s3:GetObject"]
@@ -169,6 +173,7 @@ data "aws_iam_policy_document" "apprunner_job_health" {
       "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/odds/*",
       "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/seasons/*",
       "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/processed/plays/*",
+      "arn:${data.aws_partition.current.partition}:s3:::${local.endgame_bucket}/markets/*",
     ]
   }
 }

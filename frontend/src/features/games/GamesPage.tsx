@@ -212,6 +212,9 @@ export function GamesPage() {
   });
 
   const priced = listed.some((game) => modelEdge(game) !== null);
+  // Whether any row has a market price to explain. Most days' upcoming games
+  // don't, and a note about a column of dashes is one more thing to decode.
+  const marketed = listed.some((game) => game.market_home_prob != null);
   // Every finished, lined game on the page, graded. Worth counting now that
   // the numbers being graded are forecasts: the model's spread for a finished
   // game is the one it published before the game (`app.artifacts`), so this
@@ -370,6 +373,19 @@ export function GamesPage() {
                         home team four points more than the book does. That side
                         is the model&rsquo;s pick, in the only sense it has one:
                         it names a number, not a team.
+                      </>
+                    )}
+                    {marketed && (
+                      <>
+                        {" "}
+                        The market column is the prediction markets&rsquo;
+                        chance of a home win &mdash; Kalshi&rsquo;s, or
+                        Polymarket&rsquo;s where Kalshi has no price &mdash; at
+                        the last hour before tip-off, with their margin taken
+                        out. Under it is how many points of win probability the
+                        model gives that side beyond the market. The markets are
+                        read the morning after, so a game that hasn&rsquo;t been
+                        played has a dash there.
                       </>
                     )}
                     {/* Only once a game on the page has actually been graded:

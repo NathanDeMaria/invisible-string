@@ -464,6 +464,7 @@ const gameRow = (
   home_score: null,
   away_score: null,
   market_spread: null,
+  market_home_prob: null,
   prediction: null,
   ...overrides,
 });
@@ -506,6 +507,7 @@ export const games: GamesResponse = {
       home_score: 78,
       away_score: 71,
       market_spread: -4.5,
+      market_home_prob: 0.66,
       prediction: predicted(-5.3, 0.69),
     }),
     // Two days back, and called off. A row the dash can't explain: without a
