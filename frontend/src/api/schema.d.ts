@@ -791,7 +791,13 @@ export interface components {
          *     consumer picking a default model wants a min, not a max.
          *
          *     The optional fields are None for a league the odds database doesn't cover
-         *     at all. They're None rather than nan on purpose: `score_predictions`
+         *     at all, and the market ones for a league the prediction markets don't.
+         *
+         *     `market_brier_score` is the markets' own Brier at their close, and
+         *     `market_game_brier_score` the model's on the same `n_market_games` --
+         *     the pair to compare, since `brier_score` is over every game and the
+         *     markets price only some. A model that knows something the market
+         *     doesn't has the second below the first. They're None rather than nan on purpose: `score_predictions`
          *     returns nan there, and nan survives json.dumps as the literal `NaN`, which
          *     is not valid JSON and which browsers reject.
          */
@@ -802,10 +808,19 @@ export interface components {
             brier_score: number;
             /** Margin Mae */
             margin_mae: number;
+            /** Market Brier Score */
+            market_brier_score?: number | null;
+            /** Market Game Brier Score */
+            market_game_brier_score?: number | null;
             /** Market Margin Mae */
             market_margin_mae?: number | null;
             /** N Games */
             n_games: number;
+            /**
+             * N Market Games
+             * @default 0
+             */
+            n_market_games: number;
             /**
              * N Spread Games
              * @default 0

@@ -1103,7 +1103,7 @@
         "type": "object"
       },
       "Metrics": {
-        "description": "Evaluation metrics for a release.\n\n`brier_score` and the MAEs are error measures, so lower is better -- a\nconsumer picking a default model wants a min, not a max.\n\nThe optional fields are None for a league the odds database doesn't cover\nat all. They're None rather than nan on purpose: `score_predictions`\nreturns nan there, and nan survives json.dumps as the literal `NaN`, which\nis not valid JSON and which browsers reject.",
+        "description": "Evaluation metrics for a release.\n\n`brier_score` and the MAEs are error measures, so lower is better -- a\nconsumer picking a default model wants a min, not a max.\n\nThe optional fields are None for a league the odds database doesn't cover\nat all, and the market ones for a league the prediction markets don't.\n\n`market_brier_score` is the markets' own Brier at their close, and\n`market_game_brier_score` the model's on the same `n_market_games` --\nthe pair to compare, since `brier_score` is over every game and the\nmarkets price only some. A model that knows something the market\ndoesn't has the second below the first. They're None rather than nan on purpose: `score_predictions`\nreturns nan there, and nan survives json.dumps as the literal `NaN`, which\nis not valid JSON and which browsers reject.",
         "properties": {
           "against_spread_accuracy": {
             "anyOf": [
@@ -1124,6 +1124,28 @@
             "title": "Margin Mae",
             "type": "number"
           },
+          "market_brier_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Brier Score"
+          },
+          "market_game_brier_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Game Brier Score"
+          },
           "market_margin_mae": {
             "anyOf": [
               {
@@ -1137,6 +1159,11 @@
           },
           "n_games": {
             "title": "N Games",
+            "type": "integer"
+          },
+          "n_market_games": {
+            "default": 0,
+            "title": "N Market Games",
             "type": "integer"
           },
           "n_spread_games": {
