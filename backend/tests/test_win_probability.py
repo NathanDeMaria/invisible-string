@@ -202,7 +202,10 @@ class TestSplittingTheBounces:
         curve = curve_for(fit, synthetic_game({4: FUMBLE}))
         realized = [point.home_win_probability for point in curve.points]
         adjusted = [point.home_win_probability for point in curve.adjusted]
-        assert realized[:4] == adjusted[:4]
+        # approx, not ==: the two curves are scored by different paths upstream,
+        # and since the lucky-ones/cassandra bump they can disagree in the last
+        # bit before the bounce. What matters is that nothing moves there.
+        assert realized[:4] == pytest.approx(adjusted[:4], abs=1e-12)
         assert realized[4:] != adjusted[4:]
 
     def test_the_shift_carries_to_the_whistle(self) -> None:
