@@ -23,7 +23,7 @@ boto3 = "^1.41.0"
 # must never require the ability to produce one, so `No module named sklearn`
 # in this image always means something is trying to *fit* -- the fix is never
 # to add sklearn here.
-cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "e7fa2c471f1624f688df020a8ed4c97eb3d69d0e" }
+cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "ccc79ffd7301312467c69f510b75756894382d00" }
 
 # In-game win probability and EPA per play for football, pinned by rev the way
 # cassandra is (DESIGN.md sections 16 and 16.8). The fits ship *inside* this
@@ -44,7 +44,7 @@ cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "e7f
 # parquet, one object per league-week, and reading one game out of one is
 # what makes a curve affordable at all. The solver behind `fit` buys nothing
 # here, and this is how the dependency says so.
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "87073d1f9e8d0a72c36a98efb66f9ca7ee3d590b", extras = ["data"] }
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "99e79fb9ed68deef0800b53d580677d1036b1dca", extras = ["data"] }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"
