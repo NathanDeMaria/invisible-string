@@ -11,7 +11,7 @@ import { count } from "./format";
  * a week is "is this job flaky".
  */
 const WINDOWS = [1, 3, 7];
-const DEFAULT_WINDOW = 7;
+const DEFAULT_WINDOW = 1;
 
 /**
  * How the jobs upstream of every release are doing.
