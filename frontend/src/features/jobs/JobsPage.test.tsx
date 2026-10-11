@@ -51,7 +51,7 @@ describe("JobsPage", () => {
 
     const meta = await screen.findByTestId("jobs-meta");
     expect(meta).toHaveTextContent("4 jobs");
-    expect(meta).toHaveTextContent("last 7 days");
+    expect(meta).toHaveTextContent("last 1 day");
     expect(meta).toHaveTextContent("1 job failing");
   });
 
@@ -81,10 +81,10 @@ describe("JobsPage", () => {
     renderApp(<JobsPage />, { route: "/jobs" });
     await screen.findByTestId("jobs-meta");
 
-    await user.selectOptions(screen.getByLabelText("Window"), "1");
+    await user.selectOptions(screen.getByLabelText("Window"), "7");
 
     await waitFor(() =>
-      expect(screen.getByTestId("jobs-meta")).toHaveTextContent("last 1 day"),
+      expect(screen.getByTestId("jobs-meta")).toHaveTextContent("last 7 days"),
     );
   });
 

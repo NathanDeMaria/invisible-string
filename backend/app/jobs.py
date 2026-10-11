@@ -198,8 +198,8 @@ def summarize(runs: Iterable[JobRun], recent: int = RECENT_RUNS) -> list[JobHeal
 
     The ordering is the point of the page (section 12.5): a job whose last run
     failed sorts above one that merely failed earlier in the window, which
-    sorts above the healthy ones. Within a tier, by name, so the list doesn't
-    reshuffle between refreshes.
+    sorts above the healthy ones. Within a tier, most recently run first, with
+    name as the final tiebreak so the list doesn't reshuffle between refreshes.
     """
     by_definition: dict[str, list[JobRun]] = {}
     for run in runs:
@@ -236,8 +236,13 @@ def summarize(runs: Iterable[JobRun], recent: int = RECENT_RUNS) -> list[JobHeal
             )
         )
 
-    health.sort(key=lambda h: (_severity(h), h.name))
+    # Within a tier, most recently run first; name only breaks exact ties.
+    health.sort(key=lambda h: (_severity(h), -_last_run_ts(h), h.name))
     return health
+
+
+def _last_run_ts(health: JobHealth) -> float:
+    return health.last_run.created_at.timestamp() if health.last_run else 0.0
 
 
 def _severity(health: JobHealth) -> int:

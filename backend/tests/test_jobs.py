@@ -122,6 +122,16 @@ class TestSummarize:
             "aaa-healthy",
         ]
 
+    def test_within_a_tier_most_recently_run_sorts_first(self) -> None:
+        health = summarize(
+            [
+                run("aaa-old", "SUCCEEDED", hours_ago=10),
+                run("zzz-new", "SUCCEEDED", hours_ago=1),
+                run("mmm-mid", "SUCCEEDED", hours_ago=5),
+            ]
+        )
+        assert [h.name for h in health] == ["zzz-new", "mmm-mid", "aaa-old"]
+
     def test_recent_is_capped(self) -> None:
         health = summarize(
             [run("odds-nfl", "SUCCEEDED", hours_ago=i) for i in range(20)], recent=3
