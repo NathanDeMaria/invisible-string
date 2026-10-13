@@ -7,6 +7,7 @@ import { predictionFor } from "../../test/handlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { MatchupPage } from "./MatchupPage";
+import { SHOW_COVER_PROB } from "../games/ats";
 import { favouriteLine } from "./spread";
 
 const MATCHUP_ROUTE = (query = "") => ({
@@ -167,6 +168,66 @@ describe("MatchupPage", () => {
     renderApp(<MatchupPage />, MATCHUP_ROUTE("?home=Duke&away=Kansas"));
     expect(await screen.findByTestId("matchup-line")).toHaveTextContent(
       /no margin calibration/i,
+    );
+  });
+
+  it("prices a line the reader types, and keeps it in the URL", async () => {
+    const user = userEvent.setup();
+    let asked: string | null = null;
+    server.use(
+      http.get("/api/predict", ({ request }) => {
+        asked = new URL(request.url).searchParams.get("spread");
+        return HttpResponse.json({
+          ...predictionFor({ home: "Duke", away: "Kansas" }),
+          ...(asked == null
+            ? {}
+            : {
+                home_cover_prob: 0.445,
+                away_cover_prob: 0.5,
+                push_prob: 0.055,
+              }),
+        });
+      }),
+    );
+    renderApp(<MatchupPage />, MATCHUP_ROUTE("?home=Duke&away=Kansas"));
+    await screen.findByTestId("matchup-result");
+    expect(screen.queryByTestId("matchup-cover")).toBeNull();
+
+    await user.type(screen.getByLabelText("Line, from the home side"), "-7");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("line=-7"),
+    );
+    const cover = await screen.findByTestId("matchup-cover");
+    expect(asked).toBe("-7");
+    if (SHOW_COVER_PROB) {
+      expect(cover).toHaveTextContent("Duke covers -7");
+      expect(cover).toHaveTextContent("44.5%");
+      expect(cover).toHaveTextContent("Kansas covers +7");
+      expect(cover).toHaveTextContent("50.0%");
+    } else {
+      // The side, without the percentage that would headline it.
+      expect(cover).toHaveTextContent(
+        "the model makes Kansas the likelier side to cover",
+      );
+      expect(cover).not.toHaveTextContent("44.5%");
+    }
+    // Push comes from the kernel's shape, so it is shown either way.
+    expect(cover).toHaveTextContent("5.5%");
+  });
+
+  it("says so when the release can't price a line", async () => {
+    respondWith({
+      home_cover_prob: null,
+      away_cover_prob: null,
+      push_prob: null,
+    });
+    renderApp(
+      <MatchupPage />,
+      MATCHUP_ROUTE("?home=Duke&away=Kansas&line=-3.5"),
+    );
+    expect(await screen.findByTestId("matchup-cover")).toHaveTextContent(
+      /no margin kernel/i,
     );
   });
 

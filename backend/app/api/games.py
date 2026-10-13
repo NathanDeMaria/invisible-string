@@ -48,11 +48,12 @@ from cassandra.predictor import (
     UnknownPredictorClass,
     predict_matchup,
 )
-from cassandra.prob_to_margin import BaseProbToMarginPredictor
+from cassandra.prob_to_margin import BaseProbToMarginPredictor, MarginKernel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from app.artifacts import ArtifactStore, get_artifact_store
+from app.cover import cover
 from app.games import (
     DEFAULT_DAYS_AHEAD,
     DEFAULT_DAYS_BACK,
@@ -108,6 +109,20 @@ class GamePrediction(BaseModel):
     # rates *both* teams, so a prediction without them can't be built.
     home_rating: float
     away_rating: float
+    # The game priced at the row's own `market_spread` by the release's margin
+    # kernel (`app.cover`): P(home covers), P(away covers), P(the game lands
+    # on the number). They add to one, and push is 0 on a half-point line.
+    #
+    # None when the game has no line or the release has no kernel -- one
+    # published before cassandra shipped them -- for the reason
+    # `predicted_spread` is: absent beats fabricated.
+    #
+    # Through the same `home_win_prob` this row shows, stored or live. The
+    # kernel's own P(home wins) is close to that number but not equal to it,
+    # and it is the release's number that is the forecast.
+    home_cover_prob: float | None
+    away_cover_prob: float | None
+    push_prob: float | None
 
 
 class GameRow(BaseModel):
@@ -396,6 +411,8 @@ class _LeagueModel:
     release: ModelRelease
     predictor: Predictor
     margin: BaseProbToMarginPredictor | None
+    # None for a release published before cassandra shipped kernels.
+    kernel: MarginKernel | None
     processed: frozenset[str]
     # What this model said before each game in the window, by game id, out of
     # `predictions.parquet`. Empty for a model published without one.
@@ -512,13 +529,11 @@ class _Models:
                 date=game.start,
             ).team1_win_prob
 
-            return GamePrediction(
-                model=model.release.model,
-                run_id=model.release.run_id,
+            return _prediction(
+                model,
+                game,
                 home_win_prob=prob,
                 predicted_spread=_spread(model.margin, prob),
-                home_rating=model.release.ratings[game.home].rating,
-                away_rating=model.release.ratings[game.away].rating,
             )
         except Exception:  # noqa: BLE001 - see below
             # A predictor that raises on a matchup its own ratings cover is a
@@ -565,9 +580,16 @@ class _Models:
         if row is None:
             return None
 
-        return GamePrediction(
-            model=model.release.model,
-            run_id=model.release.run_id,
+        return _prediction(
+            model,
+            game,
+            # The stored win probability, never one recomputed from this
+            # release: that would be hindsight. The cover numbers are priced
+            # through it too, with the *current* kernel -- which is honest
+            # where a current margin fit wouldn't be, because the kernel only
+            # says how margins spread around a given win probability, and it
+            # is fit on the whole history so it barely moves between runs
+            # (DESIGN.md section 13).
             home_win_prob=row.home_win_prob,
             # The negation `_spread` applies to a live prediction, applied to
             # the margin the run's own calibration implied. Stored rather than
@@ -575,8 +597,6 @@ class _Models:
             # every run, and grading an old forecast against a newer mapping
             # would grade it against one that didn't exist when it was made.
             predicted_spread=-row.predicted_margin,
-            home_rating=model.release.ratings[game.home].rating,
-            away_rating=model.release.ratings[game.away].rating,
         )
 
     def _report_mismatch(self, model: _LeagueModel, game: ScheduledGame) -> None:
@@ -649,6 +669,7 @@ class _Models:
             release=release,
             predictor=predictor,
             margin=release.margin_predictor(),
+            kernel=release.kernel(),
             processed=frozenset(release.trained_through.processed_game_ids),
             stored=_stored(
                 self._artifacts.predictions(
@@ -656,6 +677,28 @@ class _Models:
                 )
             ),
         )
+
+
+def _prediction(
+    model: _LeagueModel,
+    game: ScheduledGame,
+    *,
+    home_win_prob: float,
+    predicted_spread: float | None,
+) -> GamePrediction:
+    """One row's prediction, stored or live: the rest follows from these two."""
+    priced = cover(model.kernel, home_win_prob, game.market_spread)
+    return GamePrediction(
+        model=model.release.model,
+        run_id=model.release.run_id,
+        home_win_prob=home_win_prob,
+        predicted_spread=predicted_spread,
+        home_rating=model.release.ratings[game.home].rating,
+        away_rating=model.release.ratings[game.away].rating,
+        home_cover_prob=None if priced is None else priced.cover,
+        away_cover_prob=None if priced is None else priced.lose,
+        push_prob=None if priced is None else priced.push,
+    )
 
 
 def _spread(margin: BaseProbToMarginPredictor | None, prob: float) -> float | None:

@@ -380,9 +380,31 @@
       "GamePrediction": {
         "description": "What one league's default release says about one game.",
         "properties": {
+          "away_cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Cover Prob"
+          },
           "away_rating": {
             "title": "Away Rating",
             "type": "number"
+          },
+          "home_cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Cover Prob"
           },
           "home_rating": {
             "title": "Home Rating",
@@ -407,6 +429,17 @@
             ],
             "title": "Predicted Spread"
           },
+          "push_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Prob"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -418,7 +451,10 @@
           "home_win_prob",
           "predicted_spread",
           "home_rating",
-          "away_rating"
+          "away_rating",
+          "home_cover_prob",
+          "away_cover_prob",
+          "push_prob"
         ],
         "title": "GamePrediction",
         "type": "object"
@@ -1337,6 +1373,17 @@
             "title": "Away",
             "type": "string"
           },
+          "away_cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Cover Prob"
+          },
           "away_rating": {
             "title": "Away Rating",
             "type": "number"
@@ -1348,6 +1395,17 @@
           "home": {
             "title": "Home",
             "type": "string"
+          },
+          "home_cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Cover Prob"
           },
           "home_rating": {
             "title": "Home Rating",
@@ -1379,6 +1437,17 @@
               }
             ],
             "title": "Predicted Spread"
+          },
+          "push_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Prob"
           },
           "run_id": {
             "title": "Run Id",
@@ -1532,6 +1601,17 @@
       "TeamGameRow": {
         "description": "One game, as the team this list is about played it.\n\n`season` and `week` are the model's own partition for the game, which is\nwhat the game page needs to find it outside the days the schedule source\nkeeps in reach (`app.games.find_game`). They are on the wire so a link\ninto that page can carry the season rather than making it search.\n\n`team_score` and `opponent_score` are None together for a game that hasn't\nbeen played -- a run predicts fixtures as well as results, so the newest\nrows in the file are often games with nothing to report yet.\n\n`win_prob` is this team's, and `predicted_spread` and `market_spread` are\nquoted from its side in the market's convention: negative means this team\nwas favoured. The same convention `/api/games` uses for a row, turned\naround for whichever team the page is about.",
         "properties": {
+          "cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Prob"
+          },
           "date": {
             "format": "date-time",
             "title": "Date",
@@ -1564,6 +1644,17 @@
             "title": "Opponent",
             "type": "string"
           },
+          "opponent_cover_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opponent Cover Prob"
+          },
           "opponent_score": {
             "anyOf": [
               {
@@ -1585,6 +1676,17 @@
               }
             ],
             "title": "Predicted Spread"
+          },
+          "push_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Push Prob"
           },
           "season": {
             "title": "Season",
@@ -1629,7 +1731,10 @@
           "opponent_score",
           "win_prob",
           "predicted_spread",
-          "market_spread"
+          "market_spread",
+          "cover_prob",
+          "opponent_cover_prob",
+          "push_prob"
         ],
         "title": "TeamGameRow",
         "type": "object"
@@ -2784,6 +2889,24 @@
               ],
               "description": "What-if override for the model's home advantage.",
               "title": "Home Advantage"
+            }
+          },
+          {
+            "description": "A line to price, from the home side: negative when home is favoured, the same sign as `predicted_spread`. Adds cover, push and lose when the model has a margin kernel.",
+            "in": "query",
+            "name": "spread",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A line to price, from the home side: negative when home is favoured, the same sign as `predicted_spread`. Adds cover, push and lose when the model has a margin kernel.",
+              "title": "Spread"
             }
           }
         ],

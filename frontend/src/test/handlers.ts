@@ -490,6 +490,11 @@ const predicted = (
   predicted_spread: spread,
   home_rating: homeRating,
   away_rating: awayRating,
+  // No kernel on these rows, so the page falls back to the spread
+  // subtraction the way it does for an older release.
+  home_cover_prob: null,
+  away_cover_prob: null,
+  push_prob: null,
 });
 
 export const games: GamesResponse = {
@@ -823,6 +828,9 @@ const teamGame = (
   win_prob: null,
   predicted_spread: null,
   market_spread: null,
+  cover_prob: null,
+  opponent_cover_prob: null,
+  push_prob: null,
   ...overrides,
 });
 

@@ -367,12 +367,19 @@ export function GamesPage() {
                     {priced && (
                       <>
                         {" "}
-                        Under the book&rsquo;s number is how far the
-                        model&rsquo;s is from it, and which side that favours
-                        &mdash; &ldquo;home +4&rdquo; is the model giving the
-                        home team four points more than the book does. That side
-                        is the model&rsquo;s pick, in the only sense it has one:
-                        it names a number, not a team.
+                        Under the book&rsquo;s number is the side the model
+                        likes against it &mdash; &ldquo;home +4&rdquo; is the
+                        model&rsquo;s spread giving the home team four points
+                        more than the book does. Where the release prices the
+                        line itself, the side is the one the model makes
+                        likelier to cover, which isn&rsquo;t always the side the
+                        points favour: football games land on 3 and 7 often
+                        enough that a model agreeing with a -7 line still leans
+                        to the underdog. That side is the model&rsquo;s pick, in
+                        the only sense it has one: these are the model&rsquo;s
+                        probabilities, not betting advice. A push share beside
+                        it is how often a game like this lands exactly on the
+                        number.
                       </>
                     )}
                     {marketed && (

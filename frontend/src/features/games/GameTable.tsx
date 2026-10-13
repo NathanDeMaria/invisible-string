@@ -2,16 +2,17 @@ import { Link } from "react-router-dom";
 
 import { useRowKeys } from "../keys/useRowKeys";
 import type { GameRow } from "../../services/api";
-import { type AtsResult, atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
-import { marketGap, marketGapTitle } from "./market";
 import {
-  points,
-  probability,
-  score,
-  spread,
-  statusLabel,
-  tipoff,
-} from "./format";
+  type AtsResult,
+  atsCall,
+  atsTitle,
+  edgeAmount,
+  edgeTitle,
+  modelEdge,
+  pushNote,
+} from "./ats";
+import { marketGap, marketGapTitle } from "./market";
+import { probability, score, spread, statusLabel, tipoff } from "./format";
 
 /**
  * The mark a finished game's line earns the model.
@@ -84,6 +85,11 @@ export function GameTable({ games }: Props) {
           // The same disagreement the mark grades, said before there's
           // anything to grade -- which is the state most of this page is in.
           const edge = modelEdge(game);
+          const amount = edge && edgeAmount(edge);
+          // How often a game like this lands exactly on the number, when that
+          // is often enough to mention -- a whole-number football line on 3
+          // or 7, in practice.
+          const push = pushNote(game);
           // The same disagreement on the other number the row carries: the
           // model's chance of a home win against the markets'.
           const gap = marketGap(game);
@@ -133,17 +139,25 @@ export function GameTable({ games }: Props) {
               </td>
               <td className="num">
                 <span className="rate">{spread(game.market_spread)}</span>
-                {/* How far the model's number is from this one, and which
-                    side that favours. "home +4" is the model giving the home
-                    team four points more than the book does -- the same
-                    shorthand as the "63% home" beside it, and the sign means
-                    what it means in the columns above: points *to* that side.
-                    The note under the tables decodes it. */}
-                {edge && (
+                {/* Which side of this number the model likes, and by how
+                    much. "home +4" is the model's spread giving the home team
+                    four points more than the book does -- the same shorthand
+                    as the "63% home" beside it, and the sign means what it
+                    means in the columns above: points *to* that side. Where
+                    the release prices the line, the side is the one likelier
+                    to cover (`modelEdge`), and a side the points don't back
+                    goes without a number. The note under the tables decodes
+                    it. */}
+                {(edge || push) && (
                   <span className="of">
-                    <abbr className="edge" title={edgeTitle(edge)}>
-                      {edge.home ? "home" : "away"} +{points(edge.points)}
-                    </abbr>
+                    {edge && (
+                      <abbr className="edge" title={edgeTitle(edge)}>
+                        {edge.home ? "home" : "away"}
+                        {amount && ` ${amount}`}
+                      </abbr>
+                    )}
+                    {edge && push && " · "}
+                    {push}
                   </span>
                 )}
               </td>

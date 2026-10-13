@@ -127,6 +127,8 @@ export interface PredictArgs {
   away: string;
   neutral?: boolean;
   model?: string;
+  /** A line to price, from the home side: negative when home is favoured. */
+  spread?: number;
 }
 
 // Absolute rather than a bare "/api": Node's fetch (which is what jsdom uses
@@ -235,7 +237,7 @@ export const api = createApi({
       }),
     }),
     predict: builder.query<PredictResponse, PredictArgs>({
-      query: ({ league, home, away, neutral, model }) => ({
+      query: ({ league, home, away, neutral, model, spread }) => ({
         url: "predict",
         // A GET, so RTK Query caches a matchup for free and re-picking a
         // previous pair is instant (DESIGN.md section 3).
@@ -245,6 +247,7 @@ export const api = createApi({
           away,
           ...(neutral ? { neutral: true } : {}),
           ...(model ? { model } : {}),
+          ...(spread != null ? { spread } : {}),
         },
       }),
     }),

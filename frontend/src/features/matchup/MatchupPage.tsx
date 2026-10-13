@@ -19,6 +19,10 @@ export function MatchupPage() {
   const home = params.get("home") ?? "";
   const away = params.get("away") ?? "";
   const neutral = params.get("neutral") === "1";
+  // A line to price, from the home side like every spread on the site. In the
+  // URL with the rest, so a shared matchup carries the number it was read at.
+  const lineRaw = params.get("line") ?? "";
+  const line = parseLine(lineRaw);
 
   // The ratings response is also the team list: it names exactly the teams
   // this release can predict, so the pickers can't offer one the API would
@@ -27,7 +31,7 @@ export function MatchupPage() {
   const teams = (ratings.data?.ratings ?? []).map((row) => row.team);
 
   const prediction = usePredictQuery(
-    { league, home, away, neutral },
+    { league, home, away, neutral, spread: line ?? undefined },
     { skip: !home || !away || home === away },
   );
 
@@ -84,6 +88,19 @@ export function MatchupPage() {
           />
           Neutral site
         </label>
+
+        <label>
+          Line
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.5"
+            aria-label="Line, from the home side"
+            placeholder="e.g. -6.5"
+            value={lineRaw}
+            onChange={(e) => update({ line: e.target.value || null })}
+          />
+        </label>
       </div>
 
       {home && away && home === away && (
@@ -94,7 +111,22 @@ export function MatchupPage() {
         <p className="error">Couldn&rsquo;t predict that matchup.</p>
       )}
 
-      {prediction.data && <MatchupResult prediction={prediction.data} />}
+      {prediction.data && (
+        <MatchupResult
+          prediction={prediction.data}
+          // Only against the response that was asked about *this* line.
+          // While a new one is in flight `data` is still the last answer,
+          // which may have priced another line or none at all.
+          line={prediction.currentData ? line : null}
+        />
+      )}
     </>
   );
+}
+
+/** The typed line as a number, or null for an empty or unreadable one. */
+function parseLine(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }

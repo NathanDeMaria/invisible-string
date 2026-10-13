@@ -459,8 +459,12 @@ export interface components {
          * @description What one league's default release says about one game.
          */
         GamePrediction: {
+            /** Away Cover Prob */
+            away_cover_prob: number | null;
             /** Away Rating */
             away_rating: number;
+            /** Home Cover Prob */
+            home_cover_prob: number | null;
             /** Home Rating */
             home_rating: number;
             /** Home Win Prob */
@@ -469,6 +473,8 @@ export interface components {
             model: string;
             /** Predicted Spread */
             predicted_spread: number | null;
+            /** Push Prob */
+            push_prob: number | null;
             /** Run Id */
             run_id: string;
         };
@@ -913,12 +919,16 @@ export interface components {
         PredictResponse: {
             /** Away */
             away: string;
+            /** Away Cover Prob */
+            away_cover_prob?: number | null;
             /** Away Rating */
             away_rating: number;
             /** Away Win Prob */
             away_win_prob: number;
             /** Home */
             home: string;
+            /** Home Cover Prob */
+            home_cover_prob?: number | null;
             /** Home Rating */
             home_rating: number;
             /** Home Win Prob */
@@ -931,6 +941,8 @@ export interface components {
             neutral: boolean;
             /** Predicted Spread */
             predicted_spread: number | null;
+            /** Push Prob */
+            push_prob?: number | null;
             /** Run Id */
             run_id: string;
         };
@@ -1009,6 +1021,8 @@ export interface components {
          *     around for whichever team the page is about.
          */
         TeamGameRow: {
+            /** Cover Prob */
+            cover_prob: number | null;
             /**
              * Date
              * Format: date-time
@@ -1024,10 +1038,14 @@ export interface components {
             neutral: boolean;
             /** Opponent */
             opponent: string;
+            /** Opponent Cover Prob */
+            opponent_cover_prob: number | null;
             /** Opponent Score */
             opponent_score: number | null;
             /** Predicted Spread */
             predicted_spread: number | null;
+            /** Push Prob */
+            push_prob: number | null;
             /** Season */
             season: number;
             /** Team Score */
@@ -1539,6 +1557,8 @@ export interface operations {
                 model?: string | null;
                 /** @description What-if override for the model's home advantage. */
                 home_advantage?: number | null;
+                /** @description A line to price, from the home side: negative when home is favoured, the same sign as `predicted_spread`. Adds cover, push and lose when the model has a margin kernel. */
+                spread?: number | null;
             };
             header?: never;
             path?: never;

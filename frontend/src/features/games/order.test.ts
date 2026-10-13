@@ -44,6 +44,9 @@ const game = ({
         predicted_spread: -3,
         home_rating: home,
         away_rating: away,
+        home_cover_prob: null,
+        away_cover_prob: null,
+        push_prob: null,
       }
     : null,
 });

@@ -33,10 +33,12 @@ import math
 from datetime import datetime
 
 import pandas as pd
+from cassandra.prob_to_margin import MarginKernel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from app.artifacts import ArtifactStore, get_artifact_store
+from app.cover import cover, flipped
 from app.releases import (
     ReleaseNotFound,
     ReleaseStore,
@@ -88,6 +90,14 @@ class TeamGameRow(BaseModel):
     # The line the run was graded against, where the game had one. Most games
     # in these leagues never get a number from a book.
     market_spread: float | None
+    # That line priced by the release's margin kernel (`app.cover`), from
+    # this team's side: P(this team covers), P(the opponent does), P(the game
+    # lands on the number). None without a line, a stored win probability or
+    # a kernel. Through the *stored* win probability with the current
+    # kernel, for the reason `/api/games` gives (DESIGN.md section 13).
+    cover_prob: float | None
+    opponent_cover_prob: float | None
+    push_prob: float | None
 
 
 class TeamGamesResponse(BaseModel):
@@ -119,13 +129,18 @@ def _score(value: object) -> int | None:
     return None if number is None else int(number)
 
 
-def _row(record: dict[str, object], team: str) -> TeamGameRow:
+def _row(
+    record: dict[str, object], team: str, kernel: MarginKernel | None
+) -> TeamGameRow:
     """One stored prediction, turned around to face `team`.
 
-    The three flips are the whole of it, and they are all the same flip: the
-    file quotes the home team, so an away row reads the other end of every
-    number. A win probability becomes its complement, and the two spreads
-    change sign because a spread is already a signed quantity from one side.
+    The flips are the whole of it, and they are all the same flip: the file
+    quotes the home team, so an away row reads the other end of every number.
+    A win probability becomes its complement, the two spreads change sign
+    because a spread is already a signed quantity from one side, and cover and
+    lose swap while push stays put. The cover numbers are priced from the home
+    side first, the way the file quotes everything, so there is one sign
+    convention going into the kernel rather than two.
     """
     home = str(record["home_team"]) == team
     win_prob = _number(record["team1_win_prob"])
@@ -133,6 +148,9 @@ def _row(record: dict[str, object], team: str) -> TeamGameRow:
     spread = _number(record["spread"])
     home_score = _score(record["home_score"])
     away_score = _score(record["away_score"])
+    priced = None if win_prob is None else cover(kernel, win_prob, spread)
+    if priced is not None and not home:
+        priced = flipped(priced)
 
     return TeamGameRow(
         game_id=str(record["game_id"]),
@@ -151,10 +169,15 @@ def _row(record: dict[str, object], team: str) -> TeamGameRow:
         # away side's is the margin itself.
         predicted_spread=(None if margin is None else -margin if home else margin),
         market_spread=(None if spread is None else spread if home else -spread),
+        cover_prob=None if priced is None else priced.cover,
+        opponent_cover_prob=None if priced is None else priced.lose,
+        push_prob=None if priced is None else priced.push,
     )
 
 
-def _rows(predictions: pd.DataFrame, team: str) -> list[TeamGameRow]:
+def _rows(
+    predictions: pd.DataFrame, team: str, kernel: MarginKernel | None
+) -> list[TeamGameRow]:
     """A team's stored predictions, newest first.
 
     Newest first because this is a page about a season in progress: the game a
@@ -172,7 +195,7 @@ def _rows(predictions: pd.DataFrame, team: str) -> list[TeamGameRow]:
 
     dated = predictions[predictions["date"].notna()]
     ordered = dated.sort_values("date", ascending=False, kind="stable")
-    return [_row(record, team) for record in ordered.to_dict("records")]
+    return [_row(record, team, kernel) for record in ordered.to_dict("records")]
 
 
 @router.get("/leagues/{league}/teams/{team}/games")
@@ -214,5 +237,5 @@ def get_team_games(
         model=release.model,
         run_id=release.run_id,
         team=team,
-        games=_rows(predictions, team),
+        games=_rows(predictions, team, release.kernel()),
     )
