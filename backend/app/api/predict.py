@@ -21,6 +21,7 @@ from cassandra.predictor import (
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
+from app.cover import cover
 from app.releases import (
     ReleaseNotFound,
     ReleaseStore,
@@ -54,6 +55,13 @@ class PredictResponse(BaseModel):
     predicted_spread: float | None
     home_rating: float
     away_rating: float
+    # The `spread` the request stated, priced by the release's margin kernel
+    # (`app.cover`): P(home covers), P(away covers), P(the game lands on the
+    # number). Null unless a spread was asked about and the release carries a
+    # kernel -- a release from before cassandra shipped them has none.
+    home_cover_prob: float | None = None
+    away_cover_prob: float | None = None
+    push_prob: float | None = None
 
 
 @router.get("/predict")
@@ -67,6 +75,14 @@ def predict(
     ),
     home_advantage: float | None = Query(
         default=None, description="What-if override for the model's home advantage."
+    ),
+    spread: float | None = Query(
+        default=None,
+        description=(
+            "A line to price, from the home side: negative when home is "
+            "favoured, the same sign as `predicted_spread`. Adds cover, push "
+            "and lose when the model has a margin kernel."
+        ),
     ),
     store: ReleaseStore = Depends(get_release_store),
 ) -> PredictResponse:
@@ -134,6 +150,7 @@ def predict(
     prob = predict_matchup(
         predictor, home=home, away=away, neutral_site=neutral
     ).team1_win_prob
+    priced = cover(release.kernel(), prob, spread)
 
     return PredictResponse(
         league=release.league,
@@ -147,6 +164,9 @@ def predict(
         predicted_spread=_spread(release, prob),
         home_rating=release.ratings[home].rating,
         away_rating=release.ratings[away].rating,
+        home_cover_prob=None if priced is None else priced.cover,
+        away_cover_prob=None if priced is None else priced.lose,
+        push_prob=None if priced is None else priced.push,
     )
 
 

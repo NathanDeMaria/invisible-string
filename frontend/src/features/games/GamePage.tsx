@@ -7,7 +7,14 @@ import {
   type GameDetail,
   type LeagueDistributions,
 } from "../../services/api";
-import { atsCall, atsTitle, edgeTitle, modelEdge } from "./ats";
+import {
+  atsCall,
+  atsTitle,
+  edgeAmount,
+  edgeTitle,
+  modelEdge,
+  pushNote,
+} from "./ats";
 import {
   adjustedControlLabel,
   epaLabel,
@@ -19,7 +26,6 @@ import { percentileLabel, percentileOf } from "./percentile";
 import { Explainer } from "./Explainer";
 import { MatchupTerms } from "./MatchupTerms";
 import {
-  points as pointsOf,
   probability,
   score,
   spread,
@@ -126,6 +132,8 @@ export function GamePage() {
 
   const ats = atsCall(detail);
   const edge = modelEdge(detail);
+  const amount = edge && edgeAmount(edge);
+  const push = pushNote(detail);
   const state = statusLabel(detail.status);
 
   return (
@@ -167,6 +175,7 @@ export function GamePage() {
             <span className="of">
               from {detail.home}&rsquo;s side, so negative means the home team
               lays the points
+              {push && <> &mdash; {push}, by the model&rsquo;s margins</>}
             </span>
           </dd>
         </div>
@@ -195,7 +204,8 @@ export function GamePage() {
               <div>
                 <dt>Disagreement</dt>
                 <dd>
-                  {edge.pick} +{pointsOf(edge.points)}
+                  {edge.pick}
+                  {amount && ` ${amount}`}
                   <span className="of">{edgeTitle(edge)}</span>
                 </dd>
               </div>

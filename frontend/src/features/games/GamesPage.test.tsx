@@ -411,6 +411,59 @@ describe("GamesPage", () => {
     expect(edge).toHaveTextContent("away +5.5");
   });
 
+  it("follows the cover probability where the release prices the line", async () => {
+    server.use(
+      http.get("/api/games", () =>
+        HttpResponse.json({
+          days_back: 0,
+          days_ahead: 0,
+          since: isoDay(0),
+          until: isoDay(0),
+          games: [
+            {
+              league: "ncaafb",
+              game_id: "g",
+              day: isoDay(0),
+              start: new Date().toISOString(),
+              home: "Duke",
+              away: "Houston",
+              neutral: false,
+              completed: false,
+              status: "STATUS_SCHEDULED",
+              home_score: null,
+              away_score: null,
+              market_spread: -7,
+              market_home_prob: null,
+              prediction: {
+                model: "glicko_tuned",
+                run_id: "r1",
+                home_win_prob: 0.7,
+                predicted_spread: -7,
+                home_rating: 1600,
+                away_rating: 1500,
+                home_cover_prob: 0.445,
+                away_cover_prob: 0.5,
+                push_prob: 0.055,
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    renderApp(<GamesPage />, { route: "/games" });
+    await screen.findAllByRole("table");
+
+    // Both columns print -7, so the subtraction has nothing to say. The
+    // probabilities do: Duke has to win by *more* than 7, and enough games
+    // land on it that the visitors are the likelier side to cover.
+    const edge = screen.getByTitle(/likelier side to cover|chance to cover/);
+    expect(edge).toHaveTextContent(/^away/);
+    expect(edge.title).toContain("Houston");
+    // Push is shown whatever the pick: it is the kernel's shape, not an
+    // opinion.
+    expect(edge.closest("td")).toHaveTextContent("6% push");
+  });
+
   it("says nothing where the model and the book don't disagree", async () => {
     renderApp(<GamesPage />, on(1));
     await screen.findAllByRole("table");

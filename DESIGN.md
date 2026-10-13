@@ -1638,6 +1638,22 @@ and both halves are honest. No dagger, no per-day releases, and no query
 engine: the storage problem §14 was going to solve turned out to be one column
 in a file the same publish already writes.
 
+**What comes from the stored row, and what comes from today's release.** The
+win probability and the predicted spread of a finished game are both the
+stored ones. The spread in particular is the stored `predicted_margin`, not the
+stored win probability put through today's margin calibration: that
+calibration is refit every run, and grading an old forecast against a newer
+mapping would grade it against one that didn't exist when it was made.
+
+The cover, push and lose numbers (§13.6) are the one place the two mix: the
+*stored* win probability, put through the *current* release's margin kernel.
+That is honest for a different reason. The win probability is the genuine
+pre-game forecast, and the kernel says nothing about who wins — only how
+margins spread around a given win probability — and it is fit on the whole
+history of final scores, so it barely moves from one run to the next.
+Recomputing the win probability from the release would be hindsight, and is
+never done.
+
 `_trained_on` survives as the guard on the one case left over: a game the
 release has trained on with *no* stored forecast, which means a release and a
 predictions file out of step. The row shows no number at all, and the API logs
@@ -1836,6 +1852,39 @@ team should be laying more than that, which is a bet on the home team. That
 inference is worth spelling out on the page, because a check mark whose subject
 is a guess is worse than no check mark, and the note under the tables says it in
 one sentence.
+
+**Where the release prices the line, the pick follows the probability.** Since
+cassandra #103 a release carries a margin kernel: a probability on every
+integer margin, fit on ~76k final scores, for any win probability. The API
+puts each game's win probability through it at the row's own line and serves
+`home_cover_prob`, `away_cover_prob` and `push_prob` (`app.cover`; the stored
+win probability for a finished game, §13.3), and the pick is the side more
+likely to cover. That is a different question from the subtraction, which asks
+where the *mean* margin sits against the line, and in football it gets a
+different answer: games end on 3 and 7 far more than on their neighbours, so
+with the model at -7 against a book at -7 the underdog covers about 50% of the
+time and the favourite about 44.5%, and the rest is push. The points gap stays
+beside the pick as context, but only where it points the same way.
+
+The subtraction is still the rule for a row with no cover probabilities — an
+older release, or a game with no line to price — so nothing that worked before
+stops working. And each rule has its own "isn't saying" threshold: `SAME_NUMBER`
+for a gap the columns can't show, `SAME_CHANCE` (two points of probability) for
+two sides too close to call. A row the kernel priced is decided by the
+probabilities alone.
+
+**The cover probability isn't printed yet.** Against real lines (2026-10-13,
+443 lined ncaafb games) it is overconfident: games the kernel put at 25% to
+cover were covered 50–60% of the time, and the Brier score (0.27–0.28) is worse
+than calling everything 50%. The shape is right; the overconfidence is the
+model's disagreements with the line being mostly noise. So the side is shown
+and the percentage sits behind `SHOW_COVER_PROB` in `ats.ts`, until cassandra's
+market-aware version (the win probability shrunk toward the line's before it
+goes through the kernel) makes it worth headlining. Push is shown regardless,
+once it reaches `NOTABLE_PUSH`: it comes from the kernel's shape rather than
+from the model's opinion, which in practice means a whole-number football line
+on 3, 7, 10 or 14. The same rule applies on the matchup page, where a reader
+can type a line and get its side and push.
 
 **The disagreement is shown before it has an answer.** The mark grades a pick,
 and the pick exists from the moment both numbers are on the board — which is

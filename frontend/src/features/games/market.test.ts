@@ -27,6 +27,9 @@ const game = (market: number | null, model: number | null): GameRow => ({
           predicted_spread: null,
           home_rating: 1500,
           away_rating: 1400,
+          home_cover_prob: null,
+          away_cover_prob: null,
+          push_prob: null,
         },
 });
 
