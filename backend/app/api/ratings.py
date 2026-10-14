@@ -15,7 +15,14 @@ from app.releases import (
     pick_default,
     resolve_release,
 )
-from app.schema import Metrics, ModelRelease, TeamRating, TrainedThrough, UnitRating
+from app.schema import (
+    Metrics,
+    ModelRelease,
+    SuccessRating,
+    TeamRating,
+    TrainedThrough,
+    UnitRating,
+)
 from app.teams import still_playing
 
 log = logging.getLogger(__name__)
@@ -69,6 +76,16 @@ class TeamRow(BaseModel):
     # start anyway.
     offense: UnitRating | None = None
     defense: UnitRating | None = None
+    # Each side's success rate -- the share of its downs it wins, 0 to 1 --
+    # against an average opponent on a neutral field, opponent-adjusted, with
+    # its deviation. cassandra's units models keep it beside their offense
+    # and defense for a reader and never predict from it; every other model,
+    # and a team with no plays, carries None. Upstream's own shape
+    # (`SuccessRating`), which is the generic-subrating day the note above
+    # describes arriving as one more named field rather than a bag: a second
+    # kind of side, with its own units, that a reader shows as a percentage
+    # where `offense` and `defense` are ratings.
+    success: SuccessRating | None = None
 
 
 class RatingsResponse(BaseModel):
@@ -201,6 +218,7 @@ def get_ratings(
                 movement=moved.get(team),
                 offense=r.offense,
                 defense=r.defense,
+                success=r.success,
             )
             for rank, team, r in ranked
         ],

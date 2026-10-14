@@ -2,7 +2,7 @@ import type { Ref } from "react";
 import { Link } from "react-router-dom";
 
 import { useRowKeys } from "../keys/useRowKeys";
-import type { TeamRow, UnitRating } from "../../services/api";
+import type { RateRating, TeamRow, UnitRating } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
 
 interface Props {
@@ -17,6 +17,12 @@ interface Props {
    * rather than filled with dashes the width of a rating.
    */
   showUnits: boolean;
+  /**
+   * Whether this model keeps each side's success rate -- the units models do,
+   * beside their offense and defense. Dropped otherwise, for the reason the
+   * unit columns are.
+   */
+  showSuccess: boolean;
   /**
    * When the week every movement is measured from ended, or null where the
    * history can't say -- a model published without one, or the first week of
@@ -34,6 +40,7 @@ export function RatingsTable({
   league,
   showRd,
   showUnits,
+  showSuccess,
   since,
   firstRowRef,
   onExitTop,
@@ -70,6 +77,20 @@ export function RatingsTable({
               </th>
               <th scope="col" className="num">
                 Def
+              </th>
+            </>
+          )}
+          {showSuccess && (
+            <>
+              <th scope="col" className="num">
+                <abbr title="Success rate: the share of its downs this offense wins against an average defense">
+                  Off SR
+                </abbr>
+              </th>
+              <th scope="col" className="num">
+                <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
+                  Def SR
+                </abbr>
               </th>
             </>
           )}
@@ -115,6 +136,12 @@ export function RatingsTable({
                 <UnitCell unit={row.defense} />
               </>
             )}
+            {showSuccess && (
+              <>
+                <RateCell rate={row.success?.offense} />
+                <RateCell rate={row.success?.defense} />
+              </>
+            )}
             <td className="num">
               {row.wins}&ndash;{row.losses}
             </td>
@@ -155,6 +182,30 @@ function UnitCell({ unit }: { unit: UnitRating | null | undefined }) {
     <td className="num">
       <abbr className="unit" title={`RD ${unit.rd.toFixed(1)}`}>
         {unit.rating.toFixed(1)}
+      </abbr>
+    </td>
+  );
+}
+
+/**
+ * One side's success rate, as a percentage of its downs.
+ *
+ * Opponent-adjusted -- against an average opponent on a neutral field -- so
+ * it is not the share the team posted, and the deviation goes in the title the
+ * way a unit's does. A dash for a team with no plays on file, as for its units.
+ */
+function RateCell({ rate }: { rate: RateRating | null | undefined }) {
+  if (!rate) {
+    return (
+      <td className="num">
+        <span className="quiet">&mdash;</span>
+      </td>
+    );
+  }
+  return (
+    <td className="num">
+      <abbr className="unit" title={`± ${(rate.sd * 100).toFixed(1)} pts`}>
+        {(rate.rate * 100).toFixed(1)}%
       </abbr>
     </td>
   );

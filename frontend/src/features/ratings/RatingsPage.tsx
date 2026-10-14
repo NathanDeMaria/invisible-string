@@ -53,6 +53,12 @@ export function RatingsPage() {
     (row) => row.offense != null || row.defense != null,
   );
 
+  // And for each side's success rate, which the units models keep for a
+  // reader beside their offense and defense.
+  const showSuccess = (ratings.data?.ratings ?? []).some(
+    (row) => row.success != null,
+  );
+
   if (ratings.isError) {
     return <p className="error">No ratings published for {league} yet.</p>;
   }
@@ -121,6 +127,7 @@ export function RatingsPage() {
           league={league}
           showRd={showRd}
           showUnits={showUnits}
+          showSuccess={showSuccess}
           since={ratings.data?.movement_since?.date ?? null}
           firstRowRef={firstRow}
           onExitTop={toFilter}

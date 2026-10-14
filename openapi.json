@@ -1470,6 +1470,25 @@
         "title": "PredictResponse",
         "type": "object"
       },
+      "RateRating": {
+        "description": "One side's success rate, a share of its downs from 0 to 1, and its deviation.",
+        "properties": {
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "sd": {
+            "title": "Sd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rate",
+          "sd"
+        ],
+        "title": "RateRating",
+        "type": "object"
+      },
       "RatingsResponse": {
         "properties": {
           "created_at": {
@@ -1596,6 +1615,23 @@
           "last_modified"
         ],
         "title": "SeasonObject",
+        "type": "object"
+      },
+      "SuccessRating": {
+        "description": "A team's offense's success rate and the rate its defense allows.\n\nOpponent-adjusted: each against an average opponent on a neutral field.\nFor a reader only -- the units models keep it beside their sides and\nnever predict from it, and `rating_predictor` drops it. See\n`UnitMarginGlickoPredictor`'s \"What a release carries\".",
+        "properties": {
+          "defense": {
+            "$ref": "#/components/schemas/RateRating"
+          },
+          "offense": {
+            "$ref": "#/components/schemas/RateRating"
+          }
+        },
+        "required": [
+          "offense",
+          "defense"
+        ],
+        "title": "SuccessRating",
         "type": "object"
       },
       "TeamGameRow": {
@@ -1829,6 +1865,16 @@
               }
             ],
             "title": "Rd"
+          },
+          "success": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuccessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "team": {
             "title": "Team",

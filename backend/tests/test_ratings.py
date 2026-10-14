@@ -274,6 +274,33 @@ class TestUnitRatings:
         assert best_defense["team"] == "Georgia"
 
 
+class TestSuccessRates:
+    """Each side's success rate, where a units model keeps one for a reader.
+
+    The ncaafb fixture carries a pair for the four teams it has plays for,
+    as a units release does; Alabama, on its record alone, carries none.
+    """
+
+    def test_served_where_the_release_carries_them(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        georgia = next(r for r in rows if r["team"] == "Georgia")
+        assert georgia["success"] == {
+            "offense": {"rate": 0.511, "sd": 0.031},
+            "defense": {"rate": 0.347, "sd": 0.028},
+        }
+
+    def test_null_for_a_model_without_them(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        assert all(r["success"] is None for r in rows)
+
+    def test_null_for_a_team_the_model_has_no_plays_for(
+        self, client: TestClient
+    ) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        alabama = next(r for r in rows if r["team"] == "Alabama")
+        assert alabama["success"] is None
+
+
 class TestMovement:
     """The column the ratings page has been missing: what the week did.
 
