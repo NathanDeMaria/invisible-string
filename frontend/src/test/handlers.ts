@@ -165,7 +165,9 @@ const elo: RatingsResponse = {
  * better offense, so a page that rendered the team rating under both headings
  * would look plausible and still fail. Alabama carries no units at all -- a
  * team the play-by-play index never had a game for, which is what stops the
- * columns from promising a number for every row.
+ * columns from promising a number for every row. The success rates are the
+ * fixture's too: Georgia's offense wins more of its downs and its defense
+ * allows fewer, and Alabama, with no plays, has none.
  */
 export const compound: RatingsResponse = {
   league: "ncaafb",
@@ -189,6 +191,10 @@ export const compound: RatingsResponse = {
       losses: 1,
       offense: { rating: 1861.0, rd: 74.5 },
       defense: { rating: 1923.8, rd: 69.1 },
+      success: {
+        offense: { rate: 0.511, sd: 0.031 },
+        defense: { rate: 0.347, sd: 0.028 },
+      },
     },
     {
       rank: 2,
@@ -199,6 +205,10 @@ export const compound: RatingsResponse = {
       losses: 2,
       offense: { rating: 1948.2, rd: 71.2 },
       defense: { rating: 1800.0, rd: 76.4 },
+      success: {
+        offense: { rate: 0.504, sd: 0.031 },
+        defense: { rate: 0.353, sd: 0.028 },
+      },
     },
     {
       rank: 3,

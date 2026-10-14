@@ -81,9 +81,38 @@ describe("RatingsPage", () => {
 
     const alabama = rowsInBody()[2];
     expect(alabama).toHaveTextContent("1751.9");
-    // Two dashes: one per unit column. The row keeps its rating and says
-    // nothing about halves it has no evidence for.
-    expect(within(alabama).getAllByText("—")).toHaveLength(2);
+    // Four dashes: one per unit column and one per success-rate column. The
+    // row keeps its rating and says nothing about halves it has no evidence
+    // for.
+    expect(within(alabama).getAllByText("—")).toHaveLength(4);
+  });
+
+  it("shows each side's success rate where the model keeps one", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    expect(
+      screen.getByRole("columnheader", { name: "Off SR" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Def SR" }),
+    ).toBeInTheDocument();
+    const georgia = rowsInBody()[0];
+    expect(georgia).toHaveTextContent("51.1%");
+    expect(georgia).toHaveTextContent("34.7%");
+    // The deviation is in the title, in points of success rate.
+    expect(within(georgia).getByText("51.1%")).toHaveAttribute(
+      "title",
+      "± 3.1 pts",
+    );
+  });
+
+  it("hides the success-rate columns for a model without them", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+    await screen.findByText("Duke");
+
+    expect(screen.queryByRole("columnheader", { name: "Off SR" })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Def SR" })).toBeNull();
   });
 
   it("keeps the unit columns while the search box narrows the table", async () => {

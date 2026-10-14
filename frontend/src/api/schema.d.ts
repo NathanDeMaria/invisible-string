@@ -946,6 +946,16 @@ export interface components {
             /** Run Id */
             run_id: string;
         };
+        /**
+         * RateRating
+         * @description One side's success rate, a share of its downs from 0 to 1, and its deviation.
+         */
+        RateRating: {
+            /** Rate */
+            rate: number;
+            /** Sd */
+            sd: number;
+        };
         /** RatingsResponse */
         RatingsResponse: {
             /**
@@ -1001,6 +1011,19 @@ export interface components {
             league: string;
             /** Year */
             year: number;
+        };
+        /**
+         * SuccessRating
+         * @description A team's offense's success rate and the rate its defense allows.
+         *
+         *     Opponent-adjusted: each against an average opponent on a neutral field.
+         *     For a reader only -- the units models keep it beside their sides and
+         *     never predict from it, and `rating_predictor` drops it. See
+         *     `UnitMarginGlickoPredictor`'s "What a release carries".
+         */
+        SuccessRating: {
+            defense: components["schemas"]["RateRating"];
+            offense: components["schemas"]["RateRating"];
         };
         /**
          * TeamGameRow
@@ -1081,6 +1104,7 @@ export interface components {
             rating: number;
             /** Rd */
             rd: number | null;
+            success?: components["schemas"]["SuccessRating"] | null;
             /** Team */
             team: string;
             /** Wins */
