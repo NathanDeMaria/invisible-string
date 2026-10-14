@@ -23,7 +23,7 @@ boto3 = "^1.41.0"
 # must never require the ability to produce one, so `No module named sklearn`
 # in this image always means something is trying to *fit* -- the fix is never
 # to add sklearn here.
-cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "95c57d326cf255210dd2918b1c99a4678650d9b5" }
+cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "c2032f749cce3bbc8595db0a99ac2523458552d5" }
 
 # In-game win probability and EPA per play for football, pinned by rev the way
 # cassandra is (DESIGN.md sections 16 and 16.8). The fits ship *inside* this
