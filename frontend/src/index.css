@@ -531,6 +531,35 @@ table.ratings,
   width: 2.5rem;
 }
 
+/* The leaderboard's own horizontal scroll. Ten columns don't fit a phone,
+   and before this the overflow widened the whole document, so the header and
+   the filter box scrolled away with the numbers. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* The team's name holds the left edge while the numbers behind it scroll, so
+   a row scrolled over to its success rates still says whose they are. Inert
+   wherever the table fits. Opaque, so what slides under it doesn't show
+   through, which means it carries the row's tint and focus ring itself. */
+.ratings .team {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.ratings tbody tr:hover .team {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+}
+
+.ratings tbody tr:focus-visible .team {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  box-shadow:
+    inset 0 2px var(--accent),
+    inset 0 -2px var(--accent);
+}
+
 .ratings tbody tr:hover {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
