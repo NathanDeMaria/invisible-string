@@ -64,91 +64,103 @@ export function RatingsTable({
   const sorting = { sort, onSort };
 
   return (
-    <table className="ratings">
-      <thead>
-        <tr>
-          <SortHeader column="rank" label="#" className="rank" {...sorting} />
-          <SortHeader column="rating" label="Rating" {...sorting} />
-          <SortHeader column="record" label={<>W&ndash;L</>} {...sorting} />
-          <SortHeader column="team" label="Team" text {...sorting} />
-          {showRd && <SortHeader column="rd" label="RD" {...sorting} />}
-          {showUnits && (
-            <>
-              <SortHeader column="offense" label="Off" {...sorting} />
-              <SortHeader column="defense" label="Def" {...sorting} />
-            </>
-          )}
-          {showSuccess && (
-            <>
-              <SortHeader
-                column="offenseSuccess"
-                label={
-                  <abbr title="Success rate: the share of its downs this offense wins against an average defense">
-                    Off SR
-                  </abbr>
-                }
-                {...sorting}
-              />
-              <SortHeader
-                column="defenseSuccess"
-                label={
-                  <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
-                    Def SR
-                  </abbr>
-                }
-                {...sorting}
-              />
-            </>
-          )}
-          {since && <SortHeader column="week" label="Week" {...sorting} />}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr
-            key={row.team}
-            ref={index === 0 ? firstRowRef : undefined}
-            {...rowKeys(teamPath(league, row.team))}
-          >
-            <td className="num rank">{row.rank}</td>
-            <td className="num">{row.rating.toFixed(1)}</td>
-            <td className="num">
-              {row.wins}&ndash;{row.losses}
-            </td>
-            <td>
-              {/* The name is the way into the team's own page, the same way a
-                  matchup is the way into a game's. Coloured like text rather
-                  than like a link: a table whose every second cell is blue
-                  reads as a page of links rather than as a leaderboard. */}
-              {/* Out of the tab order, because the row it sits in is in it:
-                  one stop per team either way, and the focused thing is the
-                  whole line rather than six words of it. */}
-              <Link
-                className="job-name"
-                tabIndex={-1}
-                to={teamPath(league, row.team)}
-              >
-                {row.team}
-              </Link>
-            </td>
-            {showRd && <td className="num">{row.rd?.toFixed(1) ?? "—"}</td>}
+    // Scrolls sideways in its own box rather than widening the page: ten
+    // columns don't fit a phone, and every one of them is a sort a reader can
+    // ask for, so none is dropped. The team's name stays pinned to the left
+    // edge while the numbers behind it scroll -- see `.ratings .team`.
+    <div className="table-scroll">
+      <table className="ratings">
+        <thead>
+          <tr>
+            <SortHeader column="rank" label="#" className="rank" {...sorting} />
+            <SortHeader column="rating" label="Rating" {...sorting} />
+            <SortHeader column="record" label={<>W&ndash;L</>} {...sorting} />
+            <SortHeader
+              column="team"
+              label="Team"
+              className="team"
+              text
+              {...sorting}
+            />
+            {showRd && <SortHeader column="rd" label="RD" {...sorting} />}
             {showUnits && (
               <>
-                <UnitCell unit={row.offense} />
-                <UnitCell unit={row.defense} />
+                <SortHeader column="offense" label="Off" {...sorting} />
+                <SortHeader column="defense" label="Def" {...sorting} />
               </>
             )}
             {showSuccess && (
               <>
-                <RateCell rate={row.success?.offense} />
-                <RateCell rate={row.success?.defense} />
+                <SortHeader
+                  column="offenseSuccess"
+                  label={
+                    <abbr title="Success rate: the share of its downs this offense wins against an average defense">
+                      Off SR
+                    </abbr>
+                  }
+                  {...sorting}
+                />
+                <SortHeader
+                  column="defenseSuccess"
+                  label={
+                    <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
+                      Def SR
+                    </abbr>
+                  }
+                  {...sorting}
+                />
               </>
             )}
-            {since && <MovementCell row={row} since={since} />}
+            {since && <SortHeader column="week" label="Week" {...sorting} />}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr
+              key={row.team}
+              ref={index === 0 ? firstRowRef : undefined}
+              {...rowKeys(teamPath(league, row.team))}
+            >
+              <td className="num rank">{row.rank}</td>
+              <td className="num">{row.rating.toFixed(1)}</td>
+              <td className="num">
+                {row.wins}&ndash;{row.losses}
+              </td>
+              <td className="team">
+                {/* The name is the way into the team's own page, the same way a
+                  matchup is the way into a game's. Coloured like text rather
+                  than like a link: a table whose every second cell is blue
+                  reads as a page of links rather than as a leaderboard. */}
+                {/* Out of the tab order, because the row it sits in is in it:
+                  one stop per team either way, and the focused thing is the
+                  whole line rather than six words of it. */}
+                <Link
+                  className="job-name"
+                  tabIndex={-1}
+                  to={teamPath(league, row.team)}
+                >
+                  {row.team}
+                </Link>
+              </td>
+              {showRd && <td className="num">{row.rd?.toFixed(1) ?? "—"}</td>}
+              {showUnits && (
+                <>
+                  <UnitCell unit={row.offense} />
+                  <UnitCell unit={row.defense} />
+                </>
+              )}
+              {showSuccess && (
+                <>
+                  <RateCell rate={row.success?.offense} />
+                  <RateCell rate={row.success?.defense} />
+                </>
+              )}
+              {since && <MovementCell row={row} since={since} />}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
