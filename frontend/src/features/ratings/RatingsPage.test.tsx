@@ -129,6 +129,88 @@ describe("RatingsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("leads with rank, rating and record", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+    await screen.findByText("Duke");
+
+    const headings = screen
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent);
+    // The sorted column's arrow is part of its text.
+    expect(headings.slice(0, 4)).toEqual(["#▲", "Rating", "W–L", "Team"]);
+    expect(within(rowsInBody()[0]).getAllByRole("cell")[2]).toHaveTextContent(
+      /^\d+–\d+$/,
+    );
+  });
+
+  describe("sorting", () => {
+    // The arrow is hidden from the accessible name, so these stay exact.
+    const heading = (name: string) => screen.getByRole("button", { name });
+    const columnheader = (name: string) =>
+      screen.getByRole("columnheader", { name });
+
+    it("starts in the model's order", async () => {
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Duke");
+      expect(columnheader("#")).toHaveAttribute("aria-sort", "ascending");
+      expect(columnheader("Rating")).not.toHaveAttribute("aria-sort");
+    });
+
+    it("sorts on a clicked column best-first, and flips on a second click", async () => {
+      const user = userEvent.setup();
+      renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+      await screen.findByText("Georgia");
+
+      // Ohio State has the better offense though Georgia leads the table.
+      await user.click(heading("Off"));
+      expect(rowsInBody()[0]).toHaveTextContent("Ohio State");
+      expect(columnheader("Off")).toHaveAttribute("aria-sort", "descending");
+      expect(columnheader("#")).not.toHaveAttribute("aria-sort");
+      // Alabama has no plays on file, so it stays at the bottom.
+      expect(rowsInBody()[2]).toHaveTextContent("Alabama");
+
+      await user.click(heading("Off"));
+      expect(rowsInBody()[0]).toHaveTextContent("Georgia");
+      expect(columnheader("Off")).toHaveAttribute("aria-sort", "ascending");
+      expect(rowsInBody()[2]).toHaveTextContent("Alabama");
+    });
+
+    it("sorts success rate allowed lowest-first", async () => {
+      const user = userEvent.setup();
+      renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+      await screen.findByText("Georgia");
+
+      await user.click(heading("Def SR"));
+      expect(rowsInBody()[0]).toHaveTextContent("Georgia");
+      expect(columnheader("Def SR")).toHaveAttribute("aria-sort", "ascending");
+    });
+
+    it("keeps the model's rank on each row whatever the order", async () => {
+      const user = userEvent.setup();
+      renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+      await screen.findByText("Georgia");
+
+      await user.click(heading("Team"));
+      const first = rowsInBody()[0];
+      expect(first).toHaveTextContent("Alabama");
+      expect(within(first).getAllByRole("cell")[0]).toHaveTextContent("3");
+    });
+
+    it("keeps the order across a change of model", async () => {
+      const user = userEvent.setup();
+      renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+      await screen.findByText("Duke");
+
+      await user.click(heading("Team"));
+      await user.selectOptions(screen.getByLabelText("Model"), "elo");
+
+      await waitFor(() =>
+        expect(screen.queryByRole("columnheader", { name: "RD" })).toBeNull(),
+      );
+      expect(columnheader("Team")).toHaveAttribute("aria-sort", "ascending");
+    });
+  });
+
   it("filters teams by the search box", async () => {
     const user = userEvent.setup();
     renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
