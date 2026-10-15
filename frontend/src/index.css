@@ -494,6 +494,38 @@ table.ratings,
   white-space: nowrap;
 }
 
+/* A heading that sorts its column. Drawn as the heading it replaces rather
+   than as a button: every column has one, and a row of ten buttons would
+   read as a toolbar above the table rather than as its headings. */
+.ratings th .sort {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ratings th .sort:hover,
+.ratings th[aria-sort] .sort {
+  color: var(--fg);
+}
+
+.ratings th .sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The direction, at the size of the heading's letters rather than the
+   glyph's own -- see `.places .up`. */
+.ratings th .arrow {
+  font-size: 0.6rem;
+  margin-left: 0.25rem;
+}
+
 .ratings .rank {
   color: var(--muted);
   width: 2.5rem;

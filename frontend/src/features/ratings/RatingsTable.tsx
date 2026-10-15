@@ -1,9 +1,10 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { Link } from "react-router-dom";
 
 import { useRowKeys } from "../keys/useRowKeys";
 import type { RateRating, TeamRow, UnitRating } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
+import type { Sort, SortKey } from "./sort";
 
 interface Props {
   rows: TeamRow[];
@@ -29,6 +30,10 @@ interface Props {
    * a season. Null drops the column rather than filling it with dashes.
    */
   since: string | null;
+  /** The order the rows arrive in, which the headings mark. */
+  sort: Sort;
+  /** A heading was clicked: re-sort on its column. */
+  onSort: (key: SortKey) => void;
   /** The row the filter box's Down key hands focus to. */
   firstRowRef?: Ref<HTMLTableRowElement>;
   /** Where Up goes from that row -- back to the filter box. */
@@ -42,6 +47,8 @@ export function RatingsTable({
   showUnits,
   showSuccess,
   since,
+  sort,
+  onSort,
   firstRowRef,
   onExitTop,
 }: Props) {
@@ -54,54 +61,46 @@ export function RatingsTable({
     return <p className="empty">No teams match that search.</p>;
   }
 
+  const sorting = { sort, onSort };
+
   return (
     <table className="ratings">
       <thead>
         <tr>
-          <th scope="col" className="num">
-            #
-          </th>
-          <th scope="col">Team</th>
-          <th scope="col" className="num">
-            Rating
-          </th>
-          {showRd && (
-            <th scope="col" className="num">
-              RD
-            </th>
-          )}
+          <SortHeader column="rank" label="#" className="rank" {...sorting} />
+          <SortHeader column="rating" label="Rating" {...sorting} />
+          <SortHeader column="record" label={<>W&ndash;L</>} {...sorting} />
+          <SortHeader column="team" label="Team" text {...sorting} />
+          {showRd && <SortHeader column="rd" label="RD" {...sorting} />}
           {showUnits && (
             <>
-              <th scope="col" className="num">
-                Off
-              </th>
-              <th scope="col" className="num">
-                Def
-              </th>
+              <SortHeader column="offense" label="Off" {...sorting} />
+              <SortHeader column="defense" label="Def" {...sorting} />
             </>
           )}
           {showSuccess && (
             <>
-              <th scope="col" className="num">
-                <abbr title="Success rate: the share of its downs this offense wins against an average defense">
-                  Off SR
-                </abbr>
-              </th>
-              <th scope="col" className="num">
-                <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
-                  Def SR
-                </abbr>
-              </th>
+              <SortHeader
+                column="offenseSuccess"
+                label={
+                  <abbr title="Success rate: the share of its downs this offense wins against an average defense">
+                    Off SR
+                  </abbr>
+                }
+                {...sorting}
+              />
+              <SortHeader
+                column="defenseSuccess"
+                label={
+                  <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
+                    Def SR
+                  </abbr>
+                }
+                {...sorting}
+              />
             </>
           )}
-          <th scope="col" className="num">
-            W&ndash;L
-          </th>
-          {since && (
-            <th scope="col" className="num">
-              Week
-            </th>
-          )}
+          {since && <SortHeader column="week" label="Week" {...sorting} />}
         </tr>
       </thead>
       <tbody>
@@ -112,6 +111,10 @@ export function RatingsTable({
             {...rowKeys(teamPath(league, row.team))}
           >
             <td className="num rank">{row.rank}</td>
+            <td className="num">{row.rating.toFixed(1)}</td>
+            <td className="num">
+              {row.wins}&ndash;{row.losses}
+            </td>
             <td>
               {/* The name is the way into the team's own page, the same way a
                   matchup is the way into a game's. Coloured like text rather
@@ -128,7 +131,6 @@ export function RatingsTable({
                 {row.team}
               </Link>
             </td>
-            <td className="num">{row.rating.toFixed(1)}</td>
             {showRd && <td className="num">{row.rd?.toFixed(1) ?? "—"}</td>}
             {showUnits && (
               <>
@@ -142,14 +144,62 @@ export function RatingsTable({
                 <RateCell rate={row.success?.defense} />
               </>
             )}
-            <td className="num">
-              {row.wins}&ndash;{row.losses}
-            </td>
             {since && <MovementCell row={row} since={since} />}
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * A column heading that sorts the table on its column.
+ *
+ * The click target is a button inside the heading rather than the heading
+ * itself, so it is a tab stop and answers to Enter and Space the way any other
+ * control does. `aria-sort` sits on the heading, where a screen reader looks
+ * for it; the arrow is for everyone else, and only on the sorted column -- an
+ * arrow on every heading would be ten things saying the same nothing.
+ */
+function SortHeader({
+  column,
+  label,
+  className,
+  text = false,
+  sort,
+  onSort,
+}: {
+  column: SortKey;
+  label: ReactNode;
+  className?: string;
+  /** A column of words rather than numbers, aligned to the left. */
+  text?: boolean;
+  sort: Sort;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort.key === column;
+  const classes = [text ? null : "num", className].filter(Boolean).join(" ");
+  return (
+    <th
+      scope="col"
+      className={classes || undefined}
+      aria-sort={
+        active
+          ? sort.direction === "asc"
+            ? "ascending"
+            : "descending"
+          : undefined
+      }
+    >
+      <button type="button" className="sort" onClick={() => onSort(column)}>
+        {label}
+        {active && (
+          <span className="arrow" aria-hidden="true">
+            {sort.direction === "asc" ? "▲" : "▼"}
+          </span>
+        )}
+      </button>
+    </th>
   );
 }
 

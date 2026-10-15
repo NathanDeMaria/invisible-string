@@ -7,12 +7,13 @@ import { useKeyboard } from "../keys/useKeyboard";
 import { useGetLeaguesQuery, useGetRatingsQuery } from "../../services/api";
 import { weekEnding } from "./movement";
 import { RatingsTable } from "./RatingsTable";
-import { modelSelected, searchChanged } from "./uiSlice";
+import { sortRows } from "./sort";
+import { modelSelected, searchChanged, sortClicked } from "./uiSlice";
 
 export function RatingsPage() {
   const { league = "mens" } = useParams();
   const dispatch = useDispatch();
-  const { model, search } = useSelector((s: RootState) => s.ui);
+  const { model, search, sort } = useSelector((s: RootState) => s.ui);
 
   const leagues = useGetLeaguesQuery();
   const ratings = useGetRatingsQuery({ league, model: model ?? undefined });
@@ -35,10 +36,11 @@ export function RatingsPage() {
   const rows = useMemo(() => {
     const all = ratings.data?.ratings ?? [];
     const needle = search.trim().toLowerCase();
-    return needle
+    const matching = needle
       ? all.filter((row) => row.team.toLowerCase().includes(needle))
       : all;
-  }, [ratings.data, search]);
+    return sortRows(matching, sort);
+  }, [ratings.data, search, sort]);
 
   // Elo has no rating deviation. Decide from the data rather than from the
   // model name, so a new predictor class doesn't need a change here.
@@ -129,6 +131,8 @@ export function RatingsPage() {
           showUnits={showUnits}
           showSuccess={showSuccess}
           since={ratings.data?.movement_since?.date ?? null}
+          sort={sort}
+          onSort={(key) => dispatch(sortClicked(key))}
           firstRowRef={firstRow}
           onExitTop={toFilter}
         />
