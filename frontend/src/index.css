@@ -1396,37 +1396,6 @@ table.ratings,
   margin: 0;
 }
 
-/* The ratings page's Table / Chart switch: one control of two halves, the
-   one in view marked by the accent border the league tabs use. */
-.view-toggle {
-  display: flex;
-  flex: 0 0 auto;
-}
-
-.view-toggle button {
-  font: inherit;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.view-toggle button:first-child {
-  border-radius: 6px 0 0 6px;
-}
-
-.view-toggle button:last-child {
-  border-radius: 0 6px 6px 0;
-  border-left: none;
-}
-
-.view-toggle button[aria-pressed="true"] {
-  color: var(--fg);
-  border-color: var(--accent);
-  border-left: 1px solid var(--accent);
-}
-
 .axis-pickers {
   margin-top: 0;
 }

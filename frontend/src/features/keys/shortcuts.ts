@@ -25,6 +25,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: ["g"], does: "Games" },
       { keys: ["r"], does: "Ratings, for the league you were last in" },
       { keys: ["m"], does: "Matchup, for that same league" },
+      { keys: ["c"], does: "Chart, for that same league" },
       { keys: ["j"], does: "Job health" },
       { keys: ["?"], does: "This sheet" },
     ],

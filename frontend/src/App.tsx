@@ -16,6 +16,7 @@ import { ShortcutsDialog } from "./features/keys/ShortcutsDialog";
 import { useKeyboard } from "./features/keys/useKeyboard";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
+import { ChartPage } from "./features/ratings/ChartPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
 import { TeamPage } from "./features/team/TeamPage";
 import { useGetLeaguesQuery } from "./services/api";
@@ -29,7 +30,11 @@ export function App() {
   // Changing league keeps the panel you were looking at. Sending someone
   // comparing two leagues' matchups back to the leaderboard every time would
   // make the outer tabs feel like they discard your place rather than move it.
-  const panel = pathname.endsWith("/matchup") ? "matchup" : "ratings";
+  const panel = pathname.endsWith("/matchup")
+    ? "matchup"
+    : pathname.endsWith("/chart")
+      ? "chart"
+      : "ratings";
 
   // Games and jobs span no league, or none in particular, so neither lives
   // under one -- they're sections in their own right, alongside ratings
@@ -63,6 +68,7 @@ export function App() {
       g: () => navigate("/games"),
       r: () => navigate(`/${league}/ratings`),
       m: () => navigate(`/${league}/matchup`),
+      c: () => navigate(`/${league}/chart`),
       j: () => navigate("/jobs"),
       "?": () => setHelpOpen(true),
       // A league a press at a time, in the order the tabs are in. Only under
@@ -128,6 +134,7 @@ export function App() {
             <Route index element={<Navigate to="ratings" replace />} />
             <Route path="ratings" element={<RatingsPage />} />
             <Route path="matchup" element={<MatchupPage />} />
+            <Route path="chart" element={<ChartPage />} />
             {/* A team is a detail of its league, so it sits under the league's
                 layout and keeps the panel nav that leads back to the
                 leaderboard it was reached from. Encoded in the path rather
