@@ -6,14 +6,30 @@ import type { RootState } from "../../app/store";
 import { useKeyboard } from "../keys/useKeyboard";
 import { useGetLeaguesQuery, useGetRatingsQuery } from "../../services/api";
 import { weekEnding } from "./movement";
+import { RatingsScatter } from "./RatingsScatter";
 import { RatingsTable } from "./RatingsTable";
+import {
+  METRICS,
+  availableMetrics,
+  defaultAxes,
+  resolveAxis,
+  type Metric,
+} from "./scatter";
 import { sortRows } from "./sort";
-import { modelSelected, searchChanged, sortClicked } from "./uiSlice";
+import {
+  chartAxisSelected,
+  modelSelected,
+  searchChanged,
+  sortClicked,
+  viewSelected,
+} from "./uiSlice";
 
 export function RatingsPage() {
   const { league = "mens" } = useParams();
   const dispatch = useDispatch();
-  const { model, search, sort } = useSelector((s: RootState) => s.ui);
+  const { model, search, sort, view, chartX, chartY } = useSelector(
+    (s: RootState) => s.ui,
+  );
 
   const leagues = useGetLeaguesQuery();
   const ratings = useGetRatingsQuery({ league, model: model ?? undefined });
@@ -61,6 +77,31 @@ export function RatingsPage() {
     (row) => row.success != null,
   );
 
+  const since = ratings.data?.movement_since?.date ?? null;
+
+  // The chart offers the columns the table shows, by the same rules.
+  const metrics = availableMetrics({
+    rd: showRd,
+    units: showUnits,
+    success: showSuccess,
+    week: since != null,
+  });
+  const fallback = defaultAxes(metrics);
+  const x = resolveAxis(chartX, metrics, fallback.x);
+  const y = resolveAxis(chartY, metrics, fallback.y);
+
+  // On the chart the filter picks teams out rather than leaving the rest off:
+  // a dot is read against the league around it, which a filtered plot drops.
+  const matched = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return null;
+    return new Set(
+      (ratings.data?.ratings ?? [])
+        .filter((row) => row.team.toLowerCase().includes(needle))
+        .map((row) => row.team),
+    );
+  }, [ratings.data, search]);
+
   if (ratings.isError) {
     return <p className="error">No ratings published for {league} yet.</p>;
   }
@@ -107,7 +148,40 @@ export function RatingsPage() {
             </option>
           ))}
         </select>
+        <div className="view-toggle" role="group" aria-label="View">
+          {(["table", "chart"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={view === option}
+              onClick={() => dispatch(viewSelected(option))}
+            >
+              {option === "table" ? "Table" : "Chart"}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {view === "chart" && (
+        <div className="controls axis-pickers">
+          <AxisPicker
+            label="X axis"
+            value={x}
+            options={metrics}
+            onChange={(metric) =>
+              dispatch(chartAxisSelected({ axis: "x", metric }))
+            }
+          />
+          <AxisPicker
+            label="Y axis"
+            value={y}
+            options={metrics}
+            onChange={(metric) =>
+              dispatch(chartAxisSelected({ axis: "y", metric }))
+            }
+          />
+        </div>
+      )}
 
       {ratings.data && (
         <p className="meta" data-testid="run-meta">
@@ -123,6 +197,14 @@ export function RatingsPage() {
 
       {ratings.isLoading ? (
         <p className="loading">Loading&hellip;</p>
+      ) : view === "chart" ? (
+        <RatingsScatter
+          rows={ratings.data?.ratings ?? []}
+          league={league}
+          x={x}
+          y={y}
+          matched={matched}
+        />
       ) : (
         <RatingsTable
           rows={rows}
@@ -130,7 +212,7 @@ export function RatingsPage() {
           showRd={showRd}
           showUnits={showUnits}
           showSuccess={showSuccess}
-          since={ratings.data?.movement_since?.date ?? null}
+          since={since}
           sort={sort}
           onSort={(key) => dispatch(sortClicked(key))}
           firstRowRef={firstRow}
@@ -138,6 +220,34 @@ export function RatingsPage() {
         />
       )}
     </>
+  );
+}
+
+function AxisPicker({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: Metric;
+  options: Metric[];
+  onChange: (metric: Metric) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as Metric)}
+      >
+        {options.map((metric) => (
+          <option key={metric} value={metric}>
+            {METRICS[metric].label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
