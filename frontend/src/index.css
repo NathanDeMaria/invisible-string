@@ -1395,3 +1395,93 @@ table.ratings,
 .terms label.toggle > input {
   margin: 0;
 }
+
+/* The ratings page's Table / Chart switch: one control of two halves, the
+   one in view marked by the accent border the league tabs use. */
+.view-toggle {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.view-toggle button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.view-toggle button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.view-toggle button:last-child {
+  border-radius: 0 6px 6px 0;
+  border-left: none;
+}
+
+.view-toggle button[aria-pressed="true"] {
+  color: var(--fg);
+  border-color: var(--accent);
+  border-left: 1px solid var(--accent);
+}
+
+.axis-pickers {
+  margin-top: 0;
+}
+
+/* The ratings scatter. Reuses the timeline's grid, axis and readout styles;
+   what's here is what a dot plot has that a line doesn't. */
+.scatter {
+  margin: 0 0 0.25rem;
+}
+
+.scatter svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: pan-y;
+}
+
+/* A surface ring, so dots that overlap stay countable. */
+.scatter-dot {
+  fill: var(--accent);
+  fill-opacity: 0.75;
+  stroke: var(--bg);
+  stroke-width: 1;
+}
+
+/* Teams the filter didn't match: still there to read against, but behind. */
+.scatter-dot.faded {
+  fill: var(--muted);
+  fill-opacity: 0.25;
+}
+
+/* The league's median on each axis: the quadrant lines. */
+.scatter-median {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.6;
+}
+
+.scatter-title {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.scatter-label {
+  fill: var(--fg);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
+.scatter-cursor {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.5;
+  pointer-events: none;
+}

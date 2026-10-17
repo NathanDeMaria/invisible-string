@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+import type { Metric } from "./scatter";
 import { MODEL_ORDER, nextSort, type Sort, type SortKey } from "./sort";
 
 // UI-only state. Everything served by the API lives in RTK Query's cache and
@@ -14,9 +15,25 @@ interface UiState {
    * re-sort each time.
    */
   sort: Sort;
+  /** The leaderboard as rows, or as a chart of two of its columns. */
+  view: "table" | "chart";
+  /**
+   * The chart's axes, or null for the default pair. Kept across a change of
+   * model like the sort, and only fall back (in `scatter.resolveAxis`) where
+   * the model in view doesn't publish the one chosen.
+   */
+  chartX: Metric | null;
+  chartY: Metric | null;
 }
 
-const initialState: UiState = { model: null, search: "", sort: MODEL_ORDER };
+const initialState: UiState = {
+  model: null,
+  search: "",
+  sort: MODEL_ORDER,
+  view: "table",
+  chartX: null,
+  chartY: null,
+};
 
 const uiSlice = createSlice({
   name: "ui",
@@ -31,8 +48,24 @@ const uiSlice = createSlice({
     sortClicked(state, action: PayloadAction<SortKey>) {
       state.sort = nextSort(state.sort, action.payload);
     },
+    viewSelected(state, action: PayloadAction<"table" | "chart">) {
+      state.view = action.payload;
+    },
+    chartAxisSelected(
+      state,
+      action: PayloadAction<{ axis: "x" | "y"; metric: Metric }>,
+    ) {
+      if (action.payload.axis === "x") state.chartX = action.payload.metric;
+      else state.chartY = action.payload.metric;
+    },
   },
 });
 
-export const { modelSelected, searchChanged, sortClicked } = uiSlice.actions;
+export const {
+  modelSelected,
+  searchChanged,
+  sortClicked,
+  viewSelected,
+  chartAxisSelected,
+} = uiSlice.actions;
 export default uiSlice.reducer;
