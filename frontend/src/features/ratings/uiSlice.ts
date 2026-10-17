@@ -15,8 +15,6 @@ interface UiState {
    * re-sort each time.
    */
   sort: Sort;
-  /** The leaderboard as rows, or as a chart of two of its columns. */
-  view: "table" | "chart";
   /**
    * The chart's axes, or null for the default pair. Kept across a change of
    * model like the sort, and only fall back (in `scatter.resolveAxis`) where
@@ -30,7 +28,6 @@ const initialState: UiState = {
   model: null,
   search: "",
   sort: MODEL_ORDER,
-  view: "table",
   chartX: null,
   chartY: null,
 };
@@ -48,9 +45,6 @@ const uiSlice = createSlice({
     sortClicked(state, action: PayloadAction<SortKey>) {
       state.sort = nextSort(state.sort, action.payload);
     },
-    viewSelected(state, action: PayloadAction<"table" | "chart">) {
-      state.view = action.payload;
-    },
     chartAxisSelected(
       state,
       action: PayloadAction<{ axis: "x" | "y"; metric: Metric }>,
@@ -61,11 +55,6 @@ const uiSlice = createSlice({
   },
 });
 
-export const {
-  modelSelected,
-  searchChanged,
-  sortClicked,
-  viewSelected,
-  chartAxisSelected,
-} = uiSlice.actions;
+export const { modelSelected, searchChanged, sortClicked, chartAxisSelected } =
+  uiSlice.actions;
 export default uiSlice.reducer;

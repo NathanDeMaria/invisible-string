@@ -30,6 +30,9 @@ describe("section keys", () => {
     await user.keyboard("m");
     await waitFor(() => expect(at()).toBe("/mens/matchup"));
 
+    await user.keyboard("c");
+    await waitFor(() => expect(at()).toBe("/mens/chart"));
+
     await user.keyboard("r");
     await waitFor(() => expect(at()).toBe("/mens/ratings"));
   });
