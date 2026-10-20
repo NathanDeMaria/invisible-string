@@ -39,7 +39,7 @@ from typing import Sequence
 from lucky_ones import MODELS, CurvePoint, EpaPerPlay, GameControl, group_by_game
 from lucky_ones.bundled import BundledModel
 from lucky_ones.curve import game_control
-from lucky_ones.epa import epa_per_play_from_states
+from lucky_ones.epa import PlayEPA, epa_per_play_from_states
 from lucky_ones.luck import (
     LuckyWP,
     adjusted_curve_from_states,
@@ -239,3 +239,16 @@ def curve_for(fit: BundledModel, plays: Sequence[Play]) -> Curve:
         ),
         records_defended_passes=records_defended_passes(game.plays),
     )
+
+
+def success_rate(plays: Sequence[PlayEPA], *, home: bool) -> float | None:
+    """The share of one offense's snaps whose raw EPA was above zero.
+
+    Raw rather than bounded -- the clip never changes a sign, and the raw
+    number is the one a success is defined on. A snap worth exactly 0.0 is not
+    a success: the offense gained nothing.
+    """
+    snaps = [play for play in plays if play.offense_is_home == home]
+    if not snaps:
+        return None
+    return sum(play.epa > 0 for play in snaps) / len(snaps)

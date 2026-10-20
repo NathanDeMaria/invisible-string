@@ -109,7 +109,14 @@ export function EpaTable({ curve, shapes }: Props) {
               />
             </td>
             <td className="num quiet">{perPlay(row.flat)}</td>
-            <td className="num">{successRate(row.success)}</td>
+            <td className="num">
+              {successRate(row.success)}
+              <Percentile
+                shapes={shapes}
+                metric="success_rate"
+                value={row.success}
+              />
+            </td>
             <td className="num">
               {row.plays}
               {/* What the weighted column is actually an average over. Not

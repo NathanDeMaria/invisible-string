@@ -65,7 +65,7 @@ from app.distributions import (
 from app.plays import in_game_order
 from app.processed_plays import PREFIX, week_key
 from app.settings import get_settings
-from app.win_probability import Curve, curve_for, fit_for
+from app.win_probability import Curve, curve_for, fit_for, success_rate
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +104,22 @@ def _epa(curve: Curve) -> tuple[float | None, float | None]:
     return (curve.epa.home, curve.epa.away)
 
 
+def _success(curve: Curve) -> tuple[float | None, float | None]:
+    """Each offense's share of snaps that gained anything.
+
+    The flat share the game page prints beside its EPA, over every snap and
+    not garbage-time weighted, so a reader's percentile is of the number on
+    the screen. None -- an offense with no snaps -- is dropped from the
+    sample rather than counted as a zero.
+    """
+    if curve.epa is None:
+        return (None, None)
+    return (
+        success_rate(curve.epa.plays, home=True),
+        success_rate(curve.epa.plays, home=False),
+    )
+
+
 def _control(curve: Curve) -> tuple[float | None, float | None]:
     """Each side's share of the game held.
 
@@ -124,6 +140,7 @@ def _control(curve: Curve) -> tuple[float | None, float | None]:
 # observation of this", which for everything so far is one side of one game.
 METRICS: Mapping[str, Callable[[Curve], tuple[float | None, float | None]]] = {
     "epa_per_play": _epa,
+    "success_rate": _success,
     "game_control": _control,
 }
 

@@ -817,6 +817,9 @@ export const nflDistributions: LeagueDistributions = {
   seasons: [2021, 2022, 2023, 2024, 2025],
   metrics: {
     epa_per_play: { unit: "team-game", n: 2850, values: ramp(-1, 1) },
+    // 0.20 to 0.70 in steps of 0.005, so the fixture's 25% is the 10th and
+    // its 60% the 80th.
+    success_rate: { unit: "team-game", n: 2850, values: ramp(0.2, 0.7) },
     game_control: { unit: "team-game", n: 2850, values: ramp(0, 1) },
   },
 };
