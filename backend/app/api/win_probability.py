@@ -28,11 +28,13 @@ bucket refusing to be read, exactly as on the games page.
 """
 
 import logging
+from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from lucky_ones import EpaPerPlay as LuckyOnesEpaPerPlay
 from lucky_ones import GameControl as LuckyOnesGameControl
 from lucky_ones.bundled import BundledModel
+from lucky_ones.epa import PlayEPA
 from pydantic import BaseModel
 
 from app.games import GamesSource, GamesUnavailable, find_game, get_games_source
@@ -188,6 +190,14 @@ class EpaPerPlay(BaseModel):
     # page says which.
     home_weight: float
     away_weight: float
+    # The share of each offense's snaps that gained anything -- raw EPA above
+    # zero, the same success a units model's success rate is built from. Flat,
+    # over `home_plays`/`away_plays`: a rate of a game's snaps is already a
+    # description of *this game*, and a garbage-time weighting would answer a
+    # question the column beside it (the weighted EPA) is already asking. None
+    # for an offense with no snaps, not 0.0 -- see the note on `home` above.
+    home_success: float | None
+    away_success: float | None
 
 
 class ExpectedPointsFit(BaseModel):
@@ -436,7 +446,22 @@ def _epa(epa: LuckyOnesEpaPerPlay | None) -> EpaPerPlay | None:
         away_plays=epa.away_plays,
         home_weight=epa.home_weight,
         away_weight=epa.away_weight,
+        home_success=_success_rate(epa.plays, home=True),
+        away_success=_success_rate(epa.plays, home=False),
     )
+
+
+def _success_rate(plays: Sequence[PlayEPA], *, home: bool) -> float | None:
+    """The share of one offense's snaps whose raw EPA was above zero.
+
+    Raw rather than bounded -- the clip never changes a sign, and the raw
+    number is the one a success is defined on. A snap worth exactly 0.0 is not
+    a success: the offense gained nothing.
+    """
+    snaps = [play for play in plays if play.offense_is_home == home]
+    if not snaps:
+        return None
+    return sum(play.epa > 0 for play in snaps) / len(snaps)
 
 
 def _expected_points_fit(fit: BundledModel) -> ExpectedPointsFit | None:

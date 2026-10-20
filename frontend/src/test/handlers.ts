@@ -776,6 +776,8 @@ export const winProbability: WinProbabilityResponse = {
     away_plays: 5,
     home_weight: 2.94,
     away_weight: 3.92,
+    home_success: 0.25,
+    away_success: 0.6,
   },
   expected_points_fit: {
     league: "nfl",
