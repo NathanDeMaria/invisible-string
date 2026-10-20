@@ -1184,6 +1184,17 @@ table.ratings,
   font-weight: 500;
 }
 
+/* The two teams' ratings, with the place each holds beside the value. Row
+   headings at the weight of the rows around them, as in the EPA table, and a
+   gap before the rank so "1745.3#2 of 130" doesn't read as one token. */
+.team-metrics tbody th {
+  font-weight: 500;
+}
+
+.team-metrics .of {
+  margin-left: 0.5rem;
+}
+
 /* Three-word column headings, which `.ratings .num` would otherwise hold on
    one line: "While it mattered" is 163px of nowrap, and on a 390px viewport
    that was enough to give the document a horizontal scrollbar. The numbers
