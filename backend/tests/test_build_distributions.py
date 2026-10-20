@@ -141,6 +141,8 @@ class TestObserving:
         observe(curve, samples)
 
         assert len(samples["epa_per_play"]) == 2
+        assert len(samples["success_rate"]) == 2
+        assert all(0 <= share <= 1 for share in samples["success_rate"])
         assert len(samples["game_control"]) == 2
 
     def test_a_game_with_nothing_to_score_adds_nothing(self) -> None:
@@ -288,6 +290,7 @@ class TestTheCommandLine:
         assert code == 0
         assert LocalDistributionStore(tmp_path).get("nfl").metrics.keys() == {
             "epa_per_play",
+            "success_rate",
             "game_control",
         }
 

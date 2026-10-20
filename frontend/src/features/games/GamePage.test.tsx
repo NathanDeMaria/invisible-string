@@ -619,6 +619,21 @@ describe("where a game's numbers sit in the league", () => {
     ).toHaveTextContent("60%");
   });
 
+  it("labels each success rate with its percentile", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    // `success_rate` runs 0.20 to 0.70, so 25% is the 10th and 60% the 80th.
+    const table = (await screen.findByText("Success rate")).closest("table");
+    await waitFor(() =>
+      expect(
+        within(table!).getByRole("row", { name: /Chicago Bears/ }),
+      ).toHaveTextContent("25%10th"),
+    );
+    expect(
+      within(table!).getByRole("row", { name: /Green Bay Packers/ }),
+    ).toHaveTextContent("60%80th");
+  });
+
   it("says what the percentile is a percentile of", async () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 
