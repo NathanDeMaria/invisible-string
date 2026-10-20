@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   useGetDistributionsQuery,
   useGetGameQuery,
+  useGetRatingsQuery,
   useGetWinProbabilityQuery,
   type GameDetail,
   type LeagueDistributions,
@@ -24,6 +25,7 @@ import {
 import { EpaTable } from "./Epa";
 import { percentileLabel, percentileOf } from "./percentile";
 import { Explainer } from "./Explainer";
+import { TeamMetrics } from "./TeamMetrics";
 import { MatchupTerms } from "./MatchupTerms";
 import {
   probability,
@@ -107,6 +109,15 @@ export function GamePage() {
   const shapes = useGetDistributionsQuery(
     { league },
     { skip: !detail?.has_win_probability },
+  );
+
+  // The ratings table of the release that priced this game, for the place each
+  // team holds on it. Asked by the release's own model name so the ranks are
+  // the ones behind the number above, and skipped for a game with no
+  // prediction. Its failure drops the section and nothing else.
+  const ratings = useGetRatingsQuery(
+    { league, model: detail?.prediction?.model },
+    { skip: !detail?.prediction },
   );
 
   if (game.isLoading) return <p className="loading">Loading&hellip;</p>;
@@ -210,6 +221,28 @@ export function GamePage() {
                 </dd>
               </div>
             )}
+            {detail.prediction.home_cover_prob != null &&
+              detail.prediction.away_cover_prob != null && (
+                <div>
+                  <dt>Cover</dt>
+                  <dd>
+                    {probability(detail.prediction.home_cover_prob)}{" "}
+                    {detail.home} &ndash;{" "}
+                    {probability(detail.prediction.away_cover_prob)}{" "}
+                    {detail.away}
+                    <span className="of">
+                      chance to cover the line
+                      {(detail.prediction.push_prob ?? 0) >= 0.005 && (
+                        <>
+                          , {probability(detail.prediction.push_prob)} to push
+                        </>
+                      )}
+                      . Run against real lines these have been overconfident, so
+                      read them as a lean, not a price
+                    </span>
+                  </dd>
+                </div>
+              )}
             <div>
               <dt>Ratings</dt>
               <dd>
@@ -257,6 +290,15 @@ export function GamePage() {
           </div>
         )}
       </dl>
+
+      {detail.prediction && ratings.data && (
+        <TeamMetrics
+          rows={ratings.data.ratings}
+          away={detail.away}
+          home={detail.home}
+          model={detail.prediction.model}
+        />
+      )}
 
       <MatchupTerms
         detail={detail}
