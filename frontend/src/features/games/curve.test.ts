@@ -55,6 +55,8 @@ const epa = (over: Partial<EpaPerPlay> = {}): EpaPerPlay => ({
   away_plays: 62,
   home_weight: 40,
   away_weight: 41,
+  home_success: 0.45,
+  away_success: 0.5,
   ...over,
 });
 

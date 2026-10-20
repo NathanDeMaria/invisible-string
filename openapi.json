@@ -73,6 +73,17 @@
             "title": "Away Plays",
             "type": "integer"
           },
+          "away_success": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Success"
+          },
           "away_unweighted": {
             "anyOf": [
               {
@@ -102,6 +113,17 @@
           "home_plays": {
             "title": "Home Plays",
             "type": "integer"
+          },
+          "home_success": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Success"
           },
           "home_unweighted": {
             "anyOf": [
@@ -151,7 +173,9 @@
           "home_plays",
           "away_plays",
           "home_weight",
-          "away_weight"
+          "away_weight",
+          "home_success",
+          "away_success"
         ],
         "title": "EpaPerPlay",
         "type": "object"

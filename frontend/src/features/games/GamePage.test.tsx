@@ -607,6 +607,18 @@ describe("where a game's numbers sit in the league", () => {
     ).toHaveTextContent("59th");
   });
 
+  it("shows each offense's success rate in the game", async () => {
+    renderApp(<GamePage />, at("nfl", "g-1"));
+
+    const table = (await screen.findByText("Success rate")).closest("table");
+    expect(
+      within(table!).getByRole("row", { name: /Chicago Bears/ }),
+    ).toHaveTextContent("25%");
+    expect(
+      within(table!).getByRole("row", { name: /Green Bay Packers/ }),
+    ).toHaveTextContent("60%");
+  });
+
   it("says what the percentile is a percentile of", async () => {
     renderApp(<GamePage />, at("nfl", "g-1"));
 

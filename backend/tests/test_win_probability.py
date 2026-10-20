@@ -518,6 +518,12 @@ class TestTheWinProbabilityEndpoint:
             epa["home_unweighted"] - epa["away_unweighted"]
         )
         assert epa["home_plays"] == epa["away_plays"] == 8
+        # A share of the snaps, so a multiple of one over the snap count.
+        for side in ("home", "away"):
+            assert 0 <= epa[f"{side}_success"] <= 1
+            assert epa[f"{side}_success"] * 8 == pytest.approx(
+                round(epa[f"{side}_success"] * 8)
+            )
         assert 0 < epa["home_weight"] <= epa["home_plays"]
 
     def test_keeps_the_snaps_themselves_off_the_wire(self, client: TestClient) -> None:

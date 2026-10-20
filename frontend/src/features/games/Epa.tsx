@@ -51,6 +51,7 @@ export function EpaTable({ curve, shapes }: Props) {
       team: curve.away,
       weighted: epa.away,
       flat: epa.away_unweighted,
+      success: epa.away_success,
       plays: epa.away_plays,
       weight: epa.away_weight,
     },
@@ -58,6 +59,7 @@ export function EpaTable({ curve, shapes }: Props) {
       team: curve.home,
       weighted: epa.home,
       flat: epa.home_unweighted,
+      success: epa.home_success,
       plays: epa.home_plays,
       weight: epa.home_weight,
     },
@@ -76,6 +78,11 @@ export function EpaTable({ curve, shapes }: Props) {
           </th>
           <th scope="col" className="num">
             Every snap
+          </th>
+          <th scope="col" className="num">
+            <abbr title="The share of the offense's snaps that gained anything: expected points added above zero">
+              Success rate
+            </abbr>
           </th>
           <th scope="col" className="num">
             Snaps
@@ -102,6 +109,7 @@ export function EpaTable({ curve, shapes }: Props) {
               />
             </td>
             <td className="num quiet">{perPlay(row.flat)}</td>
+            <td className="num">{successRate(row.success)}</td>
             <td className="num">
               {row.plays}
               {/* What the weighted column is actually an average over. Not
@@ -114,6 +122,11 @@ export function EpaTable({ curve, shapes }: Props) {
       </tbody>
     </table>
   );
+}
+
+/** A share of snaps as a whole percentage, or a dash with nothing to count. */
+function successRate(value: number | null | undefined): string {
+  return value == null ? "—" : `${Math.round(value * 100)}%`;
 }
 
 /**

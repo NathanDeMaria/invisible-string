@@ -330,6 +330,8 @@ export interface components {
             away: number | null;
             /** Away Plays */
             away_plays: number;
+            /** Away Success */
+            away_success: number | null;
             /** Away Unweighted */
             away_unweighted: number | null;
             /** Away Weight */
@@ -338,6 +340,8 @@ export interface components {
             home: number | null;
             /** Home Plays */
             home_plays: number;
+            /** Home Success */
+            home_success: number | null;
             /** Home Unweighted */
             home_unweighted: number | null;
             /** Home Weight */
