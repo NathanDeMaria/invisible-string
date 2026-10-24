@@ -45,17 +45,27 @@ from cassandra.serving import (
     history_path,
     predictions_path,
 )
+from cassandra.serving.release import (
+    EpaRating,
+    KindEpaRating,
+    KindSuccessRating,
+    PerDownRating,
+)
 
 __all__ = [
     "HISTORY_COLUMNS",
     "HISTORY_KEY",
     "PREDICTION_COLUMNS",
     "PREDICTIONS_KEY",
+    "EpaRating",
     "IsotonicMarginCalibration",
+    "KindEpaRating",
+    "KindSuccessRating",
     "LogisticMarginCalibration",
     "MarginCalibration",
     "Metrics",
     "ModelRelease",
+    "PerDownRating",
     "RateRating",
     "SuccessRating",
     "TeamRating",

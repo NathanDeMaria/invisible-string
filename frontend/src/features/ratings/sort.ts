@@ -18,18 +18,9 @@
  */
 
 import type { TeamRow } from "../../services/api";
+import { METRICS, metricValue, type Metric } from "./scatter";
 
-export type SortKey =
-  | "rank"
-  | "rating"
-  | "record"
-  | "team"
-  | "rd"
-  | "offense"
-  | "defense"
-  | "offenseSuccess"
-  | "defenseSuccess"
-  | "week";
+export type SortKey = "rank" | "team" | Metric;
 
 export type SortDirection = "asc" | "desc";
 
@@ -42,17 +33,9 @@ export interface Sort {
 export const MODEL_ORDER: Sort = { key: "rank", direction: "asc" };
 
 /** Which way each column reads best-first. */
-const BEST_FIRST: Record<SortKey, SortDirection> = {
-  rank: "asc",
-  rating: "desc",
-  record: "desc",
-  team: "asc",
-  rd: "asc",
-  offense: "desc",
-  defense: "desc",
-  offenseSuccess: "desc",
-  defenseSuccess: "asc",
-  week: "desc",
+const BEST_FIRST = (key: SortKey): SortDirection => {
+  if (key === "rank" || key === "team") return "asc";
+  return METRICS[key].reversed ? "asc" : "desc";
 };
 
 /**
@@ -60,7 +43,7 @@ const BEST_FIRST: Record<SortKey, SortDirection> = {
  * and the other way round on the one already sorted.
  */
 export function nextSort(current: Sort, key: SortKey): Sort {
-  if (current.key !== key) return { key, direction: BEST_FIRST[key] };
+  if (current.key !== key) return { key, direction: BEST_FIRST(key) };
   return { key, direction: current.direction === "asc" ? "desc" : "asc" };
 }
 
@@ -69,35 +52,11 @@ function value(row: TeamRow, key: SortKey): number | string | null {
   switch (key) {
     case "rank":
       return row.rank;
-    case "rating":
-      return row.rating;
-    case "record":
-      return winShare(row);
     case "team":
       return row.team;
-    case "rd":
-      return row.rd ?? null;
-    case "offense":
-      return row.offense?.rating ?? null;
-    case "defense":
-      return row.defense?.rating ?? null;
-    case "offenseSuccess":
-      return row.success?.offense.rate ?? null;
-    case "defenseSuccess":
-      return row.success?.defense.rate ?? null;
-    case "week":
-      return row.movement?.rating ?? null;
+    default:
+      return metricValue(row, key);
   }
-}
-
-/**
- * A record as the share of games won, which is what a column of W-L is
- * read for. A team that hasn't played has no share to rank on -- 0-0 is not
- * the same record as 0-5.
- */
-function winShare(row: TeamRow): number | null {
-  const played = row.wins + row.losses;
-  return played === 0 ? null : row.wins / played;
 }
 
 export function sortRows(rows: TeamRow[], sort: Sort): TeamRow[] {

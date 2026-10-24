@@ -30,6 +30,16 @@ export type Metric =
   | "defense"
   | "offenseSuccess"
   | "defenseSuccess"
+  | "offensePassSuccess"
+  | "defensePassSuccess"
+  | "offenseRunSuccess"
+  | "defenseRunSuccess"
+  | "offenseEpa"
+  | "defenseEpa"
+  | "offensePassEpa"
+  | "defensePassEpa"
+  | "offenseRunEpa"
+  | "defenseRunEpa"
   | "week";
 
 export interface MetricInfo {
@@ -37,6 +47,8 @@ export interface MetricInfo {
   /** Lower is better, so the axis runs backwards. */
   reversed: boolean;
   format: (value: number) => string;
+  /** The deviation a model published beside the value, in the value's units. */
+  spread?: (sd: number) => string;
 }
 
 const points = (value: number) => value.toFixed(1);
@@ -44,14 +56,89 @@ const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 const signed = (value: number) =>
   `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}`;
 
+const points3 = (value: number) =>
+  `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(3)}`;
+const pts = (sd: number) => `± ${(sd * 100).toFixed(1)} pts`;
+const epa = (sd: number) => `± ${sd.toFixed(3)}`;
+
 export const METRICS: Record<Metric, MetricInfo> = {
   rating: { label: "Rating", reversed: false, format: points },
   record: { label: "Win %", reversed: false, format: percent },
   rd: { label: "RD", reversed: true, format: points },
   offense: { label: "Offense", reversed: false, format: points },
   defense: { label: "Defense", reversed: false, format: points },
-  offenseSuccess: { label: "Off SR", reversed: false, format: percent },
-  defenseSuccess: { label: "Def SR allowed", reversed: true, format: percent },
+  offenseSuccess: {
+    label: "Off SR",
+    reversed: false,
+    format: percent,
+    spread: pts,
+  },
+  defenseSuccess: {
+    label: "Def SR allowed",
+    reversed: true,
+    format: percent,
+    spread: pts,
+  },
+  offensePassSuccess: {
+    label: "Off pass SR",
+    reversed: false,
+    format: percent,
+    spread: pts,
+  },
+  defensePassSuccess: {
+    label: "Def pass SR allowed",
+    reversed: true,
+    format: percent,
+    spread: pts,
+  },
+  offenseRunSuccess: {
+    label: "Off run SR",
+    reversed: false,
+    format: percent,
+    spread: pts,
+  },
+  defenseRunSuccess: {
+    label: "Def run SR allowed",
+    reversed: true,
+    format: percent,
+    spread: pts,
+  },
+  offenseEpa: {
+    label: "Off EPA/down",
+    reversed: false,
+    format: points3,
+    spread: epa,
+  },
+  defenseEpa: {
+    label: "Def EPA/down allowed",
+    reversed: true,
+    format: points3,
+    spread: epa,
+  },
+  offensePassEpa: {
+    label: "Off pass EPA",
+    reversed: false,
+    format: points3,
+    spread: epa,
+  },
+  defensePassEpa: {
+    label: "Def pass EPA allowed",
+    reversed: true,
+    format: points3,
+    spread: epa,
+  },
+  offenseRunEpa: {
+    label: "Off run EPA",
+    reversed: false,
+    format: points3,
+    spread: epa,
+  },
+  defenseRunEpa: {
+    label: "Def run EPA allowed",
+    reversed: true,
+    format: points3,
+    spread: epa,
+  },
   week: { label: "Week's move", reversed: false, format: signed },
 };
 
@@ -60,8 +147,45 @@ export interface Available {
   rd: boolean;
   units: boolean;
   success: boolean;
+  /** Success rate by pass and by run, which the same models keep. */
+  successSplit: boolean;
+  /** EPA per down, whole and by pass and run. */
+  epa: boolean;
+  epaSplit: boolean;
   week: boolean;
 }
+
+/**
+ * What the rows hold, by the rules the table's columns follow: asked of the
+ * data rather than the model name, so a model that starts publishing a column
+ * gets it without a change here. Measured over the whole table, so a filter
+ * can't take a column away mid-scroll.
+ */
+export function availability(rows: TeamRow[], week: boolean): Available {
+  return {
+    rd: rows.some((row) => row.rd != null),
+    units: rows.some((row) => row.offense != null || row.defense != null),
+    success: rows.some((row) => row.success != null),
+    successSplit: rows.some((row) => row.success?.passes || row.success?.runs),
+    epa: rows.some((row) => row.epa != null),
+    epaSplit: rows.some((row) => row.epa?.passes || row.epa?.runs),
+    week,
+  };
+}
+
+/** The pass / run columns, in the table's order. */
+export const SUCCESS_SPLIT: Metric[] = [
+  "offensePassSuccess",
+  "defensePassSuccess",
+  "offenseRunSuccess",
+  "defenseRunSuccess",
+];
+export const EPA_SPLIT: Metric[] = [
+  "offensePassEpa",
+  "defensePassEpa",
+  "offenseRunEpa",
+  "defenseRunEpa",
+];
 
 /** The metrics worth offering for this model, in the table's column order. */
 export function availableMetrics(has: Available): Metric[] {
@@ -71,6 +195,9 @@ export function availableMetrics(has: Available): Metric[] {
     ...(has.rd ? (["rd"] as const) : []),
     ...(has.units ? (["offense", "defense"] as const) : []),
     ...(has.success ? (["offenseSuccess", "defenseSuccess"] as const) : []),
+    ...(has.epa ? (["offenseEpa", "defenseEpa"] as const) : []),
+    ...(has.successSplit ? SUCCESS_SPLIT : []),
+    ...(has.epaSplit ? EPA_SPLIT : []),
     ...(has.week ? (["week"] as const) : []),
   ];
 }
@@ -102,27 +229,66 @@ export function resolveAxis(
   return chosen && available.includes(chosen) ? chosen : fallback;
 }
 
-export function metricValue(row: TeamRow, metric: Metric): number | null {
+export interface Reading {
+  value: number;
+  /** The deviation the model published beside it, where it published one. */
+  sd: number | null;
+}
+
+/** What a row holds for a metric, or null where the model publishes none. */
+export function readMetric(row: TeamRow, metric: Metric): Reading | null {
+  const some = (
+    side: { rate?: number; epa?: number; sd: number } | undefined,
+  ) =>
+    side ? { value: (side.rate ?? side.epa) as number, sd: side.sd } : null;
   switch (metric) {
     case "rating":
-      return row.rating;
+      return { value: row.rating, sd: null };
     case "record": {
       const played = row.wins + row.losses;
-      return played === 0 ? null : row.wins / played;
+      return played === 0 ? null : { value: row.wins / played, sd: null };
     }
     case "rd":
-      return row.rd ?? null;
+      return row.rd == null ? null : { value: row.rd, sd: null };
     case "offense":
-      return row.offense?.rating ?? null;
+      return row.offense
+        ? { value: row.offense.rating, sd: row.offense.rd }
+        : null;
     case "defense":
-      return row.defense?.rating ?? null;
+      return row.defense
+        ? { value: row.defense.rating, sd: row.defense.rd }
+        : null;
     case "offenseSuccess":
-      return row.success?.offense.rate ?? null;
+      return some(row.success?.offense);
     case "defenseSuccess":
-      return row.success?.defense.rate ?? null;
+      return some(row.success?.defense);
+    case "offensePassSuccess":
+      return some(row.success?.passes?.offense);
+    case "defensePassSuccess":
+      return some(row.success?.passes?.defense);
+    case "offenseRunSuccess":
+      return some(row.success?.runs?.offense);
+    case "defenseRunSuccess":
+      return some(row.success?.runs?.defense);
+    case "offenseEpa":
+      return some(row.epa?.offense);
+    case "defenseEpa":
+      return some(row.epa?.defense);
+    case "offensePassEpa":
+      return some(row.epa?.passes?.offense);
+    case "defensePassEpa":
+      return some(row.epa?.passes?.defense);
+    case "offenseRunEpa":
+      return some(row.epa?.runs?.offense);
+    case "defenseRunEpa":
+      return some(row.epa?.runs?.defense);
     case "week":
-      return row.movement?.rating ?? null;
+      return row.movement ? { value: row.movement.rating, sd: null } : null;
   }
+}
+
+export function metricValue(row: TeamRow, metric: Metric): number | null {
+  return readMetric(row, metric)?.value ?? null;
 }
 
 export interface Dot {

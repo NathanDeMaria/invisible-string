@@ -81,10 +81,10 @@ describe("RatingsPage", () => {
 
     const alabama = rowsInBody()[2];
     expect(alabama).toHaveTextContent("1751.9");
-    // Four dashes: one per unit column and one per success-rate column. The
-    // row keeps its rating and says nothing about halves it has no evidence
-    // for.
-    expect(within(alabama).getAllByText("—")).toHaveLength(4);
+    // Six dashes: one per unit column, success-rate column and EPA column.
+    // The row keeps its rating and says nothing about halves it has no
+    // evidence for.
+    expect(within(alabama).getAllByText("—")).toHaveLength(6);
   });
 
   it("shows each side's success rate where the model keeps one", async () => {
@@ -105,6 +105,59 @@ describe("RatingsPage", () => {
       "title",
       "± 3.1 pts",
     );
+  });
+
+  it("places each stat among the league's teams under the value", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    // Georgia's offense is ahead of Ohio State's on success rate, and its
+    // defense allows less, so both are the top of the two teams rated.
+    const georgia = rowsInBody()[0];
+    expect(within(georgia).getAllByText("100th")).toHaveLength(4);
+    const ohioState = rowsInBody()[1];
+    expect(within(ohioState).getAllByText("0th")).toHaveLength(4);
+  });
+
+  it("shows EPA per down for each side, in its own units", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    expect(
+      screen.getByRole("columnheader", { name: "Off EPA" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Def EPA" }),
+    ).toBeInTheDocument();
+    const georgia = rowsInBody()[0];
+    expect(within(georgia).getByText("+0.154")).toHaveAttribute(
+      "title",
+      "± 0.021",
+    );
+    expect(georgia).toHaveTextContent("−0.158");
+  });
+
+  it("adds the pass and run columns only when asked", async () => {
+    const user = userEvent.setup();
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    expect(screen.queryByRole("columnheader", { name: "Pass SR" })).toBeNull();
+    await user.click(screen.getByLabelText("Pass / run"));
+
+    for (const name of ["Pass SR", "Run SR", "Pass EPA", "Run EPA"]) {
+      expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+    }
+    expect(rowsInBody()[0]).toHaveTextContent("54.1%");
+    expect(rowsInBody()[0]).toHaveTextContent("+0.234");
+  });
+
+  it("offers no pass / run toggle to a model without the split", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+    await screen.findByText("Duke");
+
+    expect(screen.queryByLabelText("Pass / run")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Off EPA" })).toBeNull();
   });
 
   it("hides the success-rate columns for a model without them", async () => {

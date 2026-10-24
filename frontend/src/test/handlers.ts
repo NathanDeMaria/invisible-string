@@ -194,6 +194,26 @@ export const compound: RatingsResponse = {
       success: {
         offense: { rate: 0.511, sd: 0.031 },
         defense: { rate: 0.347, sd: 0.028 },
+        passes: {
+          offense: { rate: 0.541, sd: 0.036 },
+          defense: { rate: 0.367, sd: 0.033 },
+        },
+        runs: {
+          offense: { rate: 0.471, sd: 0.034 },
+          defense: { rate: 0.317, sd: 0.031 },
+        },
+      },
+      epa: {
+        offense: { epa: 0.154, sd: 0.021 },
+        defense: { epa: -0.158, sd: 0.019 },
+        passes: {
+          offense: { epa: 0.234, sd: 0.027 },
+          defense: { epa: -0.098, sd: 0.025 },
+        },
+        runs: {
+          offense: { epa: 0.054, sd: 0.024 },
+          defense: { epa: -0.228, sd: 0.022 },
+        },
       },
     },
     {
@@ -208,6 +228,26 @@ export const compound: RatingsResponse = {
       success: {
         offense: { rate: 0.504, sd: 0.031 },
         defense: { rate: 0.353, sd: 0.028 },
+        passes: {
+          offense: { rate: 0.534, sd: 0.036 },
+          defense: { rate: 0.373, sd: 0.033 },
+        },
+        runs: {
+          offense: { rate: 0.464, sd: 0.034 },
+          defense: { rate: 0.323, sd: 0.031 },
+        },
+      },
+      epa: {
+        offense: { epa: 0.141, sd: 0.021 },
+        defense: { epa: -0.146, sd: 0.019 },
+        passes: {
+          offense: { epa: 0.221, sd: 0.027 },
+          defense: { epa: -0.086, sd: 0.025 },
+        },
+        runs: {
+          offense: { epa: 0.041, sd: 0.024 },
+          defense: { epa: -0.216, sd: 0.022 },
+        },
       },
     },
     {

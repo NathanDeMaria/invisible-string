@@ -1,10 +1,13 @@
-import type { ReactNode, Ref } from "react";
+import { useMemo, type ReactNode, type Ref } from "react";
 import { Link } from "react-router-dom";
 
 import { useRowKeys } from "../keys/useRowKeys";
-import type { RateRating, TeamRow, UnitRating } from "../../services/api";
+import type { TeamRow, UnitRating } from "../../services/api";
 import { movementTitle, placeMove, ratingMove, record } from "./movement";
+import { leaguePercentile, population } from "./percentiles";
+import { METRICS, readMetric, type Metric } from "./scatter";
 import type { Sort, SortKey } from "./sort";
+import { percentileLabel } from "../games/percentile";
 
 interface Props {
   rows: TeamRow[];
@@ -19,11 +22,17 @@ interface Props {
    */
   showUnits: boolean;
   /**
-   * Whether this model keeps each side's success rate -- the units models do,
-   * beside their offense and defense. Dropped otherwise, for the reason the
-   * unit columns are.
+   * The success rate and EPA per down columns this model keeps, in order --
+   * the units models carry them beside their offense and defense, and the
+   * pass / run splits only when the reader asked for them. Empty drops them
+   * all, for the reason the unit columns are dropped.
    */
-  showSuccess: boolean;
+  stats: Metric[];
+  /**
+   * Every team on the table, unfiltered. A percentile is read against the
+   * league, and typing into the filter shouldn't move anyone's.
+   */
+  leagueRows: TeamRow[];
   /**
    * When the week every movement is measured from ended, or null where the
    * history can't say -- a model published without one, or the first week of
@@ -45,7 +54,8 @@ export function RatingsTable({
   league,
   showRd,
   showUnits,
-  showSuccess,
+  stats,
+  leagueRows,
   since,
   sort,
   onSort,
@@ -56,6 +66,11 @@ export function RatingsTable({
   // see `useRowKeys`. Called before the early return below, because a hook
   // has to be.
   const rowKeys = useRowKeys({ onExitTop });
+
+  const populations = useMemo(
+    () => new Map(stats.map((m) => [m, population(leagueRows, m)])),
+    [stats, leagueRows],
+  );
 
   if (rows.length === 0) {
     return <p className="empty">No teams match that search.</p>;
@@ -89,28 +104,16 @@ export function RatingsTable({
                 <SortHeader column="defense" label="Def" {...sorting} />
               </>
             )}
-            {showSuccess && (
-              <>
-                <SortHeader
-                  column="offenseSuccess"
-                  label={
-                    <abbr title="Success rate: the share of its downs this offense wins against an average defense">
-                      Off SR
-                    </abbr>
-                  }
-                  {...sorting}
-                />
-                <SortHeader
-                  column="defenseSuccess"
-                  label={
-                    <abbr title="Success rate allowed: the share of downs an average offense wins against this defense -- lower is better">
-                      Def SR
-                    </abbr>
-                  }
-                  {...sorting}
-                />
-              </>
-            )}
+            {stats.map((metric) => (
+              <SortHeader
+                key={metric}
+                column={metric}
+                label={
+                  <abbr title={STAT_TITLES[metric]}>{STAT_LABELS[metric]}</abbr>
+                }
+                {...sorting}
+              />
+            ))}
             {since && <SortHeader column="week" label="Week" {...sorting} />}
           </tr>
         </thead>
@@ -149,12 +152,14 @@ export function RatingsTable({
                   <UnitCell unit={row.defense} />
                 </>
               )}
-              {showSuccess && (
-                <>
-                  <RateCell rate={row.success?.offense} />
-                  <RateCell rate={row.success?.defense} />
-                </>
-              )}
+              {stats.map((metric) => (
+                <StatCell
+                  key={metric}
+                  row={row}
+                  metric={metric}
+                  all={populations.get(metric) ?? []}
+                />
+              ))}
               {since && <MovementCell row={row} since={since} />}
             </tr>
           ))}
@@ -250,28 +255,95 @@ function UnitCell({ unit }: { unit: UnitRating | null | undefined }) {
 }
 
 /**
- * One side's success rate, as a percentage of its downs.
+ * One stat -- a success rate or an EPA per down -- and where it puts the team
+ * in the league.
  *
- * Opponent-adjusted -- against an average opponent on a neutral field -- so
- * it is not the share the team posted, and the deviation goes in the title the
- * way a unit's does. A dash for a team with no plays on file, as for its units.
+ * Opponent-adjusted, against an average opponent on a neutral field, so it is
+ * not the number the team posted; the deviation goes in the title the way a
+ * unit's does. Under it the percentile among the league's teams, in the
+ * two-line shape the Week column uses. A dash for a team with no plays on file.
  */
-function RateCell({ rate }: { rate: RateRating | null | undefined }) {
-  if (!rate) {
+function StatCell({
+  row,
+  metric,
+  all,
+}: {
+  row: TeamRow;
+  metric: Metric;
+  all: number[];
+}) {
+  const reading = readMetric(row, metric);
+  if (!reading) {
     return (
       <td className="num">
         <span className="quiet">&mdash;</span>
       </td>
     );
   }
+  const info = METRICS[metric];
+  const place = percentileLabel(leaguePercentile(all, reading.value, metric));
   return (
-    <td className="num">
-      <abbr className="unit" title={`± ${(rate.sd * 100).toFixed(1)} pts`}>
-        {(rate.rate * 100).toFixed(1)}%
+    <td className="num stat">
+      <abbr
+        className="unit"
+        title={
+          reading.sd != null && info.spread
+            ? info.spread(reading.sd)
+            : undefined
+        }
+      >
+        {info.format(reading.value)}
       </abbr>
+      {place && (
+        <span
+          className="places"
+          title={`${place} percentile of ${all.length} teams${info.reversed ? " (lower is better)" : ""}`}
+        >
+          {place}
+        </span>
+      )}
     </td>
   );
 }
+
+const STAT_LABELS: Partial<Record<Metric, string>> = {
+  offenseSuccess: "Off SR",
+  defenseSuccess: "Def SR",
+  offensePassSuccess: "Pass SR",
+  defensePassSuccess: "Pass SR allowed",
+  offenseRunSuccess: "Run SR",
+  defenseRunSuccess: "Run SR allowed",
+  offenseEpa: "Off EPA",
+  defenseEpa: "Def EPA",
+  offensePassEpa: "Pass EPA",
+  defensePassEpa: "Pass EPA allowed",
+  offenseRunEpa: "Run EPA",
+  defenseRunEpa: "Run EPA allowed",
+};
+
+const STAT_TITLES: Partial<Record<Metric, string>> = {
+  offenseSuccess:
+    "Success rate: the share of its downs this offense wins against an average defense",
+  defenseSuccess:
+    "Success rate allowed: the share of downs an average offense wins against this defense -- lower is better",
+  offensePassSuccess:
+    "Success rate on this offense's passes (sacks and scrambles included)",
+  defensePassSuccess:
+    "Success rate this defense allows on passes -- lower is better",
+  offenseRunSuccess: "Success rate on this offense's runs",
+  defenseRunSuccess:
+    "Success rate this defense allows on runs -- lower is better",
+  offenseEpa:
+    "Expected points added per pass or run by this offense against an average defense",
+  defenseEpa:
+    "Expected points added per down this defense allows to an average offense -- lower is better",
+  offensePassEpa: "Expected points added per pass by this offense",
+  defensePassEpa:
+    "Expected points per pass this defense allows -- lower is better",
+  offenseRunEpa: "Expected points added per run by this offense",
+  defenseRunEpa:
+    "Expected points per run this defense allows -- lower is better",
+};
 
 /**
  * What the week did, in the two-line shape the games table already uses: the

@@ -12,7 +12,9 @@
  */
 
 import type { TeamRow } from "../../services/api";
-import { METRICS, type Metric } from "../ratings/scatter";
+import { leaguePercentile } from "../ratings/percentiles";
+import { METRICS, metricValue, type Metric } from "../ratings/scatter";
+import { percentileLabel } from "./percentile";
 
 /** The metrics a game page reads, in the table's order. */
 const SHOWN: Metric[] = [
@@ -21,35 +23,30 @@ const SHOWN: Metric[] = [
   "defense",
   "offenseSuccess",
   "defenseSuccess",
+  "offenseEpa",
+  "defenseEpa",
+  "offensePassSuccess",
+  "defensePassSuccess",
+  "offensePassEpa",
+  "defensePassEpa",
+  "offenseRunSuccess",
+  "defenseRunSuccess",
+  "offenseRunEpa",
+  "defenseRunEpa",
 ];
 
 export interface Standing {
   value: string;
   rank: number;
   of: number;
+  /** Among the same teams, "91st", or null for a league of one. */
+  percentile: string | null;
 }
 
 export interface MetricRow {
   label: string;
   away: Standing | null;
   home: Standing | null;
-}
-
-function read(row: TeamRow, metric: Metric): number | null {
-  switch (metric) {
-    case "rating":
-      return row.rating;
-    case "offense":
-      return row.offense?.rating ?? null;
-    case "defense":
-      return row.defense?.rating ?? null;
-    case "offenseSuccess":
-      return row.success?.offense.rate ?? null;
-    case "defenseSuccess":
-      return row.success?.defense.rate ?? null;
-    default:
-      return null;
-  }
 }
 
 /**
@@ -69,15 +66,21 @@ export function teamMetrics(
   for (const metric of SHOWN) {
     const info = METRICS[metric];
     const all = rows
-      .map((row) => read(row, metric))
+      .map((row) => metricValue(row, metric))
       .filter((value): value is number => value != null);
+    const sorted = [...all].sort((a, b) => a - b);
     const stand = (row: TeamRow | undefined): Standing | null => {
-      const value = row && read(row, metric);
+      const value = row && metricValue(row, metric);
       if (value == null) return null;
       const better = all.filter((other) =>
         info.reversed ? other < value : other > value,
       ).length;
-      return { value: info.format(value), rank: better + 1, of: all.length };
+      return {
+        value: info.format(value),
+        rank: better + 1,
+        of: all.length,
+        percentile: percentileLabel(leaguePercentile(sorted, value, metric)),
+      };
     };
     const standings = { away: stand(awayRow), home: stand(homeRow) };
     if (standings.away || standings.home) {

@@ -9,6 +9,7 @@ import { ModelSelect } from "./ModelSelect";
 import { RatingsScatter } from "./RatingsScatter";
 import {
   METRICS,
+  availability,
   availableMetrics,
   defaultAxes,
   resolveAxis,
@@ -37,12 +38,9 @@ export function ChartPage() {
 
   // The axes offer what the leaderboard's columns show, by the same rules:
   // asked of the rows, not the model name.
-  const metrics = availableMetrics({
-    rd: all.some((row) => row.rd != null),
-    units: all.some((row) => row.offense != null || row.defense != null),
-    success: all.some((row) => row.success != null),
-    week: ratings.data?.movement_since?.date != null,
-  });
+  const metrics = availableMetrics(
+    availability(all, ratings.data?.movement_since?.date != null),
+  );
   const fallback = defaultAxes(metrics);
   const x = resolveAxis(chartX, metrics, fallback.x);
   const y = resolveAxis(chartY, metrics, fallback.y);

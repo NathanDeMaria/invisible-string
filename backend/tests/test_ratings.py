@@ -287,6 +287,14 @@ class TestSuccessRates:
         assert georgia["success"] == {
             "offense": {"rate": 0.511, "sd": 0.031},
             "defense": {"rate": 0.347, "sd": 0.028},
+            "passes": {
+                "offense": {"rate": 0.541, "sd": 0.036},
+                "defense": {"rate": 0.367, "sd": 0.033},
+            },
+            "runs": {
+                "offense": {"rate": 0.471, "sd": 0.034},
+                "defense": {"rate": 0.317, "sd": 0.031},
+            },
         }
 
     def test_null_for_a_model_without_them(self, client: TestClient) -> None:
@@ -299,6 +307,32 @@ class TestSuccessRates:
         rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
         alabama = next(r for r in rows if r["team"] == "Alabama")
         assert alabama["success"] is None
+
+
+class TestEpaPerDown:
+    """EPA per down for each side, whole and by pass and run, for a reader.
+
+    Carried by the same teams and models `success` is.
+    """
+
+    def test_served_where_the_release_carries_it(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        georgia = next(r for r in rows if r["team"] == "Georgia")
+        assert georgia["epa"]["offense"] == {"epa": 0.154, "sd": 0.021}
+        assert georgia["epa"]["defense"] == {"epa": -0.158, "sd": 0.019}
+        assert georgia["epa"]["passes"]["offense"] == {"epa": 0.234, "sd": 0.027}
+        assert georgia["epa"]["runs"]["defense"] == {"epa": -0.228, "sd": 0.022}
+
+    def test_null_for_a_model_without_it(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        assert all(r["epa"] is None for r in rows)
+
+    def test_null_for_a_team_the_model_has_no_plays_for(
+        self, client: TestClient
+    ) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        alabama = next(r for r in rows if r["team"] == "Alabama")
+        assert alabama["epa"] is None
 
 
 class TestMovement:

@@ -16,6 +16,7 @@ from app.releases import (
     resolve_release,
 )
 from app.schema import (
+    EpaRating,
     Metrics,
     ModelRelease,
     SuccessRating,
@@ -86,6 +87,12 @@ class TeamRow(BaseModel):
     # kind of side, with its own units, that a reader shows as a percentage
     # where `offense` and `defense` are ratings.
     success: SuccessRating | None = None
+    # The same two sides in EPA per down -- per pass or run, kicks and kneels
+    # left out -- opponent-adjusted, with `passes` and `runs` apart, on the
+    # success rate's terms (`EpaRating`). A reader's number, never a
+    # predictor's. None for the same models and teams `success` is, and for
+    # a release written before it existed.
+    epa: EpaRating | None = None
 
 
 class RatingsResponse(BaseModel):
@@ -219,6 +226,7 @@ def get_ratings(
                 offense=r.offense,
                 defense=r.defense,
                 success=r.success,
+                epa=r.epa,
             )
             for rank, team, r in ranked
         ],
