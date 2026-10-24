@@ -180,6 +180,43 @@
         "title": "EpaPerPlay",
         "type": "object"
       },
+      "EpaRating": {
+        "description": "A team's offense's EPA per down and what its defense allows.\n\n`SuccessRating`'s twin, opponent-adjusted the same way and for a reader\nonly, over every down and over passes and runs apart. None in a\nrelease written before it.",
+        "properties": {
+          "defense": {
+            "$ref": "#/components/schemas/PerDownRating"
+          },
+          "offense": {
+            "$ref": "#/components/schemas/PerDownRating"
+          },
+          "passes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KindEpaRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KindEpaRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "offense",
+          "defense"
+        ],
+        "title": "EpaRating",
+        "type": "object"
+      },
       "ExpectedPointsFit": {
         "description": "Which fit priced the snaps, and how much to trust it.\n\nThe second of the two the-lucky-ones ships for a league, and a separate\nfile from the first because the two are fit separately and move\nseparately. So it gets its own provenance rather than borrowing the\ncurve's: a retrain of one doesn't renumber the other.\n\n`log_loss` is over the seven things that can score next -- log(7) = 1.95\nis what guessing the base rates gets, so a fit near it has learned\nnothing. `mean_absolute_error` is the expected value against the points\nthat actually came next, in points, and it is large by construction: the\nnext score is 7 or 0 or -3 and the fit says 2.1. Its size is exactly why\nEPA is a per-play *average* rather than a per-play claim, and the page\nsays so.",
         "properties": {
@@ -953,6 +990,40 @@
         "title": "JobsResponse",
         "type": "object"
       },
+      "KindEpaRating": {
+        "description": "One kind of down's EPA per down: the offense's, and what its defense allows.",
+        "properties": {
+          "defense": {
+            "$ref": "#/components/schemas/PerDownRating"
+          },
+          "offense": {
+            "$ref": "#/components/schemas/PerDownRating"
+          }
+        },
+        "required": [
+          "offense",
+          "defense"
+        ],
+        "title": "KindEpaRating",
+        "type": "object"
+      },
+      "KindSuccessRating": {
+        "description": "One kind of down's success rates: the offense's, and what its defense allows.",
+        "properties": {
+          "defense": {
+            "$ref": "#/components/schemas/RateRating"
+          },
+          "offense": {
+            "$ref": "#/components/schemas/RateRating"
+          }
+        },
+        "required": [
+          "offense",
+          "defense"
+        ],
+        "title": "KindSuccessRating",
+        "type": "object"
+      },
       "LeagueDistributions": {
         "description": "Every metric this league has a shape for, and what built them.",
         "properties": {
@@ -1391,6 +1462,25 @@
         "title": "OddsDay",
         "type": "object"
       },
+      "PerDownRating": {
+        "description": "One side's EPA per down -- per pass or run, kicks and kneels left out -- and its deviation.",
+        "properties": {
+          "epa": {
+            "title": "Epa",
+            "type": "number"
+          },
+          "sd": {
+            "title": "Sd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "epa",
+          "sd"
+        ],
+        "title": "PerDownRating",
+        "type": "object"
+      },
       "PredictResponse": {
         "properties": {
           "away": {
@@ -1642,13 +1732,33 @@
         "type": "object"
       },
       "SuccessRating": {
-        "description": "A team's offense's success rate and the rate its defense allows.\n\nOpponent-adjusted: each against an average opponent on a neutral field.\nFor a reader only -- the units models keep it beside their sides and\nnever predict from it, and `rating_predictor` drops it. See\n`UnitMarginGlickoPredictor`'s \"What a release carries\".",
+        "description": "A team's offense's success rate and the rate its defense allows.\n\nOpponent-adjusted: each against an average opponent on a neutral field.\nFor a reader only -- the units models keep it beside their sides and\nnever predict from it, and `rating_predictor` drops it. See\n`UnitMarginGlickoPredictor`'s \"What a release carries\".\n\n`passes` and `runs` are the same two rates over each kind of down\nalone, each rated on its own. None in a release written before them,\nand where the play-by-play read carried no split.",
         "properties": {
           "defense": {
             "$ref": "#/components/schemas/RateRating"
           },
           "offense": {
             "$ref": "#/components/schemas/RateRating"
+          },
+          "passes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KindSuccessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KindSuccessRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1841,6 +1951,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/UnitRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "epa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EpaRating"
               },
               {
                 "type": "null"

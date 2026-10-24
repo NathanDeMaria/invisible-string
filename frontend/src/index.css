@@ -623,6 +623,22 @@ table.ratings,
   font-size: 0.6875rem;
 }
 
+/* A stat's percentile among the league's teams, under the value like the
+   Week column's places. */
+.ratings .stat .places {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: help;
+}
+
+.controls .splits {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
 /* A team whose first game was this week: nothing to compare against, and a
    zero would claim there was. */
 .ratings .move .quiet {

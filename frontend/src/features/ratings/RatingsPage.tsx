@@ -9,12 +9,18 @@ import { weekEnding } from "./movement";
 import { ModelSelect } from "./ModelSelect";
 import { RatingsTable } from "./RatingsTable";
 import { sortRows } from "./sort";
-import { searchChanged, sortClicked } from "./uiSlice";
+import {
+  availability,
+  availableMetrics,
+  EPA_SPLIT,
+  SUCCESS_SPLIT,
+} from "./scatter";
+import { searchChanged, sortClicked, splitsToggled } from "./uiSlice";
 
 export function RatingsPage() {
   const { league = "mens" } = useParams();
   const dispatch = useDispatch();
-  const { model, search, sort } = useSelector((s: RootState) => s.ui);
+  const { model, search, sort, splits } = useSelector((s: RootState) => s.ui);
 
   const ratings = useGetRatingsQuery({ league, model: model ?? undefined });
 
@@ -52,11 +58,17 @@ export function RatingsPage() {
     (row) => row.offense != null || row.defense != null,
   );
 
-  // And for each side's success rate, which the units models keep for a
-  // reader beside their offense and defense.
-  const showSuccess = (ratings.data?.ratings ?? []).some(
-    (row) => row.success != null,
-  );
+  // And for each side's success rate and EPA per down, which the units
+  // models keep for a reader beside their offense and defense. The pass / run
+  // halves of each come only when asked for.
+  const available = availability(ratings.data?.ratings ?? [], false);
+  const stats = availableMetrics({ ...available, rd: false, units: false })
+    .filter((metric) => metric !== "rating" && metric !== "record")
+    .filter(
+      (metric) =>
+        splits ||
+        !(SUCCESS_SPLIT.includes(metric) || EPA_SPLIT.includes(metric)),
+    );
 
   if (ratings.isError) {
     return <p className="error">No ratings published for {league} yet.</p>;
@@ -91,6 +103,16 @@ export function RatingsPage() {
           }}
         />
         <ModelSelect league={league} />
+        {(available.successSplit || available.epaSplit) && (
+          <label className="splits">
+            <input
+              type="checkbox"
+              checked={splits}
+              onChange={() => dispatch(splitsToggled())}
+            />{" "}
+            Pass / run
+          </label>
+        )}
       </div>
 
       {ratings.data && (
@@ -113,7 +135,8 @@ export function RatingsPage() {
           league={league}
           showRd={showRd}
           showUnits={showUnits}
-          showSuccess={showSuccess}
+          stats={stats}
+          leagueRows={ratings.data?.ratings ?? []}
           since={ratings.data?.movement_since?.date ?? null}
           sort={sort}
           onSort={(key) => dispatch(sortClicked(key))}

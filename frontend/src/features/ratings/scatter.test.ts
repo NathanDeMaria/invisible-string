@@ -32,11 +32,22 @@ describe("availableMetrics", () => {
         rd: false,
         units: false,
         success: false,
+        successSplit: false,
+        epa: false,
+        epaSplit: false,
         week: false,
       }),
     ).toEqual(["rating", "record"]);
     expect(
-      availableMetrics({ rd: true, units: true, success: true, week: true }),
+      availableMetrics({
+        rd: true,
+        units: true,
+        success: true,
+        successSplit: true,
+        epa: true,
+        epaSplit: true,
+        week: true,
+      }),
     ).toEqual([
       "rating",
       "record",
@@ -45,6 +56,16 @@ describe("availableMetrics", () => {
       "defense",
       "offenseSuccess",
       "defenseSuccess",
+      "offenseEpa",
+      "defenseEpa",
+      "offensePassSuccess",
+      "defensePassSuccess",
+      "offenseRunSuccess",
+      "defenseRunSuccess",
+      "offensePassEpa",
+      "defensePassEpa",
+      "offenseRunEpa",
+      "defenseRunEpa",
       "week",
     ]);
   });

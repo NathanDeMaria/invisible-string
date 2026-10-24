@@ -352,6 +352,20 @@ export interface components {
             net_unweighted: number | null;
         };
         /**
+         * EpaRating
+         * @description A team's offense's EPA per down and what its defense allows.
+         *
+         *     `SuccessRating`'s twin, opponent-adjusted the same way and for a reader
+         *     only, over every down and over passes and runs apart. None in a
+         *     release written before it.
+         */
+        EpaRating: {
+            defense: components["schemas"]["PerDownRating"];
+            offense: components["schemas"]["PerDownRating"];
+            passes?: components["schemas"]["KindEpaRating"] | null;
+            runs?: components["schemas"]["KindEpaRating"] | null;
+        };
+        /**
          * ExpectedPointsFit
          * @description Which fit priced the snaps, and how much to trust it.
          *
@@ -662,6 +676,22 @@ export interface components {
             window_days: number;
         };
         /**
+         * KindEpaRating
+         * @description One kind of down's EPA per down: the offense's, and what its defense allows.
+         */
+        KindEpaRating: {
+            defense: components["schemas"]["PerDownRating"];
+            offense: components["schemas"]["PerDownRating"];
+        };
+        /**
+         * KindSuccessRating
+         * @description One kind of down's success rates: the offense's, and what its defense allows.
+         */
+        KindSuccessRating: {
+            defense: components["schemas"]["RateRating"];
+            offense: components["schemas"]["RateRating"];
+        };
+        /**
          * LeagueDistributions
          * @description Every metric this league has a shape for, and what built them.
          */
@@ -919,6 +949,16 @@ export interface components {
             /** Pulls */
             pulls: number;
         };
+        /**
+         * PerDownRating
+         * @description One side's EPA per down -- per pass or run, kicks and kneels left out -- and its deviation.
+         */
+        PerDownRating: {
+            /** Epa */
+            epa: number;
+            /** Sd */
+            sd: number;
+        };
         /** PredictResponse */
         PredictResponse: {
             /** Away */
@@ -1024,10 +1064,16 @@ export interface components {
          *     For a reader only -- the units models keep it beside their sides and
          *     never predict from it, and `rating_predictor` drops it. See
          *     `UnitMarginGlickoPredictor`'s "What a release carries".
+         *
+         *     `passes` and `runs` are the same two rates over each kind of down
+         *     alone, each rated on its own. None in a release written before them,
+         *     and where the play-by-play read carried no split.
          */
         SuccessRating: {
             defense: components["schemas"]["RateRating"];
             offense: components["schemas"]["RateRating"];
+            passes?: components["schemas"]["KindSuccessRating"] | null;
+            runs?: components["schemas"]["KindSuccessRating"] | null;
         };
         /**
          * TeamGameRow
@@ -1098,6 +1144,7 @@ export interface components {
         /** TeamRow */
         TeamRow: {
             defense?: components["schemas"]["UnitRating"] | null;
+            epa?: components["schemas"]["EpaRating"] | null;
             /** Losses */
             losses: number;
             movement?: components["schemas"]["Movement"] | null;

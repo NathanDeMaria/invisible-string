@@ -64,6 +64,7 @@ function Cell({ standing }: { standing: Standing | null }) {
       {standing.value}
       <span className="of">
         #{standing.rank} of {standing.of}
+        {standing.percentile && <> &middot; {standing.percentile} pct</>}
       </span>
     </td>
   );
