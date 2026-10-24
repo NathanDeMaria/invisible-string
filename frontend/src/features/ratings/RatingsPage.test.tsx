@@ -81,10 +81,10 @@ describe("RatingsPage", () => {
 
     const alabama = rowsInBody()[2];
     expect(alabama).toHaveTextContent("1751.9");
-    // Six dashes: one per unit column, success-rate column and EPA column.
+    // Fourteen dashes: one per unit, success-rate and EPA column.
     // The row keeps its rating and says nothing about halves it has no
     // evidence for.
-    expect(within(alabama).getAllByText("—")).toHaveLength(6);
+    expect(within(alabama).getAllByText("—")).toHaveLength(14);
   });
 
   it("shows each side's success rate where the model keeps one", async () => {
@@ -114,9 +114,9 @@ describe("RatingsPage", () => {
     // Georgia's offense is ahead of Ohio State's on success rate, and its
     // defense allows less, so both are the top of the two teams rated.
     const georgia = rowsInBody()[0];
-    expect(within(georgia).getAllByText("100th")).toHaveLength(4);
+    expect(within(georgia).getAllByText("100th")).toHaveLength(12);
     const ohioState = rowsInBody()[1];
-    expect(within(ohioState).getAllByText("0th")).toHaveLength(4);
+    expect(within(ohioState).getAllByText("0th")).toHaveLength(12);
   });
 
   it("shows EPA per down for each side, in its own units", async () => {
@@ -137,13 +137,9 @@ describe("RatingsPage", () => {
     expect(georgia).toHaveTextContent("−0.158");
   });
 
-  it("adds the pass and run columns only when asked", async () => {
-    const user = userEvent.setup();
+  it("shows the pass and run columns without being asked", async () => {
     renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
     await screen.findByText("Georgia");
-
-    expect(screen.queryByRole("columnheader", { name: "Pass SR" })).toBeNull();
-    await user.click(screen.getByLabelText("Pass / run"));
 
     for (const name of ["Pass SR", "Run SR", "Pass EPA", "Run EPA"]) {
       expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
@@ -152,11 +148,11 @@ describe("RatingsPage", () => {
     expect(rowsInBody()[0]).toHaveTextContent("+0.234");
   });
 
-  it("offers no pass / run toggle to a model without the split", async () => {
+  it("has no EPA or pass / run columns for a model without them", async () => {
     renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
     await screen.findByText("Duke");
 
-    expect(screen.queryByLabelText("Pass / run")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Pass SR" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Off EPA" })).toBeNull();
   });
 

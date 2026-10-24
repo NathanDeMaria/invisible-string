@@ -22,11 +22,6 @@ interface UiState {
    */
   chartX: Metric | null;
   chartY: Metric | null;
-  /**
-   * Whether the table adds the pass / run columns. Off by default: a table
-   * of twenty columns is no leaderboard, and most visits are for the summary.
-   */
-  splits: boolean;
 }
 
 const initialState: UiState = {
@@ -35,7 +30,6 @@ const initialState: UiState = {
   sort: MODEL_ORDER,
   chartX: null,
   chartY: null,
-  splits: false,
 };
 
 const uiSlice = createSlice({
@@ -51,9 +45,6 @@ const uiSlice = createSlice({
     sortClicked(state, action: PayloadAction<SortKey>) {
       state.sort = nextSort(state.sort, action.payload);
     },
-    splitsToggled(state) {
-      state.splits = !state.splits;
-    },
     chartAxisSelected(
       state,
       action: PayloadAction<{ axis: "x" | "y"; metric: Metric }>,
@@ -64,11 +55,6 @@ const uiSlice = createSlice({
   },
 });
 
-export const {
-  modelSelected,
-  searchChanged,
-  sortClicked,
-  splitsToggled,
-  chartAxisSelected,
-} = uiSlice.actions;
+export const { modelSelected, searchChanged, sortClicked, chartAxisSelected } =
+  uiSlice.actions;
 export default uiSlice.reducer;
