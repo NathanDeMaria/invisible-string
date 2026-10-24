@@ -632,13 +632,6 @@ table.ratings,
   cursor: help;
 }
 
-.controls .splits {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  white-space: nowrap;
-}
-
 /* A team whose first game was this week: nothing to compare against, and a
    zero would claim there was. */
 .ratings .move .quiet {
