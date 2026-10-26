@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -229,3 +230,36 @@ class TestTheQuarterbackIndex:
             Body=json.dumps({"league": "ncaafb", "games": {"g2": ["LSU Tigers"]}}),
         )
         assert store.get_qb_out("ncaafb").is_out("g2", "LSU Tigers")
+
+
+class TestThePlayersRows:
+    """`models/{league}/player_ratings.json`, read and cached as qb_out is."""
+
+    def test_reads_a_league_s_rows(self, s3: Any) -> None:
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="models/mens/player_ratings.json",
+            Body=json.dumps(
+                {
+                    "league": "mens",
+                    "teams": {
+                        "Duke": {
+                            "as_of": "2026-11-09",
+                            "season": 2026,
+                            "net": 12.5,
+                            "pace": 69.0,
+                        }
+                    },
+                }
+            ),
+        )
+        store = S3ReleaseStore(bucket=BUCKET, client=s3, ttl_seconds=60)
+        row = store.get_player_ratings("mens").team("Duke", date(2026, 11, 10))
+        assert row is not None and row.net == 12.5
+
+    def test_a_league_without_them_is_empty_and_cached(self, s3: Any) -> None:
+        client = CountingClient(s3)
+        store = S3ReleaseStore(bucket=BUCKET, client=client, ttl_seconds=60)
+        assert len(store.get_player_ratings("nfl")) == 0
+        store.get_player_ratings("nfl")
+        assert client.get_object_calls == 1

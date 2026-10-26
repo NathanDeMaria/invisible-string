@@ -805,8 +805,8 @@ say-youll-remember-me = {git = "https://github.com/NathanDeMaria/say-youll-remem
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "b80b67a57886985146849f2a316dd80029b35b1e"
-resolved_reference = "b80b67a57886985146849f2a316dd80029b35b1e"
+reference = "d11dd0b5ba49334ba0b184d829aaa62b1ddb3557"
+resolved_reference = "d11dd0b5ba49334ba0b184d829aaa62b1ddb3557"
 
 [[package]]
 name = "certifi"
@@ -3413,4 +3413,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "d31a54f40638c207537169e5bf94ca264d15598e80501c75cdffbe4271335ab1"
+content-hash = "b10ec1f6d1d991d271512a750184bc6a756c772e48bb58ced93ad14fb716cc85"

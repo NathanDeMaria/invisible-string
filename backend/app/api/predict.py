@@ -27,7 +27,9 @@ from app.releases import (
     ReleaseStore,
     ReleaseUnreadable,
     get_release_store,
+    league_players,
     resolve_release,
+    with_players,
 )
 from app.schema import ModelRelease
 
@@ -145,6 +147,7 @@ def predict(
             ),
         ) from exc
 
+    predictor = with_players(release, predictor, league_players(store, league))
     _check_teams(release, home, away)
 
     prob = predict_matchup(
