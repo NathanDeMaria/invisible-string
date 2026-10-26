@@ -13,14 +13,20 @@ written without any shared state, cache-bust endpoint or sticky routing.
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
-from cassandra.predictor import QbOutIndex
+from cassandra.predictor import PlayerRatingIndex, QbOutIndex
 
-from app.releases import ReleaseNotFound, parse_qb_out, parse_release
+from app.releases import (
+    ReleaseNotFound,
+    parse_player_ratings,
+    parse_qb_out,
+    parse_release,
+)
 from app.schema import ModelRelease
 
 # S3 answers a matching If-None-Match with 304, which botocore raises rather
@@ -43,7 +49,7 @@ class _CachedListing:
 
 @dataclass
 class _CachedIndex:
-    index: QbOutIndex
+    index: QbOutIndex | PlayerRatingIndex
     # Empty for a league with no index in the bucket, which then re-checks
     # on the TTL like everything else rather than on every request.
     etag: str
@@ -72,6 +78,7 @@ class S3ReleaseStore:
         self._releases: dict[tuple[str, str], _Cached] = {}
         self._listings: dict[str, _CachedListing] = {}
         self._qb_out: dict[str, _CachedIndex] = {}
+        self._player_ratings: dict[str, _CachedIndex] = {}
 
     # -- listing ---------------------------------------------------------
 
@@ -147,10 +154,36 @@ class S3ReleaseStore:
         The same TTL and conditional GET: it is one small object that moves
         when a publish lands, which is when the releases beside it do.
         """
-        key = f"{self._prefix}{league}/qb_out.json"
+        index = self._league_index(
+            league, "qb_out.json", self._qb_out, parse_qb_out, QbOutIndex
+        )
+        assert isinstance(index, QbOutIndex)
+        return index
+
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        """`{prefix}{league}/player_ratings.json`, cached as `get_qb_out` is."""
+        index = self._league_index(
+            league,
+            "player_ratings.json",
+            self._player_ratings,
+            parse_player_ratings,
+            PlayerRatingIndex,
+        )
+        assert isinstance(index, PlayerRatingIndex)
+        return index
+
+    def _league_index(
+        self,
+        league: str,
+        name: str,
+        cache: dict[str, _CachedIndex],
+        parse: Callable[[bytes, str], QbOutIndex | PlayerRatingIndex],
+        empty: Callable[[], QbOutIndex | PlayerRatingIndex],
+    ) -> QbOutIndex | PlayerRatingIndex:
+        key = f"{self._prefix}{league}/{name}"
 
         with self._lock:
-            hit = self._qb_out.get(league)
+            hit = cache.get(league)
         if hit is not None and not self._expired(hit.checked_at):
             return hit.index
 
@@ -162,15 +195,15 @@ class S3ReleaseStore:
                 hit.checked_at = time.monotonic()
             return hit.index
         except ReleaseNotFound:
-            # No index for this league. Cached as empty so a basketball
-            # league's game pages don't each cost a GET that 404s.
-            index, etag = QbOutIndex(), ""
+            # No index for this league. Cached as empty so a league without
+            # one doesn't cost a GET that 404s on every page.
+            index, etag = empty(), ""
         else:
-            index = parse_qb_out(response["Body"].read(), league)
+            index = parse(response["Body"].read(), league)
             etag = response.get("ETag", "")
 
         with self._lock:
-            self._qb_out[league] = _CachedIndex(
+            cache[league] = _CachedIndex(
                 index=index, etag=etag, checked_at=time.monotonic()
             )
         return index

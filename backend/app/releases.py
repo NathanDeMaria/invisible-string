@@ -12,7 +12,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
-from cassandra.predictor import QbOutIndex, UnknownPredictorClass, load_predictor_class
+from cassandra.predictor import (
+    MatchupSources,
+    PlayerRatingIndex,
+    PlayerRatingsFile,
+    Predictor,
+    QbOutIndex,
+    RestLedger,
+    UnknownPredictorClass,
+    load_predictor_class,
+)
 from cassandra.predictor.qb_out import QbOutFile
 from pydantic import ValidationError
 
@@ -71,6 +80,57 @@ def parse_qb_out(raw: str | bytes, league: str) -> QbOutIndex:
         ) from exc
 
 
+def parse_player_ratings(raw: str | bytes, league: str) -> PlayerRatingIndex:
+    """The league's published players' rows, as the basketball models read them.
+
+    `models/{league}/player_ratings.json` is each team's newest row of the
+    players' file the `glicko_players` releases blend in, published beside
+    them because the file itself only exists where cassandra's sweep ran.
+    """
+    try:
+        stored = PlayerRatingsFile.model_validate(json.loads(raw))
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ReleaseUnreadable(
+            f"{league}/player_ratings.json does not match the current "
+            "PlayerRatingsFile schema"
+        ) from exc
+    return PlayerRatingIndex.from_file(stored)
+
+
+def with_players(
+    release: ModelRelease, predictor: Predictor, players: PlayerRatingIndex
+) -> Predictor:
+    """`predictor`, rebuilt to read the league's players' rows.
+
+    Without them a `glicko_players` release predicts every game as Glicko
+    alone -- a different model from the one that was scored and stored. A
+    league with no rows, or a class that reads no sources, is returned as is:
+    it has nothing to blend.
+    """
+    if not len(players):
+        return predictor
+    # Nothing else a reader would state: the quarterback index and rest are
+    # football's, and a basketball game has neither.
+    sources = MatchupSources(QbOutIndex(), RestLedger(), player_ratings=players)
+    try:
+        return type(predictor).from_ratings(
+            release.league, predictor.ratings, **release.params, sources=sources
+        )
+    except TypeError:
+        return predictor
+
+
+def league_players(store: "ReleaseStore", league: str) -> PlayerRatingIndex:
+    """`store.get_player_ratings`, an unreadable file read as none: the
+    predictions then are the release's unblended, which beats a league with
+    no predictions at all over a file one deploy out of step."""
+    try:
+        return store.get_player_ratings(league)
+    except ReleaseUnreadable as exc:
+        log.warning("predicting %s without its players' rows: %s", league, exc)
+        return PlayerRatingIndex()
+
+
 class ReleaseStore(Protocol):
     def list_leagues(self) -> list[str]: ...
 
@@ -88,6 +148,15 @@ class ReleaseStore(Protocol):
         was looked for on the wrong machine*. `QbOutIndex.for_league` reads
         `~/.cassandra`, and a container that called it told every page both
         quarterbacks had started for a month.
+        """
+        ...
+
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        """Each team's newest players' row, for a league's basketball models.
+
+        Empty for a league with none -- everything but mens and womens --
+        which is also what those models read when the file is missing, so
+        the number is still the release's, just unblended.
         """
         ...
 
@@ -217,6 +286,14 @@ class LocalReleaseStore:
         except FileNotFoundError:
             return QbOutIndex()
         return parse_qb_out(raw, league)
+
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        path = self._models_dir / league / "player_ratings.json"
+        try:
+            raw = path.read_text()
+        except FileNotFoundError:
+            return PlayerRatingIndex()
+        return parse_player_ratings(raw, league)
 
 
 def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:

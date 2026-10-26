@@ -26,6 +26,7 @@ from typing import NamedTuple
 from cassandra.predictor import (
     QB_LEAGUES,
     MatchupSources,
+    PlayerRatingIndex,
     QbOutIndex,
     RestLedger,
     StatedRest,
@@ -106,7 +107,11 @@ def matchup_game_id(game: ScheduledGame) -> str:
     return f"{game.away}@{game.home}"
 
 
-def stated_sources(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupSources:
+def stated_sources(
+    game: ScheduledGame,
+    overrides: MatchupOverrides,
+    players: PlayerRatingIndex | None = None,
+) -> MatchupSources:
     """The sources that make the model see the game the reader described.
 
     Built from nothing rather than from the league's own: a fixture is not in
@@ -114,6 +119,11 @@ def stated_sources(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupS
     league's sources have nothing to say about this game and there is nothing
     to lose by replacing them. Starting empty also keeps the answer a function
     of the four flags alone, which is what makes the toggles legible.
+
+    Except for `players`, the league's published players' rows: not a fact
+    about this game a reader could state, but part of how a basketball model
+    prices every game, so a what-if that dropped them would answer for a
+    different model.
     """
     game_id = matchup_game_id(game)
 
@@ -136,6 +146,7 @@ def stated_sources(game: ScheduledGame, overrides: MatchupOverrides) -> MatchupS
     return MatchupSources(
         qb_out=QbOutIndex({game_id: out} if out else {}),
         rest=StatedRest({game_id: rested} if rested else {}),
+        player_ratings=players if players is not None else PlayerRatingIndex(),
     )
 
 

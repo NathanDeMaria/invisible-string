@@ -43,6 +43,7 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 from cassandra.predictor import (
+    PlayerRatingIndex,
     Predictor,
     RatingsUnsupported,
     UnknownPredictorClass,
@@ -78,7 +79,9 @@ from app.releases import (
     ReleaseStore,
     ReleaseUnreadable,
     get_release_store,
+    league_players,
     resolve_release,
+    with_players,
 )
 from app.schema import ModelRelease
 from app.win_probability import fit_for
@@ -417,6 +420,10 @@ class _LeagueModel:
     # What this model said before each game in the window, by game id, out of
     # `predictions.parquet`. Empty for a model published without one.
     stored: dict[str, _Stored]
+    # The league's published players' rows, which `predictor` already reads;
+    # kept so a what-if rebuilt from it reads them too. Empty but for the
+    # basketball leagues.
+    players: PlayerRatingIndex
 
 
 class MatchupUnsupported(RuntimeError):
@@ -447,7 +454,7 @@ def _stated_predictor(
             model.release.league,
             model.predictor.ratings,
             **model.release.params,
-            sources=stated_sources(game, overrides),
+            sources=stated_sources(game, overrides, model.players),
         )
     except TypeError as exc:
         raise MatchupUnsupported(
@@ -665,9 +672,10 @@ class _Models:
             )
             return None
 
+        players = league_players(self._store, league)
         return _LeagueModel(
             release=release,
-            predictor=predictor,
+            predictor=with_players(release, predictor, players),
             margin=release.margin_predictor(),
             kernel=release.kernel(),
             processed=frozenset(release.trained_through.processed_game_ids),
@@ -676,6 +684,7 @@ class _Models:
                     league, release.model, self._since, self._until
                 )
             ),
+            players=players,
         )
 
 

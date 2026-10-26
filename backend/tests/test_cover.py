@@ -13,7 +13,7 @@ decides -- rather than about the kernel's arithmetic.
 """
 
 import pytest
-from cassandra.predictor import QbOutIndex
+from cassandra.predictor import PlayerRatingIndex, QbOutIndex
 from cassandra.predictor.distribution import Cover
 from fastapi.testclient import TestClient
 
@@ -63,6 +63,9 @@ class _NoKernelStore:
 
     def get_qb_out(self, league: str) -> QbOutIndex:
         return self._inner.get_qb_out(league)
+
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        return PlayerRatingIndex()
 
     def get_latest(self, league: str, model: str) -> ModelRelease:
         release = self._inner.get_latest(league, model)

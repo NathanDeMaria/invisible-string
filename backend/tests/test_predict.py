@@ -13,9 +13,13 @@ computed against a 1500-rated ghost. That's the worst failure this endpoint can
 have, because nothing about the response looks wrong.
 """
 
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
 import httpx
 import pytest
-from cassandra.predictor import QbOutIndex
+from cassandra.predictor import PlayerRatingIndex, QbOutIndex
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -50,6 +54,9 @@ class _OneReleaseStore:
     def get_qb_out(self, league: str) -> QbOutIndex:
         return QbOutIndex()
 
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        return PlayerRatingIndex()
+
 
 def _fixture_release(league: str = "mens", model: str = "glicko_tuned"):
     return LocalReleaseStore(FIXTURES).get_latest(league, model)
@@ -76,6 +83,9 @@ class _FutureBestStore:
 
     def get_qb_out(self, league: str) -> QbOutIndex:
         return self._inner.get_qb_out(league)
+
+    def get_player_ratings(self, league: str) -> PlayerRatingIndex:
+        return PlayerRatingIndex()
 
     def get_latest(self, league: str, model: str) -> ModelRelease:
         release = self._inner.get_latest(league, model)
@@ -330,3 +340,48 @@ class TestDegradedReleases:
         assert (
             predict(client, league="nfl", home="Duke", away="Kansas").status_code == 404
         )
+
+
+class TestTheBasketballPlayersBlend:
+    """A `glicko_players` release blends the league's players' rows into each
+    game, and rebuilt here it reads them from beside the release -- without
+    them it would answer as Glicko alone, a model nobody scored."""
+
+    def _store(self, tmp_path: Path, players: str | None) -> LocalReleaseStore:
+        release = json.loads(
+            (FIXTURES / "models" / "mens" / "glicko_tuned" / "latest.json").read_text()
+        )
+        release["model"] = "glicko_players"
+        release["params"] |= {"glicko_share": 0.8, "player_rating_weight": 10.0}
+        league = tmp_path / "models" / "mens"
+        (league / "glicko_players").mkdir(parents=True)
+        (league / "glicko_players" / "latest.json").write_text(json.dumps(release))
+        if players is not None:
+            (league / "player_ratings.json").write_text(players)
+        return LocalReleaseStore(tmp_path)
+
+    def _rows(self, kansas_net: float) -> str:
+        day = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
+        return json.dumps(
+            {
+                "league": "mens",
+                "teams": {
+                    team: {"as_of": day, "season": 2026, "net": net, "pace": 70.0}
+                    for team, net in (("Duke", 0.0), ("Kansas", kansas_net))
+                },
+            }
+        )
+
+    def _home_win_prob(self, store: LocalReleaseStore) -> float:
+        return predict(
+            _client(store), league="mens", home="Duke", away="Kansas"
+        ).json()["home_win_prob"]
+
+    def test_the_players_move_the_number(self, tmp_path: Path) -> None:
+        level = self._home_win_prob(self._store(tmp_path / "a", self._rows(0.0)))
+        stronger = self._home_win_prob(self._store(tmp_path / "b", self._rows(20.0)))
+        assert stronger < level
+
+    def test_without_them_it_still_answers(self, tmp_path: Path) -> None:
+        assert 0 < self._home_win_prob(self._store(tmp_path / "a", None)) < 1
+        assert 0 < self._home_win_prob(self._store(tmp_path / "b", "{not json")) < 1
