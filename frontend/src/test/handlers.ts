@@ -109,6 +109,8 @@ export const glicko: RatingsResponse = {
       // Held its place while gaining ground, which is the case a table of
       // arrows alone would render as nothing at all.
       movement: { rating: 24.2, rank: 0, wins: 2, losses: 0 },
+      // From before the players' file said who might be out.
+      players: { net: 27.3, pace: 66.4, available: null, as_of: "2026-03-14" },
     },
     {
       rank: 2,
@@ -118,6 +120,7 @@ export const glicko: RatingsResponse = {
       wins: 26,
       losses: 4,
       movement: { rating: -8.5, rank: -1, wins: 1, losses: 1 },
+      players: { net: 24.8, pace: 63.1, available: 23.9, as_of: "2026-03-14" },
     },
     // A name with a space in it, which is most of them -- and what the team
     // page's link has to survive encoding and decoding.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TeamRow } from "../../services/api";
 import {
+  availability,
   availableMetrics,
   defaultAxes,
   dots,
@@ -9,6 +10,7 @@ import {
   median,
   nearestDot,
   niceStep,
+  readMetric,
   resolveAxis,
   scale,
   ticks,
@@ -31,6 +33,8 @@ describe("availableMetrics", () => {
       availableMetrics({
         rd: false,
         units: false,
+        players: false,
+        playersAvailable: false,
         success: false,
         successSplit: false,
         epa: false,
@@ -42,6 +46,8 @@ describe("availableMetrics", () => {
       availableMetrics({
         rd: true,
         units: true,
+        players: true,
+        playersAvailable: true,
         success: true,
         successSplit: true,
         epa: true,
@@ -54,6 +60,9 @@ describe("availableMetrics", () => {
       "rd",
       "offense",
       "defense",
+      "playersNet",
+      "playersAvailable",
+      "playersPace",
       "offenseSuccess",
       "defenseSuccess",
       "offenseEpa",
@@ -68,6 +77,35 @@ describe("availableMetrics", () => {
       "defenseRunEpa",
       "week",
     ]);
+  });
+});
+
+describe("the players' row", () => {
+  const players = {
+    net: 24.8,
+    pace: 63.1,
+    available: 23.9,
+    as_of: "2026-03-14",
+  };
+
+  it("reads the net, the net with absences and the pace", () => {
+    const row = team({ players });
+    expect(readMetric(row, "playersNet")).toEqual({ value: 24.8, sd: null });
+    expect(readMetric(row, "playersAvailable")).toEqual({
+      value: 23.9,
+      sd: null,
+    });
+    expect(readMetric(row, "playersPace")).toEqual({ value: 63.1, sd: null });
+  });
+
+  it("offers the absences column only where a row carries it", () => {
+    const older = [team({ players: { ...players, available: null } })];
+    expect(availability(older, false)).toMatchObject({
+      players: true,
+      playersAvailable: false,
+    });
+    expect(readMetric(older[0], "playersAvailable")).toBeNull();
+    expect(availability([team({})], false).players).toBe(false);
   });
 });
 

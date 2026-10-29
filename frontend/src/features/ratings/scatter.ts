@@ -28,6 +28,9 @@ export type Metric =
   | "rd"
   | "offense"
   | "defense"
+  | "playersNet"
+  | "playersAvailable"
+  | "playersPace"
   | "offenseSuccess"
   | "defenseSuccess"
   | "offensePassSuccess"
@@ -49,6 +52,8 @@ export interface MetricInfo {
   format: (value: number) => string;
   /** The deviation a model published beside the value, in the value's units. */
   spread?: (sd: number) => string;
+  /** Neither end is better, so the table places no percentile under it. */
+  unranked?: boolean;
 }
 
 const points = (value: number) => value.toFixed(1);
@@ -67,6 +72,19 @@ export const METRICS: Record<Metric, MetricInfo> = {
   rd: { label: "RD", reversed: true, format: points },
   offense: { label: "Offense", reversed: false, format: points },
   defense: { label: "Defense", reversed: false, format: points },
+  playersNet: { label: "Players' net /100", reversed: false, format: signed },
+  playersAvailable: {
+    label: "Players' net /100, with absences",
+    reversed: false,
+    format: signed,
+  },
+  // Faster isn't better, but a sort has to start somewhere: fastest first.
+  playersPace: {
+    label: "Pace",
+    reversed: false,
+    format: points,
+    unranked: true,
+  },
   offenseSuccess: {
     label: "Off SR",
     reversed: false,
@@ -146,6 +164,10 @@ export const METRICS: Record<Metric, MetricInfo> = {
 export interface Available {
   rd: boolean;
   units: boolean;
+  /** The players' net and pace, which the basketball model blends in. */
+  players: boolean;
+  /** The net with who might be out, which rows from before it don't carry. */
+  playersAvailable: boolean;
   success: boolean;
   /** Success rate by pass and by run, which the same models keep. */
   successSplit: boolean;
@@ -165,6 +187,8 @@ export function availability(rows: TeamRow[], week: boolean): Available {
   return {
     rd: rows.some((row) => row.rd != null),
     units: rows.some((row) => row.offense != null || row.defense != null),
+    players: rows.some((row) => row.players != null),
+    playersAvailable: rows.some((row) => row.players?.available != null),
     success: rows.some((row) => row.success != null),
     successSplit: rows.some((row) => row.success?.passes || row.success?.runs),
     epa: rows.some((row) => row.epa != null),
@@ -194,6 +218,9 @@ export function availableMetrics(has: Available): Metric[] {
     "record",
     ...(has.rd ? (["rd"] as const) : []),
     ...(has.units ? (["offense", "defense"] as const) : []),
+    ...(has.players ? (["playersNet"] as const) : []),
+    ...(has.playersAvailable ? (["playersAvailable"] as const) : []),
+    ...(has.players ? (["playersPace"] as const) : []),
     ...(has.success ? (["offenseSuccess", "defenseSuccess"] as const) : []),
     ...(has.epa ? (["offenseEpa", "defenseEpa"] as const) : []),
     ...(has.successSplit ? SUCCESS_SPLIT : []),
@@ -258,6 +285,14 @@ export function readMetric(row: TeamRow, metric: Metric): Reading | null {
       return row.defense
         ? { value: row.defense.rating, sd: row.defense.rd }
         : null;
+    case "playersNet":
+      return row.players ? { value: row.players.net, sd: null } : null;
+    case "playersAvailable":
+      return row.players?.available != null
+        ? { value: row.players.available, sd: null }
+        : null;
+    case "playersPace":
+      return row.players ? { value: row.players.pace, sd: null } : null;
     case "offenseSuccess":
       return some(row.success?.offense);
     case "defenseSuccess":

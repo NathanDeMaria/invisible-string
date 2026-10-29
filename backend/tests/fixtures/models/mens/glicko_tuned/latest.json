@@ -13,8 +13,14 @@
     "season_rd_increase": 120.0
   },
   "ratings": {
-    "Houston": { "rating": 1834.2, "rd": 68.0, "wins": 26, "losses": 4 },
-    "Duke": { "rating": 1834.2, "rd": 71.4, "wins": 24, "losses": 5 },
+    "Houston": {
+      "rating": 1834.2, "rd": 68.0, "wins": 26, "losses": 4,
+      "players": { "net": 24.8, "pace": 63.1, "available": 23.9, "as_of": "2026-03-14" }
+    },
+    "Duke": {
+      "rating": 1834.2, "rd": 71.4, "wins": 24, "losses": 5,
+      "players": { "net": 27.3, "pace": 66.4, "available": null, "as_of": "2026-03-14" }
+    },
     "North Carolina": { "rating": 1790.0, "rd": 74.1, "wins": 22, "losses": 8 },
     "Kansas": { "rating": 1755.5, "rd": 70.2, "wins": 21, "losses": 9 }
   },
