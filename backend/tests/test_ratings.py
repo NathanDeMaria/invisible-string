@@ -335,6 +335,31 @@ class TestEpaPerDown:
         assert alabama["epa"] is None
 
 
+class TestPlayers:
+    """Each team's players' row, where the basketball model blends one in.
+
+    The mens fixture carries one for Houston and Duke (Duke's from before the
+    file said who might be out); North Carolina and Kansas, outside the file,
+    carry none.
+    """
+
+    def test_served_where_the_release_carries_it(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/mens/ratings").json()["ratings"]
+        by_team = {r["team"]: r["players"] for r in rows}
+        assert by_team["Houston"] == {
+            "net": 24.8,
+            "pace": 63.1,
+            "available": 23.9,
+            "as_of": "2026-03-14",
+        }
+        assert by_team["Duke"]["available"] is None
+        assert by_team["Kansas"] is None
+
+    def test_null_for_a_model_without_it(self, client: TestClient) -> None:
+        rows = client.get("/api/leagues/ncaafb/ratings").json()["ratings"]
+        assert all(r["players"] is None for r in rows)
+
+
 class TestMovement:
     """The column the ratings page has been missing: what the week did.
 

@@ -1481,6 +1481,42 @@
         "title": "PerDownRating",
         "type": "object"
       },
+      "PlayersRating": {
+        "description": "A team as its players rate it, from ten-minute-version.\n\n`net` and `available` are points per 100 possessions against an average\nteam; `available` is the net over who might miss the next game and is\nNone where the source row doesn't say. `pace` is possessions a game.\n`as_of` is the day of the row. For a reader only: the model reads the\nplayers' file (`player_ratings.json`), and `rating_predictor` drops this.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "available": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available"
+          },
+          "net": {
+            "title": "Net",
+            "type": "number"
+          },
+          "pace": {
+            "title": "Pace",
+            "type": "number"
+          }
+        },
+        "required": [
+          "net",
+          "pace",
+          "as_of"
+        ],
+        "title": "PlayersRating",
+        "type": "object"
+      },
       "PredictResponse": {
         "properties": {
           "away": {
@@ -1985,6 +2021,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/UnitRating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "players": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayersRating"
               },
               {
                 "type": "null"

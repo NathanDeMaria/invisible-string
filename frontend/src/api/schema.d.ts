@@ -959,6 +959,29 @@ export interface components {
             /** Sd */
             sd: number;
         };
+        /**
+         * PlayersRating
+         * @description A team as its players rate it, from ten-minute-version.
+         *
+         *     `net` and `available` are points per 100 possessions against an average
+         *     team; `available` is the net over who might miss the next game and is
+         *     None where the source row doesn't say. `pace` is possessions a game.
+         *     `as_of` is the day of the row. For a reader only: the model reads the
+         *     players' file (`player_ratings.json`), and `rating_predictor` drops this.
+         */
+        PlayersRating: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Available */
+            available?: number | null;
+            /** Net */
+            net: number;
+            /** Pace */
+            pace: number;
+        };
         /** PredictResponse */
         PredictResponse: {
             /** Away */
@@ -1149,6 +1172,7 @@ export interface components {
             losses: number;
             movement?: components["schemas"]["Movement"] | null;
             offense?: components["schemas"]["UnitRating"] | null;
+            players?: components["schemas"]["PlayersRating"] | null;
             /** Rank */
             rank: number;
             /** Rating */

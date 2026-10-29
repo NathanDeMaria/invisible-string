@@ -281,7 +281,9 @@ function StatCell({
     );
   }
   const info = METRICS[metric];
-  const place = percentileLabel(leaguePercentile(all, reading.value, metric));
+  const place = info.unranked
+    ? null
+    : percentileLabel(leaguePercentile(all, reading.value, metric));
   return (
     <td className="num stat">
       <abbr
@@ -307,6 +309,9 @@ function StatCell({
 }
 
 const STAT_LABELS: Partial<Record<Metric, string>> = {
+  playersNet: "Net",
+  playersAvailable: "Avail",
+  playersPace: "Pace",
   offenseSuccess: "Off SR",
   defenseSuccess: "Def SR",
   offensePassSuccess: "Pass SR",
@@ -322,6 +327,11 @@ const STAT_LABELS: Partial<Record<Metric, string>> = {
 };
 
 const STAT_TITLES: Partial<Record<Metric, string>> = {
+  playersNet:
+    "Net points per 100 possessions against an average team, as the players on the roster rate it",
+  playersAvailable:
+    "The players' net over who might miss the next game, each at their chance of playing",
+  playersPace: "Possessions a game",
   offenseSuccess:
     "Success rate: the share of its downs this offense wins against an average defense",
   defenseSuccess:

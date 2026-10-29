@@ -50,6 +50,7 @@ from cassandra.serving.release import (
     KindEpaRating,
     KindSuccessRating,
     PerDownRating,
+    PlayersRating,
 )
 
 __all__ = [
@@ -66,6 +67,7 @@ __all__ = [
     "Metrics",
     "ModelRelease",
     "PerDownRating",
+    "PlayersRating",
     "RateRating",
     "SuccessRating",
     "TeamRating",

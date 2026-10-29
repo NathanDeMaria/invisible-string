@@ -19,6 +19,7 @@ from app.schema import (
     EpaRating,
     Metrics,
     ModelRelease,
+    PlayersRating,
     SuccessRating,
     TeamRating,
     TrainedThrough,
@@ -93,6 +94,13 @@ class TeamRow(BaseModel):
     # predictor's. None for the same models and teams `success` is, and for
     # a release written before it existed.
     epa: EpaRating | None = None
+    # The team as its players rate it, from ten-minute-version: net points
+    # per 100 possessions against an average team, that net over who might
+    # miss the next game (`available`), and possessions a game. The row the
+    # basketball model blends into `rating`, so the column beside the number
+    # it ranks on. None for every other model and for a team the players'
+    # file doesn't reach (`PlayersRating`).
+    players: PlayersRating | None = None
 
 
 class RatingsResponse(BaseModel):
@@ -227,6 +235,7 @@ def get_ratings(
                 defense=r.defense,
                 success=r.success,
                 epa=r.epa,
+                players=r.players,
             )
             for rank, team, r in ranked
         ],

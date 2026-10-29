@@ -156,6 +156,34 @@ describe("RatingsPage", () => {
     expect(screen.queryByRole("columnheader", { name: "Off EPA" })).toBeNull();
   });
 
+  it("shows the players' net, net with absences and pace for basketball", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
+    await screen.findByText("Duke");
+
+    for (const name of ["Net", "Avail", "Pace"]) {
+      expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+    }
+    const [duke, houston, carolina] = rowsInBody();
+    expect(houston).toHaveTextContent("+24.8");
+    expect(houston).toHaveTextContent("+23.9");
+    // Pace is neither good nor bad, so it gets no percentile.
+    expect(
+      within(houston).getByText("63.1").parentElement,
+    ).not.toHaveTextContent(/\d(st|nd|rd|th)/);
+    // Duke's row doesn't say who might be out, and North Carolina has none.
+    expect(duke).toHaveTextContent("+27.3");
+    expect(within(duke).getAllByText("—")).toHaveLength(1);
+    expect(within(carolina).getAllByText("—")).toHaveLength(3);
+  });
+
+  it("has no players' columns for a model without them", async () => {
+    renderApp(<RatingsPage />, RATINGS_ROUTE("ncaafb"));
+    await screen.findByText("Georgia");
+
+    expect(screen.queryByRole("columnheader", { name: "Net" })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Pace" })).toBeNull();
+  });
+
   it("hides the success-rate columns for a model without them", async () => {
     renderApp(<RatingsPage />, RATINGS_ROUTE("mens"));
     await screen.findByText("Duke");
