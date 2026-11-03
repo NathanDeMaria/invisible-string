@@ -768,7 +768,7 @@ name = "call-it-what-you-want"
 version = "0.1.0"
 description = "Translate between names and ID schemes for sports teams/athletes/etc."
 optional = false
-python-versions = ">=3.12"
+python-versions = ">=3.14"
 groups = ["main"]
 files = []
 develop = false
@@ -780,8 +780,8 @@ sync = ["aiohttp (>=3.8)", "endgame-aws"]
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/call-it-what-you-want.git"
-reference = "b3bb578ddb7b68d3cd08d5c567d17b6f3a2b9d4e"
-resolved_reference = "b3bb578ddb7b68d3cd08d5c567d17b6f3a2b9d4e"
+reference = "cc9c9e19e3e56eb48f7745853613aff51ca372b8"
+resolved_reference = "cc9c9e19e3e56eb48f7745853613aff51ca372b8"
 
 [[package]]
 name = "cassandra"
@@ -795,18 +795,18 @@ develop = false
 
 [package.dependencies]
 aiofiles = "^25.1.0"
-call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "b3bb578ddb7b68d3cd08d5c567d17b6f3a2b9d4e"}
+call-it-what-you-want = {git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "cc9c9e19e3e56eb48f7745853613aff51ca372b8"}
 endgame = {git = "https://github.com/NathanDeMaria/EndGame.git", rev = "19c1055cd0941465c0ae8a8e4239fdcea729bf37", subdirectory = "py-endgame"}
 numpy = "^2.4.0"
 pandas = "^2.3.3"
 pydantic = "^2.12.5"
-say-youll-remember-me = {git = "https://github.com/NathanDeMaria/say-youll-remember-me.git", rev = "4ca747646aa2a2112889279f93ebc96ccd4e0122"}
+say-youll-remember-me = {git = "https://github.com/NathanDeMaria/say-youll-remember-me.git", rev = "bcab6ebeb9a0d7b33ae9c2755ca8d8e1cfe59a5d"}
 
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/cassandra.git"
-reference = "eab69879cc14aa4d020f96b7a3e678fcedc612be"
-resolved_reference = "eab69879cc14aa4d020f96b7a3e678fcedc612be"
+reference = "3dd63cc62ea5b0a28684b8eecce3d09a58a9be05"
+resolved_reference = "3dd63cc62ea5b0a28684b8eecce3d09a58a9be05"
 
 [[package]]
 name = "certifi"
@@ -2742,7 +2742,7 @@ name = "say-youll-remember-me"
 version = "0.1.0"
 description = "What changed about a team between seasons: head coaches, coordinators, quarterbacks."
 optional = false
-python-versions = ">=3.12"
+python-versions = ">=3.14"
 groups = ["main"]
 files = []
 develop = false
@@ -2751,13 +2751,13 @@ develop = false
 call-it-what-you-want = "*"
 
 [package.extras]
-plays = ["endgame-aws ; python_version >= \"3.14\"", "lucky-ones[data] ; python_version >= \"3.14\""]
+plays = ["endgame-aws", "lucky-ones[data]"]
 
 [package.source]
 type = "git"
 url = "https://github.com/NathanDeMaria/say-youll-remember-me.git"
-reference = "4ca747646aa2a2112889279f93ebc96ccd4e0122"
-resolved_reference = "4ca747646aa2a2112889279f93ebc96ccd4e0122"
+reference = "bcab6ebeb9a0d7b33ae9c2755ca8d8e1cfe59a5d"
+resolved_reference = "bcab6ebeb9a0d7b33ae9c2755ca8d8e1cfe59a5d"
 
 [[package]]
 name = "six"
@@ -3413,4 +3413,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.14"
-content-hash = "c7b67176562a5d35b54a36ebdfa84d0ab68d039e114bb2de3a02b33ac8509bb6"
+content-hash = "002502a9a838065fbe09100f3ee7acd549831a38440a5e422e67a6d6e1df8e20"
