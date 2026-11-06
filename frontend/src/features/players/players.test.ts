@@ -39,6 +39,7 @@ describe("filterPlayers", () => {
       team: "UNC",
       team_id: "8",
       projected: true,
+      games: 0,
       share: 0.3,
     }),
   ];
