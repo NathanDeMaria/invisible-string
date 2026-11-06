@@ -1,3 +1,4 @@
+import gzip
 import json
 import pickle
 from collections import namedtuple
@@ -107,8 +108,21 @@ def distributions() -> DistributionStore:
     return LocalDistributionStore(FIXTURES)
 
 
+@pytest.fixture(scope="session")
+def players_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The players' files, gzipped as they're published from the JSON fixtures
+    committed beside the releases, which a diff can read."""
+    root = tmp_path_factory.mktemp("players")
+    for source in FIXTURES.glob("models/*/players_*.json"):
+        league = root / "models" / source.parent.name
+        league.mkdir(parents=True, exist_ok=True)
+        (league / f"{source.name}.gz").write_bytes(gzip.compress(source.read_bytes()))
+    return root
+
+
 @pytest.fixture
 def client(
+    players_root: Path,
     store: ReleaseStore,
     artifacts: ArtifactStore,
     jobs_source: JobsSource,
@@ -123,7 +137,9 @@ def client(
     app.dependency_overrides[get_games_source] = lambda: games_source
     app.dependency_overrides[get_plays_source] = lambda: plays_source
     app.dependency_overrides[get_distribution_store] = lambda: distributions
-    app.dependency_overrides[get_players_store] = lambda: LocalPlayersStore(FIXTURES)
+    app.dependency_overrides[get_players_store] = lambda: LocalPlayersStore(
+        players_root
+    )
     return TestClient(app)
 
 

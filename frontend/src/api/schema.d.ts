@@ -171,15 +171,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/leagues/{league}/players": {
+    "/api/leagues/{league}/players/seasons": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Players */
-        get: operations["get_players_api_leagues__league__players_get"];
+        /** Get Player Seasons */
+        get: operations["get_player_seasons_api_leagues__league__players_seasons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/leagues/{league}/players/{season}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Players
+         * @description Everyone, however little he's played: the page's floor is a reader's to
+         *     move, so it's applied there. The published bytes as they are (`app.players`),
+         *     unzipped only for a client that can't take them.
+         */
+        get: operations["get_players_api_leagues__league__players__season__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1016,6 +1038,30 @@ export interface components {
             /** Vs Team */
             vs_team: number;
         };
+        /** PlayerSeasons */
+        PlayerSeasons: {
+            /** Default Season */
+            default_season: number | null;
+            /** League */
+            league: string;
+            /** Seasons */
+            seasons: number[];
+        };
+        /**
+         * PlayersFile
+         * @description A season's table. `as_of` is the morning it stands for; a finished
+         *     season has none.
+         */
+        PlayersFile: {
+            /** As Of */
+            as_of?: string | null;
+            /** League */
+            league: string;
+            /** Players */
+            players: components["schemas"]["PlayerRow"][];
+            /** Season */
+            season: number;
+        };
         /**
          * PlayersRating
          * @description A team as its players rate it, from ten-minute-version.
@@ -1038,21 +1084,6 @@ export interface components {
             net: number;
             /** Pace */
             pace: number;
-        };
-        /** PlayersResponse */
-        PlayersResponse: {
-            /** As Of */
-            as_of: string | null;
-            /** Default Season */
-            default_season: number | null;
-            /** League */
-            league: string;
-            /** Players */
-            players: components["schemas"]["PlayerRow"][];
-            /** Season */
-            season: number | null;
-            /** Seasons */
-            seasons: number[];
         };
         /** PredictResponse */
         PredictResponse: {
@@ -1644,12 +1675,9 @@ export interface operations {
             };
         };
     };
-    get_players_api_leagues__league__players_get: {
+    get_player_seasons_api_leagues__league__players_seasons_get: {
         parameters: {
-            query?: {
-                /** @description Defaults to the current season. */
-                season?: number | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 league: string;
@@ -1664,7 +1692,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlayersResponse"];
+                    "application/json": components["schemas"]["PlayerSeasons"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_players_api_leagues__league__players__season__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "accept-encoding"?: string;
+            };
+            path: {
+                league: string;
+                season: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayersFile"];
                 };
             };
             /** @description Validation Error */

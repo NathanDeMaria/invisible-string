@@ -34,11 +34,32 @@ describe("filterPlayers", () => {
     row({ player: "Pat", share: 0.5 }),
     row({ player: "Low", share: 0.05 }),
     row({ player: "Box", share: null }),
-    row({ player: "Wait", team: "UNC", projected: true, share: 0.3 }),
+    row({
+      player: "Wait",
+      team: "UNC",
+      team_id: "8",
+      projected: true,
+      share: 0.3,
+    }),
   ];
   const names = (found: PlayerRow[]) => found.map((r) => r.player);
 
   it("drops those under the floor and those with no share", () => {
+    expect(names(filterPlayers(rows, "", 10))).toEqual(["Pat", "Wait"]);
+  });
+
+  it("takes someone yet to play off after his team's fifth game", () => {
+    const waiting = row({ player: "Wait", projected: true, games: 0 });
+    const team = (games: number) => [row({ games }), waiting];
+    expect(names(filterPlayers(team(4), "", 10))).toEqual(["Pat", "Wait"]);
+    expect(names(filterPlayers(team(5), "", 10))).toEqual(["Pat"]);
+  });
+
+  it("goes by his own team's games", () => {
+    const rows = [
+      row({ games: 9 }),
+      row({ player: "Wait", team_id: "8", projected: true, games: 0 }),
+    ];
     expect(names(filterPlayers(rows, "", 10))).toEqual(["Pat", "Wait"]);
   });
 

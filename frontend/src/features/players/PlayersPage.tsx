@@ -2,7 +2,11 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { useKeyboard } from "../keys/useKeyboard";
-import { useGetPlayersQuery, type PlayerRow } from "../../services/api";
+import {
+  useGetPlayerSeasonsQuery,
+  useGetPlayersQuery,
+  type PlayerRow,
+} from "../../services/api";
 import {
   BY_TOTAL,
   DEFAULT_FLOOR,
@@ -28,8 +32,13 @@ export function PlayersPage() {
   // The season lives in the URL, so a link to last year stays last year; no
   // parameter means whichever is current when it's opened.
   const [params, setParams] = useSearchParams();
-  const asked = Number(params.get("season")) || undefined;
-  const players = useGetPlayersQuery({ league, season: asked });
+  const seasons = useGetPlayerSeasonsQuery(league);
+  const season =
+    Number(params.get("season")) || seasons.data?.default_season || null;
+  const players = useGetPlayersQuery(
+    { league, season: season ?? 0 },
+    { skip: season == null },
+  );
 
   const [search, setSearch] = useState("");
   const [floor, setFloor] = useState(DEFAULT_FLOOR);
@@ -49,11 +58,11 @@ export function PlayersPage() {
   );
   const shown = all ? rows : rows.slice(0, FIRST_ROWS);
 
-  if (players.isError) {
+  if (seasons.isError || players.isError) {
     return <p className="error">Couldn&rsquo;t load the players.</p>;
   }
-  if (players.isLoading) return <p className="loading">Loading&hellip;</p>;
-  if (!players.data?.seasons.length) {
+  if (seasons.isLoading) return <p className="loading">Loading&hellip;</p>;
+  if (!seasons.data?.seasons.length) {
     return <p className="empty">No player ratings for {league} yet.</p>;
   }
 
@@ -71,19 +80,19 @@ export function PlayersPage() {
         <label>
           Season
           <select
-            value={players.data.season ?? ""}
+            value={season ?? ""}
             onChange={(e) => {
-              const season = Number(e.target.value);
+              const picked = Number(e.target.value);
               setParams(
-                season === players.data?.default_season
+                picked === seasons.data?.default_season
                   ? {}
-                  : { season: String(season) },
+                  : { season: String(picked) },
               );
             }}
           >
-            {[...players.data.seasons].reverse().map((season) => (
-              <option key={season} value={season}>
-                {seasonLabel(season)}
+            {[...seasons.data.seasons].reverse().map((option) => (
+              <option key={option} value={option}>
+                {seasonLabel(option)}
               </option>
             ))}
           </select>
@@ -102,11 +111,13 @@ export function PlayersPage() {
 
       <p className="meta" data-testid="players-meta">
         {rows.length.toLocaleString()} players
-        {players.data.as_of && <> &middot; as of {players.data.as_of}</>}{" "}
+        {players.data?.as_of && <> &middot; as of {players.data.as_of}</>}{" "}
         &middot; points per 100 possessions
       </p>
 
-      {rows.length === 0 ? (
+      {players.isLoading ? (
+        <p className="loading">Loading&hellip;</p>
+      ) : rows.length === 0 ? (
         <p className="empty">No players match that.</p>
       ) : (
         <div className="table-scroll">
