@@ -10,6 +10,7 @@ import type {
   JobRun,
   JobsResponse,
   LeagueSummary,
+  PlayerRow,
   PredictResponse,
   LeagueDistributions,
   RatingsResponse,
@@ -1024,8 +1025,67 @@ export const dukeHistory: HistoryResponse = {
   ],
 };
 
+const player = (over: Partial<PlayerRow>): PlayerRow => ({
+  athlete_id: "1",
+  player: "Pat Star",
+  team_id: "150",
+  team: "Duke",
+  projected: false,
+  offense: 7,
+  defense: 2,
+  total: 9,
+  offense_sd: 1.5,
+  defense_sd: 1.5,
+  total_sd: 2.2,
+  vs_team: 4.5,
+  games: 1,
+  starts: 1,
+  minutes: 30,
+  share: 0.75,
+  ...over,
+});
+
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
+  http.get("/api/leagues/:league/players", ({ params, request }) => {
+    if (params.league !== "mens") {
+      return HttpResponse.json({
+        league: params.league,
+        season: null,
+        default_season: null,
+        seasons: [],
+        as_of: null,
+        players: [],
+      });
+    }
+    const asked = new URL(request.url).searchParams.get("season");
+    const season = asked ? Number(asked) : 2026;
+    return HttpResponse.json({
+      league: "mens",
+      season,
+      default_season: 2026,
+      seasons: [2025, 2026],
+      as_of: season === 2026 ? "2026-11-05" : null,
+      players:
+        season === 2026
+          ? [
+              player({}),
+              player({
+                athlete_id: "2",
+                player: "New Guy",
+                team: "UNC",
+                projected: true,
+                total: 4,
+                games: 0,
+                starts: 0,
+                minutes: 0,
+                share: 0.4,
+              }),
+              player({ athlete_id: "3", player: "Deep Bench", share: 0.05 }),
+            ]
+          : [player({ athlete_id: "4", player: "Old Hand" })],
+    });
+  }),
   http.get("/api/predict", ({ request }) => {
     const q = new URL(request.url).searchParams;
     const home = q.get("home") ?? "";

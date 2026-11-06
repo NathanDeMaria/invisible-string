@@ -10,6 +10,8 @@ export type LeagueSummary = components["schemas"]["LeagueSummary"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
+export type PlayerRow = components["schemas"]["PlayerRow"];
+export type PlayersResponse = components["schemas"]["PlayersResponse"];
 export type UnitRating = components["schemas"]["UnitRating"];
 export type RateRating = components["schemas"]["RateRating"];
 export type Movement = components["schemas"]["Movement"];
@@ -41,6 +43,11 @@ export type EpaPerPlay = components["schemas"]["EpaPerPlay"];
 export type ExpectedPointsFit = components["schemas"]["ExpectedPointsFit"];
 export type LeagueDistributions = components["schemas"]["LeagueDistributions"];
 export type MetricDistribution = components["schemas"]["MetricDistribution"];
+
+export interface PlayersArgs {
+  league: string;
+  season?: number;
+}
 
 export interface RatingsArgs {
   league: string;
@@ -151,6 +158,12 @@ export const api = createApi({
         params: model ? { model } : undefined,
       }),
     }),
+    getPlayers: builder.query<PlayersResponse, PlayersArgs>({
+      query: ({ league, season }) => ({
+        url: `leagues/${league}/players`,
+        params: season ? { season } : undefined,
+      }),
+    }),
     // The whole of a team's history in one request: a few hundred points, and
     // smaller than the ratings table the page was reached from. The season
     // range picker filters what came back rather than asking again.
@@ -258,6 +271,7 @@ export const api = createApi({
 export const {
   useGetLeaguesQuery,
   useGetRatingsQuery,
+  useGetPlayersQuery,
   useGetHistoryQuery,
   usePredictQuery,
   useGetJobsQuery,

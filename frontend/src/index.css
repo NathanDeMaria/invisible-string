@@ -1474,3 +1474,25 @@ table.ratings,
   stroke-width: 1.5;
   pointer-events: none;
 }
+
+/* Someone yet to play: a prior and a projection, read as less than a rating. */
+.ratings.players tr.projected td {
+  color: var(--muted);
+}
+
+.ratings.players .tag {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  text-decoration: none;
+}
+
+.show-all {
+  font: inherit;
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.8rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}

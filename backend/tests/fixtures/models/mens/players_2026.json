@@ -1,0 +1,43 @@
+{
+ "league": "mens",
+ "season": 2026,
+ "as_of": "2026-11-05",
+ "players": [
+  {
+   "athlete_id": "1",
+   "player": "Pat Star",
+   "team_id": "10",
+   "team": "Duke",
+   "projected": false,
+   "offense": 7.0,
+   "defense": 2.0,
+   "total": 9.0,
+   "offense_sd": 1.5,
+   "defense_sd": 1.5,
+   "total_sd": 2.2,
+   "vs_team": 4.5,
+   "games": 1,
+   "starts": 1,
+   "minutes": 30.0,
+   "share": 0.8
+  },
+  {
+   "athlete_id": "3",
+   "player": "New Guy",
+   "team_id": "30",
+   "team": "UNC",
+   "projected": true,
+   "offense": 2.0,
+   "defense": 2.0,
+   "total": 4.0,
+   "offense_sd": 1.5,
+   "defense_sd": 1.5,
+   "total_sd": 2.2,
+   "vs_team": 2.0,
+   "games": 0,
+   "starts": 0,
+   "minutes": 0.0,
+   "share": 0.4
+  }
+ ]
+}

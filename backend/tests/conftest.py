@@ -30,6 +30,7 @@ from app.distributions import (
 from app.games import GamesSource, LocalGamesSource, get_games_source
 from app.jobs import JobsSource, LocalJobsSource, get_jobs_source
 from app.main import create_app
+from app.players import LocalPlayersStore, get_players_store
 from app.plays import LocalPlaysSource, PlaysSource, get_plays_source
 from app.releases import LocalReleaseStore, ReleaseStore, get_release_store
 
@@ -122,6 +123,7 @@ def client(
     app.dependency_overrides[get_games_source] = lambda: games_source
     app.dependency_overrides[get_plays_source] = lambda: plays_source
     app.dependency_overrides[get_distribution_store] = lambda: distributions
+    app.dependency_overrides[get_players_store] = lambda: LocalPlayersStore(FIXTURES)
     return TestClient(app)
 
 

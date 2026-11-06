@@ -1481,6 +1481,131 @@
         "title": "PerDownRating",
         "type": "object"
       },
+      "PlayerRow": {
+        "description": "A player, per 100 possessions; `vs_team` is his rating without his\nteam's fifth. `projected`: he hasn't played, so a prior and a projected\nshare. No share means the box scores don't have him.",
+        "properties": {
+          "athlete_id": {
+            "title": "Athlete Id",
+            "type": "string"
+          },
+          "defense": {
+            "title": "Defense",
+            "type": "number"
+          },
+          "defense_sd": {
+            "title": "Defense Sd",
+            "type": "number"
+          },
+          "games": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Games"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes"
+          },
+          "offense": {
+            "title": "Offense",
+            "type": "number"
+          },
+          "offense_sd": {
+            "title": "Offense Sd",
+            "type": "number"
+          },
+          "player": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player"
+          },
+          "projected": {
+            "title": "Projected",
+            "type": "boolean"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "total_sd": {
+            "title": "Total Sd",
+            "type": "number"
+          },
+          "vs_team": {
+            "title": "Vs Team",
+            "type": "number"
+          }
+        },
+        "required": [
+          "athlete_id",
+          "team_id",
+          "projected",
+          "offense",
+          "defense",
+          "total",
+          "offense_sd",
+          "defense_sd",
+          "total_sd",
+          "vs_team"
+        ],
+        "title": "PlayerRow",
+        "type": "object"
+      },
       "PlayersRating": {
         "description": "A team as its players rate it, from ten-minute-version.\n\n`net` and `available` are points per 100 possessions against an average\nteam; `available` is the net over who might miss the next game and is\nNone where the source row doesn't say. `pace` is possessions a game.\n`as_of` is the day of the row. For a reader only: the model reads the\nplayers' file (`player_ratings.json`), and `rating_predictor` drops this.",
         "properties": {
@@ -1515,6 +1640,72 @@
           "as_of"
         ],
         "title": "PlayersRating",
+        "type": "object"
+      },
+      "PlayersResponse": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "default_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Season"
+          },
+          "league": {
+            "title": "League",
+            "type": "string"
+          },
+          "players": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerRow"
+            },
+            "title": "Players",
+            "type": "array"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Seasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league",
+          "season",
+          "default_season",
+          "seasons",
+          "as_of",
+          "players"
+        ],
+        "title": "PlayersResponse",
         "type": "object"
       },
       "PredictResponse": {
@@ -2916,6 +3107,63 @@
           }
         },
         "summary": "Get History"
+      }
+    },
+    "/api/leagues/{league}/players": {
+      "get": {
+        "operationId": "get_players_api_leagues__league__players_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league",
+            "required": true,
+            "schema": {
+              "title": "League",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the current season.",
+            "in": "query",
+            "name": "season",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the current season.",
+              "title": "Season"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Players"
       }
     },
     "/api/leagues/{league}/ratings": {

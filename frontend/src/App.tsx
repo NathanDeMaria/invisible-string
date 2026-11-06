@@ -16,6 +16,7 @@ import { ShortcutsDialog } from "./features/keys/ShortcutsDialog";
 import { useKeyboard } from "./features/keys/useKeyboard";
 import { LeagueLayout } from "./features/league/LeagueLayout";
 import { MatchupPage } from "./features/matchup/MatchupPage";
+import { PlayersPage } from "./features/players/PlayersPage";
 import { ChartPage } from "./features/ratings/ChartPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
 import { TeamPage } from "./features/team/TeamPage";
@@ -135,6 +136,7 @@ export function App() {
             <Route path="ratings" element={<RatingsPage />} />
             <Route path="matchup" element={<MatchupPage />} />
             <Route path="chart" element={<ChartPage />} />
+            <Route path="players" element={<PlayersPage />} />
             {/* A team is a detail of its league, so it sits under the league's
                 layout and keeps the panel nav that leads back to the
                 leaderboard it was reached from. Encoded in the path rather

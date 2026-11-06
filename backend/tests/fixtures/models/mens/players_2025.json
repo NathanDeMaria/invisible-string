@@ -1,0 +1,43 @@
+{
+ "league": "mens",
+ "season": 2025,
+ "as_of": null,
+ "players": [
+  {
+   "athlete_id": "1",
+   "player": "Pat Star",
+   "team_id": "10",
+   "team": "Duke",
+   "projected": false,
+   "offense": 10.0,
+   "defense": 2.0,
+   "total": 12.0,
+   "offense_sd": 1.5,
+   "defense_sd": 1.5,
+   "total_sd": 2.2,
+   "vs_team": 6.0,
+   "games": 30,
+   "starts": 30,
+   "minutes": 900.0,
+   "share": 0.8
+  },
+  {
+   "athlete_id": "2",
+   "player": "Sam Deep",
+   "team_id": "20",
+   "team": "Kansas",
+   "projected": false,
+   "offense": 1.0,
+   "defense": 2.0,
+   "total": 3.0,
+   "offense_sd": 1.5,
+   "defense_sd": 1.5,
+   "total_sd": 2.2,
+   "vs_team": 1.5,
+   "games": 30,
+   "starts": 30,
+   "minutes": 900.0,
+   "share": 0.05
+  }
+ ]
+}
