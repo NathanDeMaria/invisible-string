@@ -1,13 +1,16 @@
 """Reading a league's seasons of players, published by cassandra's `publish`.
 
-Files beside a league's models rather than under them, `players_{season}.json`:
-every directory under a league is read as a model. Their own store rather than
-more of `ReleaseStore`, because nothing that predicts reads them. A season is
-over a megabyte, and only the current one moves, so S3 is re-checked on the
-releases' TTL with a conditional GET.
+Files beside a league's models rather than under them,
+`players_{season}.json.gz`: every directory under a league is read as a model.
+Their own store rather than more of `ReleaseStore`, because nothing that
+predicts reads them.
+
+Held as the gzipped bytes they're published as, and handed to the browser that
+way, never parsed. The server has 512 MB and often peaks past 90% of it: parsed,
+the 22 files take about 180 MB; like this, about 8. Only the current season
+moves, so S3 is re-checked on the releases' TTL with a conditional GET.
 """
 
-import json
 import re
 import threading
 import time
@@ -19,29 +22,13 @@ from typing import Any, Protocol
 
 import boto3
 from botocore.exceptions import ClientError
-from cassandra.players import PlayersFile
-from pydantic import ValidationError
 
 from app.settings import Settings, get_settings
 
-_FILE = re.compile(r"players_(?P<season>\d{4})\.json$")
+_FILE = re.compile(r"players_(?P<season>\d{4})\.json\.gz$")
 
 _NOT_MODIFIED = {"304", "NotModified"}
 _MISSING = {"NoSuchKey", "404"}
-
-
-class PlayersUnreadable(ValueError):
-    """A season's file exists but doesn't match the current schema."""
-
-
-def parse_players(raw: str | bytes, league: str, season: int) -> PlayersFile:
-    try:
-        return PlayersFile.model_validate(json.loads(raw))
-    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise PlayersUnreadable(
-            f"{league}/players_{season}.json does not match the current "
-            "PlayersFile schema"
-        ) from exc
 
 
 def default_season(seasons: list[int], today: date) -> int | None:
@@ -58,33 +45,32 @@ def default_season(seasons: list[int], today: date) -> int | None:
 class PlayersStore(Protocol):
     def list_seasons(self, league: str) -> list[int]: ...
 
-    def get_players(self, league: str, season: int) -> PlayersFile | None:
-        """A season's players, or None if it has no file."""
+    def get_players(self, league: str, season: int) -> bytes | None:
+        """A season's gzipped `PlayersFile`, or None if it has no file."""
         ...
 
 
 class LocalPlayersStore:
-    """`<root>/models/<league>/players_<season>.json`."""
+    """`<root>/models/<league>/players_<season>.json.gz`."""
 
     def __init__(self, root: Path) -> None:
         self._models_dir = root / "models"
 
     def list_seasons(self, league: str) -> list[int]:
-        found = (self._models_dir / league).glob("players_*.json")
+        found = (self._models_dir / league).glob("players_*.json.gz")
         return sorted(int(m["season"]) for p in found if (m := _FILE.search(p.name)))
 
-    def get_players(self, league: str, season: int) -> PlayersFile | None:
-        path = self._models_dir / league / f"players_{season}.json"
+    def get_players(self, league: str, season: int) -> bytes | None:
+        path = self._models_dir / league / f"players_{season}.json.gz"
         try:
-            raw = path.read_text()
+            return path.read_bytes()
         except FileNotFoundError:
             return None
-        return parse_players(raw, league, season)
 
 
 @dataclass
 class _CachedSeason:
-    players: PlayersFile
+    body: bytes
     etag: str
     checked_at: float
 
@@ -123,16 +109,16 @@ class S3PlayersStore:
             self._listings[league] = (seasons, time.monotonic())
         return list(seasons)
 
-    def get_players(self, league: str, season: int) -> PlayersFile | None:
+    def get_players(self, league: str, season: int) -> bytes | None:
         cache_key = (league, season)
         with self._lock:
             hit = self._seasons.get(cache_key)
         if hit is not None and not self._expired(hit.checked_at):
-            return hit.players
+            return hit.body
 
         kwargs: dict[str, Any] = {
             "Bucket": self._bucket,
-            "Key": f"{self._prefix}{league}/players_{season}.json",
+            "Key": f"{self._prefix}{league}/players_{season}.json.gz",
         }
         if hit is not None and hit.etag:
             kwargs["IfNoneMatch"] = hit.etag
@@ -144,17 +130,17 @@ class S3PlayersStore:
             if hit is not None and (code in _NOT_MODIFIED or status == 304):
                 with self._lock:
                     hit.checked_at = time.monotonic()
-                return hit.players
+                return hit.body
             if code in _MISSING:
                 return None
             raise
 
-        players = parse_players(response["Body"].read(), league, season)
+        body = response["Body"].read()
         with self._lock:
             self._seasons[cache_key] = _CachedSeason(
-                players, response.get("ETag", ""), time.monotonic()
+                body, response.get("ETag", ""), time.monotonic()
             )
-        return players
+        return body
 
     def _expired(self, checked_at: float) -> bool:
         return (time.monotonic() - checked_at) >= self._ttl

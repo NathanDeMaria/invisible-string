@@ -1047,24 +1047,18 @@ const player = (over: Partial<PlayerRow>): PlayerRow => ({
 
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
-  http.get("/api/leagues/:league/players", ({ params, request }) => {
-    if (params.league !== "mens") {
-      return HttpResponse.json({
-        league: params.league,
-        season: null,
-        default_season: null,
-        seasons: [],
-        as_of: null,
-        players: [],
-      });
-    }
-    const asked = new URL(request.url).searchParams.get("season");
-    const season = asked ? Number(asked) : 2026;
+  http.get("/api/leagues/:league/players/seasons", ({ params }) =>
+    HttpResponse.json(
+      params.league === "mens"
+        ? { league: "mens", seasons: [2025, 2026], default_season: 2026 }
+        : { league: params.league, seasons: [], default_season: null },
+    ),
+  ),
+  http.get("/api/leagues/mens/players/:season", ({ params }) => {
+    const season = Number(params.season);
     return HttpResponse.json({
       league: "mens",
       season,
-      default_season: 2026,
-      seasons: [2025, 2026],
       as_of: season === 2026 ? "2026-11-05" : null,
       players:
         season === 2026
@@ -1074,6 +1068,7 @@ export const handlers = [
                 athlete_id: "2",
                 player: "New Guy",
                 team: "UNC",
+                team_id: "153",
                 projected: true,
                 total: 4,
                 games: 0,

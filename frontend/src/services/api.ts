@@ -11,7 +11,8 @@ export type ModelSummary = components["schemas"]["ModelSummary"];
 export type RatingsResponse = components["schemas"]["RatingsResponse"];
 export type TeamRow = components["schemas"]["TeamRow"];
 export type PlayerRow = components["schemas"]["PlayerRow"];
-export type PlayersResponse = components["schemas"]["PlayersResponse"];
+export type PlayerSeasons = components["schemas"]["PlayerSeasons"];
+export type PlayersFile = components["schemas"]["PlayersFile"];
 export type UnitRating = components["schemas"]["UnitRating"];
 export type RateRating = components["schemas"]["RateRating"];
 export type Movement = components["schemas"]["Movement"];
@@ -46,7 +47,7 @@ export type MetricDistribution = components["schemas"]["MetricDistribution"];
 
 export interface PlayersArgs {
   league: string;
-  season?: number;
+  season: number;
 }
 
 export interface RatingsArgs {
@@ -158,11 +159,11 @@ export const api = createApi({
         params: model ? { model } : undefined,
       }),
     }),
-    getPlayers: builder.query<PlayersResponse, PlayersArgs>({
-      query: ({ league, season }) => ({
-        url: `leagues/${league}/players`,
-        params: season ? { season } : undefined,
-      }),
+    getPlayerSeasons: builder.query<PlayerSeasons, string>({
+      query: (league) => `leagues/${league}/players/seasons`,
+    }),
+    getPlayers: builder.query<PlayersFile, PlayersArgs>({
+      query: ({ league, season }) => `leagues/${league}/players/${season}`,
     }),
     // The whole of a team's history in one request: a few hundred points, and
     // smaller than the ratings table the page was reached from. The season
@@ -271,6 +272,7 @@ export const api = createApi({
 export const {
   useGetLeaguesQuery,
   useGetRatingsQuery,
+  useGetPlayerSeasonsQuery,
   useGetPlayersQuery,
   useGetHistoryQuery,
   usePredictQuery,

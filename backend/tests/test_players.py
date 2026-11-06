@@ -1,6 +1,8 @@
+import gzip
 import json
 from collections.abc import Iterator
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -8,14 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
-from app.main import create_app
-from app.players import (
-    LocalPlayersStore,
-    PlayersUnreadable,
-    S3PlayersStore,
-    default_season,
-    get_players_store,
-)
+from app.players import S3PlayersStore, default_season
 
 from .conftest import FIXTURES
 
@@ -45,40 +40,64 @@ class TestDefaultSeason:
         assert default_season([], date(2026, 11, 6)) is None
 
 
-class TestTheEndpoint:
-    def test_a_season_when_asked(self, client: TestClient) -> None:
-        body = client.get("/api/leagues/mens/players?season=2025").json()
-        assert body["season"] == 2025 and body["as_of"] is None
+class TestTheEndpoints:
+    def test_the_seasons_a_league_has(self, client: TestClient) -> None:
+        body = client.get("/api/leagues/mens/players/seasons").json()
         assert body["seasons"] == [2025, 2026]
+        assert body["default_season"] in body["seasons"]
+
+    def test_a_league_with_no_players_has_no_seasons(self, client: TestClient) -> None:
+        body = client.get("/api/leagues/nfl/players/seasons").json()
+        assert body["seasons"] == [] and body["default_season"] is None
+
+    def test_a_season(self, client: TestClient) -> None:
+        body = client.get("/api/leagues/mens/players/2025").json()
+        assert body["season"] == 2025 and body["as_of"] is None
         assert [p["player"] for p in body["players"]] == ["Pat Star", "Sam Deep"]
 
     def test_the_players_a_floor_would_hide_still_arrive(
         self, client: TestClient
     ) -> None:
-        body = client.get("/api/leagues/mens/players?season=2025").json()
+        body = client.get("/api/leagues/mens/players/2025").json()
         assert min(p["share"] for p in body["players"]) == 0.05
 
     def test_a_player_yet_to_play_is_marked(self, client: TestClient) -> None:
-        body = client.get("/api/leagues/mens/players?season=2026").json()
+        body = client.get("/api/leagues/mens/players/2026").json()
         assert body["as_of"] == "2026-11-05"
         assert [p["projected"] for p in body["players"]] == [False, True]
 
-    def test_a_league_with_no_players_is_empty(self, client: TestClient) -> None:
-        body = client.get("/api/leagues/nfl/players").json()
-        assert body["season"] is None and body["players"] == []
-
     def test_a_season_with_no_file_is_a_404(self, client: TestClient) -> None:
-        assert client.get("/api/leagues/mens/players?season=1999").status_code == 404
+        assert client.get("/api/leagues/mens/players/1999").status_code == 404
 
-    def test_an_unreadable_file_is_a_503(self, tmp_path: Any) -> None:
-        (tmp_path / "models" / "mens").mkdir(parents=True)
-        (tmp_path / "models" / "mens" / "players_2025.json").write_text("{}")
-        app = create_app()
-        app.dependency_overrides[get_players_store] = lambda: LocalPlayersStore(
-            tmp_path
+    def test_a_browser_gets_the_published_bytes(
+        self, client: TestClient, players_root: Path
+    ) -> None:
+        with client.stream(
+            "GET",
+            "/api/leagues/mens/players/2025",
+            headers={"Accept-Encoding": "gzip"},
+        ) as response:
+            assert response.headers["content-encoding"] == "gzip"
+            sent = b"".join(response.iter_raw())
+        stored = players_root / "models" / "mens" / "players_2025.json.gz"
+        assert sent == stored.read_bytes()
+
+    def test_a_client_that_cant_take_gzip_gets_json(self, client: TestClient) -> None:
+        response = client.get(
+            "/api/leagues/mens/players/2025", headers={"Accept-Encoding": "identity"}
         )
-        response = TestClient(app).get("/api/leagues/mens/players?season=2025")
-        assert response.status_code == 503
+        assert "content-encoding" not in response.headers
+        assert response.json()["season"] == 2025
+
+    def test_the_schema_still_says_what_a_season_is(self, client: TestClient) -> None:
+        paths = client.get("/openapi.json").json()["paths"]
+        found = paths["/api/leagues/{league}/players/{season}"]["get"]["responses"]
+        schema = found["200"]["content"]["application/json"]["schema"]
+        assert schema["$ref"].endswith("/PlayersFile")
+
+
+def _gz(path: Path) -> bytes:
+    return gzip.compress(path.read_bytes())
 
 
 @pytest.fixture
@@ -92,8 +111,8 @@ def s3() -> Iterator[Any]:
         for path in (FIXTURES / "models" / "mens").glob("players_*.json"):
             client.put_object(
                 Bucket=BUCKET,
-                Key=f"models/mens/{path.name}",
-                Body=path.read_bytes(),
+                Key=f"models/mens/{path.name}.gz",
+                Body=_gz(path),
             )
         client.put_object(Bucket=BUCKET, Key="models/mens/elo/latest.json", Body=b"{}")
         yield client
@@ -108,24 +127,23 @@ class TestS3:
     def test_a_season_reads_and_a_missing_one_is_none(self, s3: Any) -> None:
         store = S3PlayersStore(BUCKET, client=s3)
         found = store.get_players("mens", 2026)
-        assert found is not None and found.players[1].player == "New Guy"
+        assert found is not None
+        assert json.loads(gzip.decompress(found))["players"][1]["player"] == "New Guy"
         assert store.get_players("mens", 1999) is None
+
+    def test_within_the_ttl_s3_is_left_alone(self, s3: Any) -> None:
+        store = S3PlayersStore(BUCKET, client=s3)
+        first = store.get_players("mens", 2026)
+        s3.put_object(
+            Bucket=BUCKET, Key="models/mens/players_2026.json.gz", Body=b"new"
+        )
+        assert store.get_players("mens", 2026) == first
 
     def test_a_morning_shows_after_the_ttl(self, s3: Any) -> None:
         store = S3PlayersStore(BUCKET, ttl_seconds=0.0, client=s3)
-        assert store.get_players("mens", 2026) is not None
-        assert store.get_players("mens", 2026) is not None
-        body = {"league": "mens", "season": 2026, "as_of": "2026-11-06", "players": []}
+        first = store.get_players("mens", 2026)
+        assert store.get_players("mens", 2026) == first
         s3.put_object(
-            Bucket=BUCKET,
-            Key="models/mens/players_2026.json",
-            Body=json.dumps(body).encode(),
+            Bucket=BUCKET, Key="models/mens/players_2026.json.gz", Body=b"new"
         )
-        found = store.get_players("mens", 2026)
-        assert found is not None and found.as_of == date(2026, 11, 6)
-
-    def test_an_unreadable_file_is_not_cached_as_a_season(self, s3: Any) -> None:
-        s3.put_object(Bucket=BUCKET, Key="models/mens/players_2024.json", Body=b"{}")
-        store = S3PlayersStore(BUCKET, client=s3)
-        with pytest.raises(PlayersUnreadable):
-            store.get_players("mens", 2024)
+        assert store.get_players("mens", 2026) == b"new"

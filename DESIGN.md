@@ -2863,19 +2863,24 @@ which for a `?` pressed while walking the leaderboard is the row they were on.
 ## 18. Players
 
 `/{league}/players`, for the leagues ten-minute-version rates: every player of a
-season, one sortable table, from `models/{league}/players_{season}.json`. Files
+season, one sortable table, from `models/{league}/players_{season}.json.gz`. Files
 rather than a directory, because every directory under a league is read as a
 model (`list_models`). What it shows is cassandra's and ten-minute-version's
 (`cassandra.players`); this app only filters and sorts it.
 
+The server never parses them. It holds the published gzip and hands it to the
+browser: on a 512 MB instance that often peaks past 90%, the 22 files take about
+8 MB like this and about 180 MB parsed.
+
 - **The season** opens on the current one, which moves on October 1, about a
   month before the opener, and stays on the newest published until a new file
   exists. Anything else is in the URL.
-- **The floor** is 10% of the team's minutes, about 4 a game, and the reader's to
+- **The floor** is 20% of the team's minutes, about 8 a game, and the reader's to
   move, so every player is sent and it's applied in the browser. Share rather than
   possessions: in a season with estimated lineups possessions read low.
 - **Someone yet to play** is his prior at projected minutes, marked and muted. The
-  floor reads his projected share, so nearly all of them clear it.
+  floor reads his projected share, which most of them clear, so he comes off the
+  table after his team's fifth game whatever the floor says.
 - **Total** includes a fifth of the team's rating, as the model reports it; `vs
   Team` is the player's own columns.
 - **Quarterbacks** aren't here yet. Their season table stops in September and has
