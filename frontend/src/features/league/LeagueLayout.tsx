@@ -1,5 +1,8 @@
 import { NavLink, Outlet, useParams } from "react-router-dom";
 
+/** The leagues ten-minute-version rates the players of. */
+const WITH_PLAYERS = new Set(["mens", "womens"]);
+
 /**
  * A league, and the panels you can look at it through.
  *
@@ -23,6 +26,9 @@ export function LeagueLayout() {
         <NavLink to={`/${league}/ratings`}>Leaderboard</NavLink>
         <NavLink to={`/${league}/matchup`}>Matchup</NavLink>
         <NavLink to={`/${league}/chart`}>Chart</NavLink>
+        {WITH_PLAYERS.has(league) && (
+          <NavLink to={`/${league}/players`}>Players</NavLink>
+        )}
       </nav>
 
       <Outlet />

@@ -1,9 +1,11 @@
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.distributions import router as distributions_router
 from app.api.games import router as games_router
 from app.api.history import router as history_router
 from app.api.jobs import router as jobs_router
+from app.api.players import router as players_router
 from app.api.predict import router as predict_router
 from app.api.ratings import router as ratings_router
 from app.api.team_games import router as team_games_router
@@ -14,6 +16,9 @@ from app.spa import mount_spa
 
 def create_app() -> FastAPI:
     app = FastAPI(title="invisible-string", version="0.1.0")
+    # For the big responses only: a season of players is over a megabyte, and
+    # read on a phone.
+    app.add_middleware(GZipMiddleware, minimum_size=100_000)
     app.include_router(ratings_router)
     app.include_router(history_router)
     app.include_router(predict_router)
@@ -22,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(team_games_router)
     app.include_router(distributions_router)
     app.include_router(win_probability_router)
+    app.include_router(players_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

@@ -171,6 +171,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/leagues/{league}/players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Players */
+        get: operations["get_players_api_leagues__league__players_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/leagues/{league}/ratings": {
         parameters: {
             query?: never;
@@ -960,6 +977,46 @@ export interface components {
             sd: number;
         };
         /**
+         * PlayerRow
+         * @description A player, per 100 possessions; `vs_team` is his rating without his
+         *     team's fifth. `projected`: he hasn't played, so a prior and a projected
+         *     share. No share means the box scores don't have him.
+         */
+        PlayerRow: {
+            /** Athlete Id */
+            athlete_id: string;
+            /** Defense */
+            defense: number;
+            /** Defense Sd */
+            defense_sd: number;
+            /** Games */
+            games?: number | null;
+            /** Minutes */
+            minutes?: number | null;
+            /** Offense */
+            offense: number;
+            /** Offense Sd */
+            offense_sd: number;
+            /** Player */
+            player?: string | null;
+            /** Projected */
+            projected: boolean;
+            /** Share */
+            share?: number | null;
+            /** Starts */
+            starts?: number | null;
+            /** Team */
+            team?: string | null;
+            /** Team Id */
+            team_id: string;
+            /** Total */
+            total: number;
+            /** Total Sd */
+            total_sd: number;
+            /** Vs Team */
+            vs_team: number;
+        };
+        /**
          * PlayersRating
          * @description A team as its players rate it, from ten-minute-version.
          *
@@ -981,6 +1038,21 @@ export interface components {
             net: number;
             /** Pace */
             pace: number;
+        };
+        /** PlayersResponse */
+        PlayersResponse: {
+            /** As Of */
+            as_of: string | null;
+            /** Default Season */
+            default_season: number | null;
+            /** League */
+            league: string;
+            /** Players */
+            players: components["schemas"]["PlayerRow"][];
+            /** Season */
+            season: number | null;
+            /** Seasons */
+            seasons: number[];
         };
         /** PredictResponse */
         PredictResponse: {
@@ -1559,6 +1631,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_players_api_leagues__league__players_get: {
+        parameters: {
+            query?: {
+                /** @description Defaults to the current season. */
+                season?: number | null;
+            };
+            header?: never;
+            path: {
+                league: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayersResponse"];
                 };
             };
             /** @description Validation Error */
