@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PlayerRow } from "../../services/api";
 import {
+  activePlayers,
   filterPlayers,
   nextSort,
   perGame,
@@ -73,6 +74,29 @@ describe("filterPlayers", () => {
   it("searches names and teams", () => {
     expect(names(filterPlayers(rows, "unc", 10))).toEqual(["Wait"]);
     expect(names(filterPlayers(rows, "PAT", 10))).toEqual(["Pat"]);
+  });
+});
+
+describe("activePlayers", () => {
+  const names = (found: PlayerRow[]) => found.map((r) => r.player);
+  const wait = { projected: true, games: 0, starts: 0, minutes: 0 };
+
+  it("keeps his team's whole bench and nobody else's", () => {
+    const rows = [
+      row({ player: "Pat", share: 0.5 }),
+      row({ player: "Bench", share: 0.01 }),
+      row({ player: "Other", team: "UNC", team_id: "8" }),
+    ];
+    expect(names(activePlayers(rows, "Duke"))).toEqual(["Pat", "Bench"]);
+  });
+
+  it("keeps someone yet to play until the team's fifth game", () => {
+    const team = (games: number) => [
+      row({ games }),
+      row({ player: "Wait", ...wait, share: 0.3 }),
+    ];
+    expect(names(activePlayers(team(4), "Duke"))).toEqual(["Pat", "Wait"]);
+    expect(names(activePlayers(team(5), "Duke"))).toEqual(["Pat"]);
   });
 });
 

@@ -1,7 +1,6 @@
 import { NavLink, Outlet, useParams } from "react-router-dom";
 
-/** The leagues ten-minute-version rates the players of. */
-const WITH_PLAYERS = new Set(["mens", "womens"]);
+import { WITH_PLAYERS } from "../players/players";
 
 /**
  * A league, and the panels you can look at it through.
