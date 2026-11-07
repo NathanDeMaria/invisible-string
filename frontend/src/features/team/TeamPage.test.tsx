@@ -351,3 +351,37 @@ describe("TeamPage", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("TeamPage's players", () => {
+  it("lists the team's players, without a Team column", async () => {
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    const table = await screen.findByRole("table", { name: /per 100/ });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(
+      rows.map((row) => within(row).getAllByRole("cell")[0].textContent),
+    ).toEqual(["Pat Star", "Deep Bench"]);
+    expect(
+      within(table).queryByRole("columnheader", { name: "Team" }),
+    ).toBeNull();
+    expect(table).toHaveTextContent("2026-27, as of 2026-11-05");
+  });
+
+  it("stays out of the way for a team without any", async () => {
+    let served = false;
+    server.use(
+      http.get("/api/leagues/mens/players/:season", () => {
+        served = true;
+        return HttpResponse.json({
+          league: "mens",
+          season: 2026,
+          as_of: null,
+          players: [],
+        });
+      }),
+    );
+    renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
+    await waitFor(() => expect(served).toBe(true));
+    await screen.findByRole("heading", { name: "Duke" });
+    expect(screen.queryByRole("heading", { name: "Players" })).toBeNull();
+  });
+});

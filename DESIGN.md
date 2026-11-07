@@ -2883,5 +2883,8 @@ browser: on a 512 MB instance that often peaks past 90%, the 22 files take about
   table after his team's fifth game whatever the floor says.
 - **Total** includes a fifth of the team's rating, as the model reports it; `vs
   Team` is the player's own columns.
+- **A team's page** lists its active players from the same file: the current
+  season only, above the season picker, with no floor, and nothing at all for a
+  team without any. Matched by name, which cassandra publishes canonical.
 - **Quarterbacks** aren't here yet. Their season table stops in September and has
   no opponent adjustment.

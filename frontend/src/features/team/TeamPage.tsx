@@ -21,6 +21,7 @@ import {
   record,
 } from "../ratings/movement";
 import { RatingTimeline } from "./RatingTimeline";
+import { TeamPlayers } from "./TeamPlayers";
 import { seasons } from "./timeline";
 
 /**
@@ -111,6 +112,8 @@ export function TeamPage() {
       <h2>{team}</h2>
 
       {standing && <Standing row={standing} since={since} />}
+
+      <TeamPlayers league={league} team={team} />
 
       {/* Above both sections, because it narrows both. */}
       {years.length > 1 && (

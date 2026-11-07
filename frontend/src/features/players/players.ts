@@ -99,6 +99,18 @@ function teamGames(rows: PlayerRow[]): Map<string, number> {
   return games;
 }
 
+/** The leagues ten-minute-version rates the players of. */
+export const WITH_PLAYERS = new Set(["mens", "womens"]);
+
+/**
+ * Who's on a team now: anyone who has played for it, however little, and anyone
+ * on its roster until `WAITING_GAMES` says his absence means more. A team's own
+ * table has no floor, its bench being a dozen rows rather than a thousand.
+ */
+export function activePlayers(rows: PlayerRow[], team: string): PlayerRow[] {
+  return filterPlayers(rows, "", 0).filter((row) => row.team === team);
+}
+
 export function filterPlayers(
   rows: PlayerRow[],
   search: string,
