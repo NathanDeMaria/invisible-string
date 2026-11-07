@@ -28,6 +28,9 @@ export function PlayersTable({
   showTeam?: boolean;
   caption?: ReactNode;
 }) {
+  // Asked of the rows, not the season: a finished season has no next game, and
+  // a dropped column beats a column of dashes.
+  const showPlay = rows.some((row) => row.play_chance != null);
   return (
     <div className="table-scroll">
       <table className="ratings players">
@@ -68,6 +71,18 @@ export function PlayersTable({
             {showTeam && (
               <Header column="team" label="Team" text sort={sort} on={onSort} />
             )}
+            {showPlay && (
+              <Header
+                column="play_chance"
+                label={
+                  <abbr title="Chance of playing the team's next game. An estimate from his missed games and last game's minutes, not an injury report">
+                    Play
+                  </abbr>
+                }
+                sort={sort}
+                on={onSort}
+              />
+            )}
             <Header column="games" label="G" sort={sort} on={onSort} />
             <Header column="starts" label="GS" sort={sort} on={onSort} />
             <Header
@@ -94,6 +109,7 @@ export function PlayersTable({
               key={`${row.athlete_id}-${row.team_id}`}
               row={row}
               showTeam={showTeam}
+              showPlay={showPlay}
             />
           ))}
         </tbody>
@@ -102,7 +118,15 @@ export function PlayersTable({
   );
 }
 
-function Row({ row, showTeam }: { row: PlayerRow; showTeam: boolean }) {
+function Row({
+  row,
+  showTeam,
+  showPlay,
+}: {
+  row: PlayerRow;
+  showTeam: boolean;
+  showPlay: boolean;
+}) {
   const minutes = perGame(row);
   return (
     <tr className={row.projected ? "projected" : undefined}>
@@ -127,6 +151,13 @@ function Row({ row, showTeam }: { row: PlayerRow; showTeam: boolean }) {
       </td>
       <td className="num">{signed(row.vs_team)}</td>
       {showTeam && <td>{row.team ?? ""}</td>}
+      {showPlay && (
+        <td className="num">
+          {row.play_chance == null
+            ? ""
+            : `${Math.round(row.play_chance * 100)}%`}
+        </td>
+      )}
       <td className="num">{row.projected ? "" : (row.games ?? "")}</td>
       <td className="num">{row.projected ? "" : (row.starts ?? "")}</td>
       <td className="num">{minutes == null ? "" : minutes.toFixed(1)}</td>

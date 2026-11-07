@@ -17,6 +17,7 @@ export type PlayerSortKey =
   | "total"
   | "total_sd"
   | "vs_team"
+  | "play_chance"
   | "games"
   | "starts"
   | "per_game"

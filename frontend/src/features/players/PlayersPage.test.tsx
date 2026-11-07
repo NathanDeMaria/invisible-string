@@ -62,4 +62,19 @@ describe("PlayersPage", () => {
       await screen.findByText(/No player ratings for nfl/),
     ).toBeInTheDocument();
   });
+
+  it("shows the chance of playing, sorts on it, and drops it for a finished season", async () => {
+    const user = userEvent.setup();
+    renderApp(<PlayersPage />, ROUTE("mens"));
+    await screen.findByText("Pat Star");
+    expect(screen.getByRole("cell", { name: "82%" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Play" }));
+    expect(names()).toEqual(["Pat Star", "New Guyproj"]);
+    await user.click(screen.getByRole("button", { name: "Play" }));
+    expect(names()).toEqual(["New Guyproj", "Pat Star"]);
+
+    await user.selectOptions(screen.getByLabelText("Season"), "2025");
+    await screen.findByText("Old Hand");
+    expect(screen.queryByRole("columnheader", { name: "Play" })).toBeNull();
+  });
 });

@@ -1042,6 +1042,7 @@ const player = (over: Partial<PlayerRow>): PlayerRow => ({
   starts: 1,
   minutes: 30,
   share: 0.75,
+  play_chance: 0.82,
   ...over,
 });
 
@@ -1075,10 +1076,17 @@ export const handlers = [
                 starts: 0,
                 minutes: 0,
                 share: 0.4,
+                play_chance: 0.21,
               }),
               player({ athlete_id: "3", player: "Deep Bench", share: 0.05 }),
             ]
-          : [player({ athlete_id: "4", player: "Old Hand" })],
+          : [
+              player({
+                athlete_id: "4",
+                player: "Old Hand",
+                play_chance: null,
+              }),
+            ],
     });
   }),
   http.get("/api/predict", ({ request }) => {

@@ -1019,6 +1019,8 @@ export interface components {
             offense: number;
             /** Offense Sd */
             offense_sd: number;
+            /** Play Chance */
+            play_chance?: number | null;
             /** Player */
             player?: string | null;
             /** Projected */
