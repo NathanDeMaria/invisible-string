@@ -1526,6 +1526,17 @@
             "title": "Offense Sd",
             "type": "number"
           },
+          "play_chance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Play Chance"
+          },
           "player": {
             "anyOf": [
               {

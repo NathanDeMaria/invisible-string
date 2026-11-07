@@ -2886,5 +2886,8 @@ browser: on a 512 MB instance that often peaks past 90%, the 22 files take about
 - **A team's page** lists its active players from the same file: the current
   season only, above the season picker, with no floor, and nothing at all for a
   team without any. Matched by name, which cassandra publishes canonical.
+- **Play** is the chance of playing the team's next game, from missed games and
+  last-game minutes (ten-minute-version's `availability`). An estimate: ESPN's
+  roster injury field is empty for college players. Dropped for a finished season.
 - **Quarterbacks** aren't here yet. Their season table stops in September and has
   no opponent adjustment.
