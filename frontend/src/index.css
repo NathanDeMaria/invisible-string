@@ -216,6 +216,9 @@ nav a.active {
 }
 
 nav.panels {
+  /* Seven leagues don't fit a phone's width, and a row that ran off the edge
+     gave every page a sideways scroll. */
+  flex-wrap: wrap;
   border-bottom: none;
   padding-bottom: 0;
   gap: 0.5rem;

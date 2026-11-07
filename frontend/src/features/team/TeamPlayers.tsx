@@ -58,8 +58,8 @@ export function TeamPlayers({
         caption={
           <>
             {seasonLabel(season)}
-            {players.data?.as_of && <>, as of {players.data.as_of}</>}. Points
-            per 100 possessions.
+            {players.data?.as_of && <>, as of {players.data.as_of}</>}. Per 100
+            possessions.
           </>
         }
       />
