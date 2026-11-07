@@ -355,7 +355,7 @@ describe("TeamPage", () => {
 describe("TeamPage's players", () => {
   it("lists the team's players, without a Team column", async () => {
     renderApp(<TeamPage />, TEAM_ROUTE("Duke"));
-    const table = await screen.findByRole("table", { name: /per 100/ });
+    const table = await screen.findByRole("table", { name: /Per 100/ });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(
       rows.map((row) => within(row).getAllByRole("cell")[0].textContent),

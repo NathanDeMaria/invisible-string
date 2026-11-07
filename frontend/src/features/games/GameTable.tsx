@@ -58,88 +58,89 @@ export function GameTable({ games }: Props) {
   const rowKeys = useRowKeys();
 
   return (
-    <table className="ratings games">
-      <thead>
-        <tr>
-          <th scope="col">Game</th>
-          <th scope="col" className="num">
-            Model
-          </th>
-          <th scope="col" className="num">
-            Line
-          </th>
-          <th scope="col" className="num">
-            Market
-          </th>
-          <th scope="col" className="num">
-            Result
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {games.map((game) => {
-          // The grade belongs to the model's number rather than to the score:
-          // it is a judgement on the gap between the two spread columns, and
-          // that gap is the model's, not the game's.
-          const ats = atsCall(game);
-          // The same disagreement the mark grades, said before there's
-          // anything to grade -- which is the state most of this page is in.
-          const edge = modelEdge(game);
-          const amount = edge && edgeAmount(edge);
-          // How often a game like this lands exactly on the number, when that
-          // is often enough to mention -- a whole-number football line on 3
-          // or 7, in practice.
-          const push = pushNote(game);
-          // The same disagreement on the other number the row carries: the
-          // model's chance of a home win against the markets'.
-          const gap = marketGap(game);
-          const path = `/games/${game.league}/${game.game_id}`;
-          return (
-            <tr key={`${game.league}-${game.game_id}`} {...rowKeys(path)}>
-              <td>
-                {/* The matchup is the link, because it is what the row is
+    <div className="table-scroll">
+      <table className="ratings games">
+        <thead>
+          <tr>
+            <th scope="col">Game</th>
+            <th scope="col" className="num">
+              Model
+            </th>
+            <th scope="col" className="num">
+              Line
+            </th>
+            <th scope="col" className="num">
+              Market
+            </th>
+            <th scope="col" className="num">
+              Result
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {games.map((game) => {
+            // The grade belongs to the model's number rather than to the score:
+            // it is a judgement on the gap between the two spread columns, and
+            // that gap is the model's, not the game's.
+            const ats = atsCall(game);
+            // The same disagreement the mark grades, said before there's
+            // anything to grade -- which is the state most of this page is in.
+            const edge = modelEdge(game);
+            const amount = edge && edgeAmount(edge);
+            // How often a game like this lands exactly on the number, when that
+            // is often enough to mention -- a whole-number football line on 3
+            // or 7, in practice.
+            const push = pushNote(game);
+            // The same disagreement on the other number the row carries: the
+            // model's chance of a home win against the markets'.
+            const gap = marketGap(game);
+            const path = `/games/${game.league}/${game.game_id}`;
+            return (
+              <tr key={`${game.league}-${game.game_id}`} {...rowKeys(path)}>
+                <td>
+                  {/* The matchup is the link, because it is what the row is
                     about -- and because a separate "details" affordance in a
                     four-column table is a fifth column. */}
-                <Link className="job-name" tabIndex={-1} to={path}>
-                  {game.away} {game.neutral ? "vs" : "@"} {game.home}
-                </Link>
-                <span className="when">
-                  {game.league} &middot; {tipoff(game.start)}
-                </span>
-              </td>
-              <td className="num">
-                {game.prediction ? (
-                  <>
-                    <span className="rate">
-                      {spread(game.prediction.predicted_spread)}
-                      {/* Whether that number beat the one beside it, once
+                  <Link className="job-name" tabIndex={-1} to={path}>
+                    {game.away} {game.neutral ? "vs" : "@"} {game.home}
+                  </Link>
+                  <span className="when">
+                    {game.league} &middot; {tipoff(game.start)}
+                  </span>
+                </td>
+                <td className="num">
+                  {game.prediction ? (
+                    <>
+                      <span className="rate">
+                        {spread(game.prediction.predicted_spread)}
+                        {/* Whether that number beat the one beside it, once
                           there's a result to say so. A game with no line, no
                           result, or a model that agrees with the book gets
                           no mark -- see `atsCall`. */}
-                      {ats && (
-                        <abbr
-                          className={`ats ${ats.result}`}
-                          title={atsTitle(ats)}
-                        >
-                          {ATS_MARK[ats.result]}
-                        </abbr>
-                      )}
-                    </span>
-                    <span className="of">
-                      {probability(game.prediction.home_win_prob)} home
-                    </span>
-                  </>
-                ) : (
-                  // A league with no published model, a team this release has
-                  // never rated, or a finished game whose forecast wasn't
-                  // published with the release that trained on it. The score
-                  // and the line still earn the row.
-                  <span className="rate">&mdash;</span>
-                )}
-              </td>
-              <td className="num">
-                <span className="rate">{spread(game.market_spread)}</span>
-                {/* Which side of this number the model likes, and by how
+                        {ats && (
+                          <abbr
+                            className={`ats ${ats.result}`}
+                            title={atsTitle(ats)}
+                          >
+                            {ATS_MARK[ats.result]}
+                          </abbr>
+                        )}
+                      </span>
+                      <span className="of">
+                        {probability(game.prediction.home_win_prob)} home
+                      </span>
+                    </>
+                  ) : (
+                    // A league with no published model, a team this release has
+                    // never rated, or a finished game whose forecast wasn't
+                    // published with the release that trained on it. The score
+                    // and the line still earn the row.
+                    <span className="rate">&mdash;</span>
+                  )}
+                </td>
+                <td className="num">
+                  <span className="rate">{spread(game.market_spread)}</span>
+                  {/* Which side of this number the model likes, and by how
                     much. "home +4" is the model's spread giving the home team
                     four points more than the book does -- the same shorthand
                     as the "63% home" beside it, and the sign means what it
@@ -148,62 +149,63 @@ export function GameTable({ games }: Props) {
                     to cover (`modelEdge`), and a side the points don't back
                     goes without a number. The note under the tables decodes
                     it. */}
-                {(edge || push) && (
-                  <span className="of">
-                    {edge && (
-                      <abbr className="edge" title={edgeTitle(edge)}>
-                        {edge.home ? "home" : "away"}
-                        {amount && ` ${amount}`}
-                      </abbr>
-                    )}
-                    {edge && push && " · "}
-                    {push}
-                  </span>
-                )}
-              </td>
-              <td className="num">
-                {/* The prediction markets' chance of a home win, beside the
+                  {(edge || push) && (
+                    <span className="of">
+                      {edge && (
+                        <abbr className="edge" title={edgeTitle(edge)}>
+                          {edge.home ? "home" : "away"}
+                          {amount && ` ${amount}`}
+                        </abbr>
+                      )}
+                      {edge && push && " · "}
+                      {push}
+                    </span>
+                  )}
+                </td>
+                <td className="num">
+                  {/* The prediction markets' chance of a home win, beside the
                     book's spread the way the model's probability sits beside
                     its own. Under it, the gap in the same "home +N" shorthand
                     the line column uses -- here N is points of probability,
                     and the note under the tables says so. A dash for a game
                     no market has priced, which today is every game that
                     hasn't been played. */}
-                <span className="rate">
-                  {probability(game.market_home_prob)}
-                </span>
-                {gap && (
-                  <span className="of">
-                    <abbr className="edge" title={marketGapTitle(gap)}>
-                      {gap.home ? "home" : "away"} +{gap.points}
-                    </abbr>
+                  <span className="rate">
+                    {probability(game.market_home_prob)}
                   </span>
-                )}
-              </td>
-              <td className="num">
-                {game.completed ? (
-                  <>
-                    <span className="rate">
-                      {score(game.away_score, game.home_score)}
+                  {gap && (
+                    <span className="of">
+                      <abbr className="edge" title={marketGapTitle(gap)}>
+                        {gap.home ? "home" : "away"} +{gap.points}
+                      </abbr>
                     </span>
-                    <span className="of">{winner(game)}</span>
-                  </>
-                ) : (
-                  // No score, and the useful part is *why* not. Most of these
-                  // are simply games that haven't been played, which the
-                  // tip-off beside them already says -- so those keep the dash,
-                  // and the ones a reader would otherwise wait on all evening
-                  // say what happened to them.
-                  <span className="rate quiet state">
-                    {statusLabel(game.status) ?? <>&mdash;</>}
-                  </span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                  )}
+                </td>
+                <td className="num">
+                  {game.completed ? (
+                    <>
+                      <span className="rate">
+                        {score(game.away_score, game.home_score)}
+                      </span>
+                      <span className="of">{winner(game)}</span>
+                    </>
+                  ) : (
+                    // No score, and the useful part is *why* not. Most of these
+                    // are simply games that haven't been played, which the
+                    // tip-off beside them already says -- so those keep the dash,
+                    // and the ones a reader would otherwise wait on all evening
+                    // say what happened to them.
+                    <span className="rate quiet state">
+                      {statusLabel(game.status) ?? <>&mdash;</>}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
