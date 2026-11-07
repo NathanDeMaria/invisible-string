@@ -286,48 +286,50 @@ function GameTable({ league, rows }: { league: string; rows: TeamGameRow[] }) {
   const rowKeys = useRowKeys();
 
   return (
-    <table className="ratings">
-      <caption className="meta">
-        Newest first. Both spreads are from this team&rsquo;s side, so a
-        negative number is one it was favoured by.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Game</th>
-          <th scope="col" className="num">
-            Result
-          </th>
-          <th scope="col" className="num">
-            Win prob
-          </th>
-          <th scope="col" className="num">
-            Model
-          </th>
-          <th scope="col" className="num">
-            Market
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const path = `/games/${league}/${row.game_id}?season=${row.season}`;
-          return (
-            <tr key={row.game_id} {...rowKeys(path)}>
-              <td>
-                <Link className="job-name" tabIndex={-1} to={path}>
-                  {row.neutral ? "vs" : row.home ? "vs" : "@"} {row.opponent}
-                </Link>
-                <span className="when">{gameDay(row.date)}</span>
-              </td>
-              <Result row={row} />
-              <td className="num">{probability(row.win_prob)}</td>
-              <td className="num">{spread(row.predicted_spread)}</td>
-              <td className="num">{spread(row.market_spread)}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="ratings">
+        <caption className="meta">
+          Newest first. Both spreads are from this team&rsquo;s side, so a
+          negative number is one it was favoured by.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Game</th>
+            <th scope="col" className="num">
+              Result
+            </th>
+            <th scope="col" className="num">
+              Win prob
+            </th>
+            <th scope="col" className="num">
+              Model
+            </th>
+            <th scope="col" className="num">
+              Market
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const path = `/games/${league}/${row.game_id}?season=${row.season}`;
+            return (
+              <tr key={row.game_id} {...rowKeys(path)}>
+                <td>
+                  <Link className="job-name" tabIndex={-1} to={path}>
+                    {row.neutral ? "vs" : row.home ? "vs" : "@"} {row.opponent}
+                  </Link>
+                  <span className="when">{gameDay(row.date)}</span>
+                </td>
+                <Result row={row} />
+                <td className="num">{probability(row.win_prob)}</td>
+                <td className="num">{spread(row.predicted_spread)}</td>
+                <td className="num">{spread(row.market_spread)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -380,49 +382,53 @@ function SeasonTable({ points }: { points: HistoryPoint[] }) {
   if (runs.length === 0) return null;
 
   return (
-    <table className="ratings">
-      <caption className="meta">Every season this model has rated.</caption>
-      <thead>
-        <tr>
-          <th scope="col">Season</th>
-          <th scope="col" className="num">
-            Weeks
-          </th>
-          <th scope="col" className="num">
-            Start
-          </th>
-          <th scope="col" className="num">
-            End
-          </th>
-          <th scope="col" className="num">
-            Change
-          </th>
-          <th scope="col" className="num">
-            W&ndash;L
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {[...runs].reverse().map((run) => {
-          const first = run.points[0];
-          const last = run.points[run.points.length - 1];
-          return (
-            <tr key={`${run.year}-${run.from}`}>
-              <td>{run.year}</td>
-              <td className="num">{run.points.length}</td>
-              <td className="num">{first.rating.toFixed(1)}</td>
-              <td className="num">{last.rating.toFixed(1)}</td>
-              {/* Within the season only. A change measured from last season's
+    <div className="table-scroll">
+      <table className="ratings">
+        <caption className="meta">Every season this model has rated.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Season</th>
+            <th scope="col" className="num">
+              Weeks
+            </th>
+            <th scope="col" className="num">
+              Start
+            </th>
+            <th scope="col" className="num">
+              End
+            </th>
+            <th scope="col" className="num">
+              Change
+            </th>
+            <th scope="col" className="num">
+              W&ndash;L
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...runs].reverse().map((run) => {
+            const first = run.points[0];
+            const last = run.points[run.points.length - 1];
+            return (
+              <tr key={`${run.year}-${run.from}`}>
+                <td>{run.year}</td>
+                <td className="num">{run.points.length}</td>
+                <td className="num">{first.rating.toFixed(1)}</td>
+                <td className="num">{last.rating.toFixed(1)}</td>
+                {/* Within the season only. A change measured from last season's
                   last week would include the offseason rollover, which is the
                   same reason the line breaks there. */}
-              <td className="num">{ratingMove(last.rating - first.rating)}</td>
-              <td className="num">
-                {last.wins}&ndash;{last.losses}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                <td className="num">
+                  {ratingMove(last.rating - first.rating)}
+                </td>
+                <td className="num">
+                  {last.wins}&ndash;{last.losses}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
