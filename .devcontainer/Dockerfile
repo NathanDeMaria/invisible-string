@@ -4,7 +4,7 @@
 # Tools are installed directly rather than through devcontainer Features so
 # the image can be built and checked with plain `docker build`.
 
-FROM mcr.microsoft.com/devcontainers/python:3.14-bookworm
+FROM mcr.microsoft.com/devcontainers/python:3.15-trixie
 
 # Pinned to the versions CI uses, so `make lint` behaves the same in both.
 ARG TERRAFORM_VERSION=1.15.8
