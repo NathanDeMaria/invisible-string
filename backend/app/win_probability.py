@@ -33,8 +33,8 @@ difference between five passes over a game and one.
 """
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from lucky_ones import MODELS, CurvePoint, EpaPerPlay, GameControl, group_by_game
 from lucky_ones.bundled import BundledModel

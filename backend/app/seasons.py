@@ -25,7 +25,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -99,7 +99,7 @@ class AwsGamesSource:
         # Keyed by object key, holding the ETag its games were read at. One
         # entry per season file, replaced when the daily job rewrites it, so
         # this can't grow with time the way an ETag-keyed cache would.
-        self._seasons: dict[str, tuple[str, "_SeasonGames"]] = {}
+        self._seasons: dict[str, tuple[str, _SeasonGames]] = {}
         # One row per old game anybody has opened a page for. See
         # `find_in_season` for why this is rows and the one above is seasons.
         self._rows: OrderedDict[tuple[str, str], ScheduledGame] = OrderedDict()
@@ -322,7 +322,7 @@ class AwsGamesSource:
 
     def _season_games(
         self, key: str, league: str, etag: str, horizon: tuple[date, date]
-    ) -> "_SeasonGames | None":
+    ) -> _SeasonGames | None:
         cached = self._seasons.get(key)
         # The horizon moves at midnight, so a cache entry whose ETag still
         # matches can stop covering the days being asked for. Re-reading then
@@ -338,7 +338,7 @@ class AwsGamesSource:
 
     def _read_season(
         self, key: str, league: str, horizon: tuple[date, date]
-    ) -> "_SeasonGames | None":
+    ) -> _SeasonGames | None:
         """The games near today out of one season file, grouped by day.
 
         **Only the games in `horizon`.** A season file is the whole schedule,
@@ -423,7 +423,7 @@ class AwsGamesSource:
         try:
             raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
             parsed = json.loads(raw)
-        except (ClientError, BotoCoreError, json.JSONDecodeError, UnicodeDecodeError):
+        except ClientError, BotoCoreError, json.JSONDecodeError, UnicodeDecodeError:
             log.warning("could not read odds at s3://%s/%s", self._bucket, key)
             return {}
         if not isinstance(parsed, list):
@@ -476,7 +476,7 @@ class AwsGamesSource:
         """One day file, best-effort like `_read_odds`."""
         try:
             raw = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
-        except (ClientError, BotoCoreError):
+        except ClientError, BotoCoreError:
             log.warning("could not read markets at s3://%s/%s", self._bucket, key)
             return {}
         return home_probabilities(raw, venue)
@@ -729,7 +729,7 @@ def _list_objects(
 
 
 @contextmanager
-def _upstream(name: str) -> Iterator[None]:
+def _upstream(name: str) -> Generator[None]:
     """Turns a boto failure into the one exception the API layer knows about."""
     try:
         yield

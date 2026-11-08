@@ -182,7 +182,7 @@ class PlayedGame(NamedTuple):
 class GamesSource(Protocol):
     def window(self, days_back: int, days_ahead: int) -> GameWindow: ...
 
-    def day(self, target: date) -> list["ScheduledGame"]:
+    def day(self, target: date) -> list[ScheduledGame]:
         """Every game of one specific day, reachable past the window's horizon.
 
         The whole-day counterpart to `find_in_season`: a reader who has typed
@@ -197,7 +197,7 @@ class GamesSource(Protocol):
 
     def find_in_season(
         self, league: str, game_id: str, season: int
-    ) -> "ScheduledGame | None":
+    ) -> ScheduledGame | None:
         """One game out of one season file, named by the season it is in.
 
         The way past the window's horizon, and the reason it takes a season
