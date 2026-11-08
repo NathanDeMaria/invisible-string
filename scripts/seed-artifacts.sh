@@ -87,7 +87,7 @@ fi
 echo "==> validating ${#files[@]} release(s) against cassandra's ModelRelease"
 (
   cd "$repo_root/backend"
-  poetry run python -c '
+  uv run python -c '
 import json, sys
 from cassandra.predictor import RatingsUnsupported
 

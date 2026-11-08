@@ -4,11 +4,8 @@
 # already present, so `cd infra && make apply` works regardless.
 set -u
 
-echo "==> poetry"
-pipx install poetry || echo "   (skipped)"
-
 echo "==> backend deps"
-(cd backend && poetry install) || echo "   (skipped)"
+(cd backend && uv sync) || echo "   (skipped)"
 
 echo "==> frontend deps"
 (cd frontend && npm ci) || echo "   (skipped)"

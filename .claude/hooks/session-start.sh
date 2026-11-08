@@ -1,7 +1,7 @@
 #!/bin/bash
 # SessionStart hook for Claude Code on the web.
 #
-# The container arrives with poetry, node, npm, terraform and uv already on
+# The container arrives with node, npm, terraform and uv already on
 # PATH, so most of the toolchain needs nothing. One thing does: Python.
 #
 # The image ships uv 0.8.17, which predates CPython 3.14's release, so its
@@ -71,8 +71,7 @@ echo "    using Python $python_version at $python_bin"
 echo "==> backend"
 (
   cd backend
-  poetry env use "$python_bin"
-  poetry install
+  uv sync --python "$python_bin"
 )
 
 echo "==> frontend"

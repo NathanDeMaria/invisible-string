@@ -62,7 +62,6 @@ RUN mkdir -p /commandhistory \
     "export HISTFILE=/commandhistory/.bash_history" \
     >> /home/vscode/.bashrc
 
-# poetry, as the vscode user so it lands on that user's PATH
-USER vscode
-RUN pipx install poetry==2.2.1 && poetry --version
-USER root
+# uv at the version mirrorball pins (and CI uses), copied out of its own image
+COPY --from=ghcr.io/astral-sh/uv@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 /uv /uvx /usr/local/bin/
+ENV UV_LINK_MODE=copy
