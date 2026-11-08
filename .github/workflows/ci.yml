@@ -1,13 +1,9 @@
 name: CI
 
 on:
-  # "**" not "*" -- a single star matches one path segment, so `["*"]` silently
-  # skips every branch with a slash in it (claude/foo, feature/bar). The
-  # workflow registers, shows as active, and simply never runs.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
-    branches: ["**"]
 
 permissions:
   contents: read
@@ -52,31 +48,30 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    # No matrix any more: cassandra requires ^3.14, so 3.14 is both the floor
-    # and what the image ships. A second version would only be testing whether
-    # poetry refuses to install, which it does, loudly.
     env:
-      PYTHON_VERSION: "3.14"
+      # Inline annotations on the PR diff instead of plain console output
+      RUFF_OUTPUT_FORMAT: github
+      TY_OUTPUT_FORMAT: github
     steps:
       - uses: actions/checkout@v5
 
-      # Before setup-python, so its `cache: poetry` can find poetry on PATH.
-      - name: Install poetry
-        run: pipx install poetry
-
-      - uses: actions/setup-python@v6
+      # Installs uv, restores its cache keyed on uv.lock, and provisions the
+      # interpreter from backend/.python-version. The same uv version as the
+      # devcontainer and the image.
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: poetry
-          cache-dependency-path: backend/poetry.lock
+          version: "0.13.6"
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
+      # --locked: a uv.lock that doesn't match pyproject.toml fails here rather
+      # than being quietly re-resolved.
       - name: Install dependencies
-        run: |
-          poetry env use python
-          poetry install
+        run: uv sync --locked
 
       - name: Lint
-        run: make lint
+        run: make check
 
       - name: Test
         run: make test

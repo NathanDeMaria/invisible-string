@@ -1,75 +1,105 @@
-[tool.poetry]
+[project]
 name = "invisible-string-backend"
 version = "0.1.0"
 description = "API over cassandra model results"
-authors = []
-packages = [{ include = "app" }]
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.121.0,<0.122",
+    "pydantic>=2.12.5,<3",
+    "pydantic-settings>=2.13.0,<3",
+    "uvicorn[standard]>=0.40.0,<0.41",
+    "boto3>=1.41.0,<2",
+    # The ModelRelease schema and the prob->margin predictors, pinned by rev
+    # (DESIGN.md sections 8 and 9.6). Bumping this is manual, and
+    # tests/test_schema_contract.py is what tells you the bump broke the artifact
+    # format.
+    #
+    # This deliberately does NOT bring scikit-learn: cassandra keeps it in a
+    # `fit` dependency group, and groups aren't part of package metadata. Reading a stored fit
+    # must never require the ability to produce one, so `No module named sklearn`
+    # in this image always means something is trying to *fit* -- the fix is never
+    # to add sklearn here.
+    "cassandra",
+    # In-game win probability and EPA per play for football, pinned by rev the way
+    # cassandra is (DESIGN.md sections 16 and 16.8). The fits ship *inside* this
+    # package -- two per league now, win probability and expected points, in two
+    # files because they are fit separately -- so the pin is the model: "which
+    # curve is this drawing?" has one answer, the rev, and a retrain arrives here
+    # as a bump rather than as a file that changed in a bucket.
+    #
+    # The `data` extra and not `fit`. Upstream keeps them apart precisely so a
+    # consumer can say which half it means: `data` is pyarrow, for turning
+    # endgame's stored parquet into plays, and `fit` is scikit-learn, for
+    # producing a release. This app only ever reads one, and the same rule
+    # cassandra's dependency states applies here -- reading a stored fit must
+    # never require the ability to produce one.
+    #
+    # pyarrow is the heaviest thing in the image by some way (~150MB on disk), and
+    # section 16.3 is the argument for paying it: endgame's play-by-play is
+    # parquet, one object per league-week, and reading one game out of one is
+    # what makes a curve affordable at all. The solver behind `fit` buys nothing
+    # here, and this is how the dependency says so.
+    "lucky-ones[data]",
+]
 
-[tool.poetry.dependencies]
-# ^3.14 because that's cassandra's floor, and cassandra is now a dependency.
-python = "^3.14"
-fastapi = "^0.121.0"
-pydantic = "^2.12.5"
-pydantic-settings = "^2.13.0"
-uvicorn = { extras = ["standard"], version = "^0.40.0" }
-boto3 = "^1.41.0"
-# The ModelRelease schema and the prob->margin predictors, pinned by rev
-# (DESIGN.md sections 8 and 9.6). Bumping this is manual, and
-# tests/test_schema_contract.py is what tells you the bump broke the artifact
-# format.
-#
-# This deliberately does NOT bring scikit-learn: cassandra keeps it in a poetry
-# `fit` group, and groups aren't part of package metadata. Reading a stored fit
-# must never require the ability to produce one, so `No module named sklearn`
-# in this image always means something is trying to *fit* -- the fix is never
-# to add sklearn here.
-cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "835bfecdb31497a876ce9b96ec5b3a93e31b9ea7" }
-
-# In-game win probability and EPA per play for football, pinned by rev the way
-# cassandra is (DESIGN.md sections 16 and 16.8). The fits ship *inside* this
-# package -- two per league now, win probability and expected points, in two
-# files because they are fit separately -- so the pin is the model: "which
-# curve is this drawing?" has one answer, the rev, and a retrain arrives here
-# as a bump rather than as a file that changed in a bucket.
-#
-# The `data` extra and not `fit`. Upstream keeps them apart precisely so a
-# consumer can say which half it means: `data` is pyarrow, for turning
-# endgame's stored parquet into plays, and `fit` is scikit-learn, for
-# producing a release. This app only ever reads one, and the same rule
-# cassandra's dependency states applies here -- reading a stored fit must
-# never require the ability to produce one.
-#
-# pyarrow is the heaviest thing in the image by some way (~150MB on disk), and
-# section 16.3 is the argument for paying it: endgame's play-by-play is
-# parquet, one object per league-week, and reading one game out of one is
-# what makes a curve affordable at all. The solver behind `fit` buys nothing
-# here, and this is how the dependency says so.
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "99e79fb9ed68deef0800b53d580677d1036b1dca", extras = ["data"] }
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^9.0.2"
-httpx = "^0.28.1"
-ruff = "^0.16.1"
-ty = "^0.0.65"
-moto = { extras = ["s3"], version = "^5.1.0" }
-boto3-stubs = { extras = ["s3"], version = "^1.41.0" }
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.17.3",
+    "ty>=0.0.94",
+    "httpx>=0.28.1,<0.29",
+    "moto[s3]>=5.1.0,<6",
+    "boto3-stubs[s3]>=1.41.0,<2",
+]
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv.sources]
+# Pinned by rev (DESIGN.md sections 8 and 9.6, 16 and 16.8): bumping either is
+# manual, and what each comment above says about why still applies.
+cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "835bfecdb31497a876ce9b96ec5b3a93e31b9ea7" }
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "99e79fb9ed68deef0800b53d580677d1036b1dca" }
+# cassandra's own dependencies, at the revs poetry.lock had them. This cassandra
+# is poetry-built, so its metadata names each by git URL; say-youll-remember-me
+# also pins call-it-what-you-want in its own [tool.uv.sources], and uv reads
+# that -- so the overrides below make these the one pin for each.
+endgame = { git = "https://github.com/NathanDeMaria/EndGame.git", rev = "19c1055cd0941465c0ae8a8e4239fdcea729bf37", subdirectory = "py-endgame" }
+call-it-what-you-want = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "cc9c9e19e3e56eb48f7745853613aff51ca372b8" }
+say-youll-remember-me = { git = "https://github.com/NathanDeMaria/say-youll-remember-me.git", rev = "bcab6ebeb9a0d7b33ae9c2755ca8d8e1cfe59a5d" }
+
+# Below here is the template's. `copier update` brings changes to it from
+# mirrorball, so per-repo additions are better made as new keys than as edits.
 
 [tool.ruff]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+# Ruff's defaults (E4, E7, E9, F), import sorting, and pyupgrade -- which
+# reads requires-python to decide what's outdated.
+select = ["E4", "E7", "E9", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.ty.terminal]
+# A warning fails `make check` and CI, same as an error. Silence one on purpose
+# with `# ty: ignore[rule]`, which ty itself flags once it's no longer needed.
+error-on-warning = true
+
+[tool.pytest]
+# Unknown markers, bad config keys and xfails that pass are failures.
+strict = true
+testpaths = ["tests"]
+
 [tool.ruff.lint.per-file-ignores]
 # these just re-export names for the public API
 "__init__.py" = ["F401"]
+
+[tool.uv]
+override-dependencies = ["endgame", "call-it-what-you-want", "say-youll-remember-me"]

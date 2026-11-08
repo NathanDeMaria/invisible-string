@@ -17,22 +17,46 @@ RUN npm run build
 # ------------------------------------------------------------------------------
 # Runtime
 # ------------------------------------------------------------------------------
-FROM python:3.14-slim AS runtime
+# ------------------------------------------------------------------------------
+# Install the Python dependencies
+# ------------------------------------------------------------------------------
+# A stage of its own, on the full python image, because two of the dependencies
+# are git checkouts (cassandra, the-lucky-ones) and uv clones them with the git
+# binary the -slim image the app runs on doesn't have. Only the finished
+# virtualenv crosses into the runtime stage, so git never ships.
+#
+# The digest of the *index* for python:3.14-bookworm, the same one cassandra's
+# Batch image builds on. Same distro and minor version as the runtime below,
+# which is what lets the venv's interpreter and compiled wheels carry over.
+FROM python@sha256:b3c121f5b6b446c964c6ea924d9a099e259b29d7b56df82729e33572a31eadcc AS deps
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    POETRY_VIRTUALENVS_CREATE=false \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# uv at the version mirrorball pins, copied out of its own image
+COPY --from=ghcr.io/astral-sh/uv@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 /uv /uvx /usr/local/bin/
 
-RUN pip install --no-cache-dir poetry==2.2.1
+ENV UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 WORKDIR /srv
 
 # Dependencies before source, so editing a handler doesn't re-resolve the
-# whole tree on every build.
-COPY backend/pyproject.toml backend/poetry.lock ./
-RUN poetry install --only main --no-root
+# whole tree on every build. `--no-dev` and no project: the app is copied in
+# below, not installed.
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project
 
+# ------------------------------------------------------------------------------
+# Runtime
+# ------------------------------------------------------------------------------
+FROM python:3.14-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/srv/.venv/bin:$PATH
+
+WORKDIR /srv
+
+COPY --from=deps /srv/.venv ./.venv
 COPY backend/app ./app
 COPY --from=frontend /build/dist ./static
 

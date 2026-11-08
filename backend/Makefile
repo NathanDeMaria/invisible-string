@@ -1,22 +1,27 @@
-# `fmt` mutates, `lint` only checks. CI runs `lint` so it can never "pass" by
-# rewriting code nobody reviewed.
-fmt:
-	poetry run ruff format .
-	poetry run ruff check --fix .
+# Template-owned (mirrorball): `copier update` changes this file. Targets of
+# this repo's own go in project.mk, which is included at the bottom.
+#
+# `uv run` syncs the environment from uv.lock before it runs anything, so these
+# work from a fresh checkout with no install step in front of them.
 
+# Fix what can be fixed, then report what's left
 lint:
-	poetry run ruff format --check .
-	poetry run ruff check .
-	poetry run ty check .
+	uv run ruff check --fix .
+	uv run ruff format .
+	uv run ty check .
+
+
+# Same checks as `lint`, but reports instead of fixing (what CI runs)
+check:
+	uv run ruff format --check .
+	uv run ruff check .
+	uv run ty check .
+
 
 test:
-	poetry run pytest
+	uv run pytest .
 
-run:
-	poetry run uvicorn app.main:app --reload
 
-# The OpenAPI schema is committed at the repo root because it's the contract
-# between the two stacks: backend CI checks it's current, frontend CI checks
-# its generated types match it. Neither job needs the other's toolchain.
-openapi:
-	poetry run python -m app.openapi ../openapi.json
+.PHONY: lint check test
+
+-include project.mk

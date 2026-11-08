@@ -59,8 +59,8 @@ vite on :5173 proxying `/api` to `uvicorn --reload` on :8000.
 ### Without docker
 
 ```sh
-cd backend && poetry install
-INVISIBLE_STRING_RELEASES_ROOT=tests/fixtures poetry run uvicorn app.main:app --reload
+cd backend && uv sync
+INVISIBLE_STRING_RELEASES_ROOT=tests/fixtures uv run uvicorn app.main:app --reload
 
 cd frontend && npm install && npm run dev    # proxies /api to :8000
 ```
@@ -70,7 +70,7 @@ backend's static dir first:
 
 ```sh
 cd frontend && npm run build && cp -r dist ../backend/static
-cd ../backend && INVISIBLE_STRING_RELEASES_ROOT=tests/fixtures poetry run uvicorn app.main:app
+cd ../backend && INVISIBLE_STRING_RELEASES_ROOT=tests/fixtures uv run uvicorn app.main:app
 ```
 
 ## Checks

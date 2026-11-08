@@ -30,18 +30,22 @@ services:
 
   api-dev:
     profiles: ["dev"]
-    image: python:3.14-slim
+    # The full image, not -slim: two dependencies are git checkouts, which
+    # uv clones with git. The venv lives outside the mounted ./backend so it
+    # isn't written into the host's checkout.
+    image: python:3.14
     working_dir: /srv
     command: >
-      sh -c "pip install --no-cache-dir poetry==2.2.1 &&
-             poetry config virtualenvs.create false &&
-             poetry install --only main --no-root &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "pip install --no-cache-dir uv==0.13.6 &&
+             uv sync --locked --no-dev --no-install-project &&
+             uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/srv
     environment:
+      UV_PROJECT_ENVIRONMENT: /opt/venv
+      UV_LINK_MODE: copy
       INVISIBLE_STRING_RELEASES_ROOT: /srv/tests/fixtures
       # No build in this mode -- vite serves the frontend.
       INVISIBLE_STRING_STATIC_DIR: /srv/nonexistent
