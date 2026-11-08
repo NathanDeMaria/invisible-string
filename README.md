@@ -18,7 +18,7 @@ frontend/   React + Redux Toolkit (RTK Query)
 
 ## Devcontainer
 
-`.devcontainer/` has python 3.14, node 22, terraform and the aws CLI pinned to
+`.devcontainer/` has python 3.15, node 22, terraform and the aws CLI pinned to
 the versions CI uses. "Reopen in Container" in VS Code, or
 `devcontainer up --workspace-folder .` with the CLI.
 

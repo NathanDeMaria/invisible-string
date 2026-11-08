@@ -33,7 +33,7 @@ services:
     # The full image, not -slim: two dependencies are git checkouts, which
     # uv clones with git. The venv lives outside the mounted ./backend so it
     # isn't written into the host's checkout.
-    image: python:3.14
+    image: python:3.15
     working_dir: /srv
     command: >
       sh -c "pip install --no-cache-dir uv==0.13.6 &&

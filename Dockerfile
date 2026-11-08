@@ -25,10 +25,10 @@ RUN npm run build
 # binary the -slim image the app runs on doesn't have. Only the finished
 # virtualenv crosses into the runtime stage, so git never ships.
 #
-# The digest of the *index* for python:3.14-bookworm, the same one cassandra's
-# Batch image builds on. Same distro and minor version as the runtime below,
+# The digest of the *index* for python:3.15-trixie, the same one cassandra's
+# Batch image and mirrorball's devcontainer build on. Same distro and minor version as the runtime below,
 # which is what lets the venv's interpreter and compiled wheels carry over.
-FROM python@sha256:b3c121f5b6b446c964c6ea924d9a099e259b29d7b56df82729e33572a31eadcc AS deps
+FROM python@sha256:a51b0cd81c9c0fc08afc4a823843b459dc71c9386a02ccb150097b41d783f33b AS deps
 
 # uv at the version mirrorball pins, copied out of its own image
 COPY --from=ghcr.io/astral-sh/uv@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 /uv /uvx /usr/local/bin/
@@ -48,7 +48,7 @@ RUN uv sync --locked --no-dev --no-install-project
 # ------------------------------------------------------------------------------
 # Runtime
 # ------------------------------------------------------------------------------
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
