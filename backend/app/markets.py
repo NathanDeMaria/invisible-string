@@ -61,7 +61,7 @@ def home_probabilities(raw: bytes, venue: str) -> dict[str, float]:
     """
     try:
         parsed = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         return {}
     if not isinstance(parsed, dict):
         return {}
@@ -73,7 +73,7 @@ def home_probabilities(raw: bytes, venue: str) -> dict[str, float]:
     for game in games:
         try:
             found = _close(game, venue, fields)
-        except (KeyError, TypeError, ValueError, IndexError):
+        except KeyError, TypeError, ValueError, IndexError:
             found = None
         if found is not None:
             probabilities[str(game["game_id"])] = found

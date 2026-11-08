@@ -104,7 +104,7 @@ class RawGame:
     game_id: str
     status: str
 
-    def __new__(cls, *values: Any) -> "RawGame":
+    def __new__(cls, *values: Any) -> RawGame:
         """The call the unpickler makes: `Game(*stored_values)`.
 
         Extra values are dropped rather than raising -- that is the whole

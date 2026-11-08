@@ -2,7 +2,7 @@ import gzip
 import json
 import pickle
 from collections import namedtuple
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -172,7 +172,7 @@ NewGame.__module__ = "endgame.types"
 
 
 @contextmanager
-def as_endgames_game(replacement: type) -> Iterator[None]:
+def as_endgames_game(replacement: type) -> Generator[None]:
     """Stand endgame's own `Game` aside, so `replacement` pickles under its name.
 
     Needed because pickle refuses to write a class under a module path where

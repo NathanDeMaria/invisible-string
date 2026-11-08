@@ -7,8 +7,8 @@ package layout is a one-line change here rather than a sweep.
 
 What arrives with it, and why it matters that it's so little: `ModelRelease`
 depends on `cassandra.prob_to_margin`, which needs numpy and nothing else to
-*read* a fit. scikit-learn lives in cassandra's poetry `fit` group, and poetry
-groups aren't part of package metadata, so it is not in this image and cannot
+*read* a fit. scikit-learn lives in cassandra's `fit` dependency group, and
+dependency groups aren't part of package metadata, so it is not in this image and cannot
 be. `IsotonicProbToMarginFitter.fit` imports it lazily for exactly that reason.
 A `No module named sklearn` here therefore never means "add sklearn" -- it means
 something is trying to fit rather than to read a fit, and that belongs upstream.

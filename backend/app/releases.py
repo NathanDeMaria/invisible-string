@@ -120,7 +120,7 @@ def with_players(
         return predictor
 
 
-def league_players(store: "ReleaseStore", league: str) -> PlayerRatingIndex:
+def league_players(store: ReleaseStore, league: str) -> PlayerRatingIndex:
     """`store.get_player_ratings`, an unreadable file read as none: the
     predictions then are the release's unblended, which beats a league with
     no predictions at all over a file one deploy out of step."""

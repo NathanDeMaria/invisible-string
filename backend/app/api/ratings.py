@@ -158,7 +158,7 @@ def list_leagues(
     for league in store.list_leagues():
         try:
             releases = latest_releases(store, league)
-        except (ReleaseNotFound, ReleaseUnreadable):
+        except ReleaseNotFound, ReleaseUnreadable:
             # A league with nothing servable isn't an error here, it's just not
             # ready to show. Unreadable is included on purpose: this endpoint is
             # the index for *every* league, so one league's stale artifact must

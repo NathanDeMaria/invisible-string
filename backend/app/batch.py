@@ -29,7 +29,7 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -98,7 +98,7 @@ class AwsJobsSource:
         # Keyed by object key, holding the ETag it was counted at. One entry
         # per season file, replaced when the job rewrites it, so this can't
         # grow with time the way an ETag-keyed cache would.
-        self._season_games: dict[str, tuple[str, "_GameCounts"]] = {}
+        self._season_games: dict[str, tuple[str, _GameCounts]] = {}
 
     # -- runs ------------------------------------------------------------
 
@@ -220,7 +220,7 @@ class AwsJobsSource:
         try:
             body = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read()
             parsed = json.loads(body)
-        except (ClientError, BotoCoreError, json.JSONDecodeError, UnicodeDecodeError):
+        except ClientError, BotoCoreError, json.JSONDecodeError, UnicodeDecodeError:
             log.warning("could not count records in s3://%s/%s", self._bucket, key)
             return None
         return len(parsed) if isinstance(parsed, list) else None
@@ -274,7 +274,7 @@ class AwsJobsSource:
         seasons.sort(key=lambda s: (-s.year, s.league, s.artifact))
         return seasons
 
-    def _game_counts(self, key: str, etag: str) -> "_GameCounts | None":
+    def _game_counts(self, key: str, etag: str) -> _GameCounts | None:
         """Games in one season file, counted per day and cached by ETag.
 
         A season object is rewritten once a day, so its ETag is the exact
@@ -296,7 +296,7 @@ class AwsJobsSource:
                 self._season_games[key] = (etag, counts)
         return counts
 
-    def _count_games(self, key: str) -> "_GameCounts | None":
+    def _count_games(self, key: str) -> _GameCounts | None:
         """Read one season pickle and count what's in it.
 
         Best-effort, and deliberately not fatal: a season that can't be read
@@ -372,7 +372,7 @@ class AwsJobsSource:
 
 
 @contextmanager
-def _upstream(name: str) -> Iterator[None]:
+def _upstream(name: str) -> Generator[None]:
     """Turns a boto failure into the one exception the API layer knows about.
 
     Named after which upstream, because "AccessDenied" reads very differently
