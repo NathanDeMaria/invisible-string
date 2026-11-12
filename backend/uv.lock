@@ -170,7 +170,7 @@ source = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev
 [[package]]
 name = "cassandra"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=ea0feb370de269bfeaf023a449d8ddc37ef313fe#ea0feb370de269bfeaf023a449d8ddc37ef313fe" }
+source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=b1708afa8437ede45c2cb939970e4c2d69efa7bb#b1708afa8437ede45c2cb939970e4c2d69efa7bb" }
 dependencies = [
     { name = "aiofiles" },
     { name = "call-it-what-you-want" },
@@ -309,7 +309,7 @@ wheels = [
 [[package]]
 name = "endgame"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/EndGame.git?subdirectory=py-endgame&rev=8d19c73a4cce561663c2c2be06f18f3fe7312e02#8d19c73a4cce561663c2c2be06f18f3fe7312e02" }
+source = { git = "https://github.com/NathanDeMaria/EndGame.git?subdirectory=py-endgame&rev=d320d7113257e54b39636e53b8973dd6786171c7#d320d7113257e54b39636e53b8973dd6786171c7" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
@@ -443,7 +443,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.41.0,<2" },
-    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=ea0feb370de269bfeaf023a449d8ddc37ef313fe" },
+    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=b1708afa8437ede45c2cb939970e4c2d69efa7bb" },
     { name = "fastapi", specifier = ">=0.121.0,<0.122" },
     { name = "lucky-ones", extras = ["data"], git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=99e79fb9ed68deef0800b53d580677d1036b1dca" },
     { name = "pydantic", specifier = ">=2.12.5,<3" },
