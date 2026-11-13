@@ -20,6 +20,7 @@ from pathlib import Path
 import httpx
 import pytest
 from cassandra.predictor import PlayerRatingIndex, QbOutIndex
+from cassandra.predictor.crowds import CrowdIndex
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -57,6 +58,9 @@ class _OneReleaseStore:
     def get_player_ratings(self, league: str) -> PlayerRatingIndex:
         return PlayerRatingIndex()
 
+    def get_crowds(self, league: str) -> CrowdIndex:
+        return CrowdIndex()
+
 
 def _fixture_release(league: str = "mens", model: str = "glicko_tuned"):
     return LocalReleaseStore(FIXTURES).get_latest(league, model)
@@ -86,6 +90,9 @@ class _FutureBestStore:
 
     def get_player_ratings(self, league: str) -> PlayerRatingIndex:
         return PlayerRatingIndex()
+
+    def get_crowds(self, league: str) -> CrowdIndex:
+        return CrowdIndex()
 
     def get_latest(self, league: str, model: str) -> ModelRelease:
         release = self._inner.get_latest(league, model)

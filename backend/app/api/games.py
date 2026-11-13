@@ -49,6 +49,7 @@ from cassandra.predictor import (
     UnknownPredictorClass,
     predict_matchup,
 )
+from cassandra.predictor.crowds import CrowdIndex
 from cassandra.prob_to_margin import BaseProbToMarginPredictor, MarginKernel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
@@ -79,6 +80,7 @@ from app.releases import (
     ReleaseStore,
     ReleaseUnreadable,
     get_release_store,
+    league_crowds,
     league_players,
     resolve_release,
     with_players,
@@ -424,6 +426,8 @@ class _LeagueModel:
     # kept so a what-if rebuilt from it reads them too. Empty but for the
     # basketball leagues.
     players: PlayerRatingIndex
+    # The same for the league's home crowd readings.
+    crowds: CrowdIndex
 
 
 class MatchupUnsupported(RuntimeError):
@@ -454,7 +458,7 @@ def _stated_predictor(
             model.release.league,
             model.predictor.ratings,
             **model.release.params,
-            sources=stated_sources(game, overrides, model.players),
+            sources=stated_sources(game, overrides, model.players, model.crowds),
         )
     except TypeError as exc:
         raise MatchupUnsupported(
@@ -673,9 +677,10 @@ class _Models:
             return None
 
         players = league_players(self._store, league)
+        crowds = league_crowds(self._store, league)
         return _LeagueModel(
             release=release,
-            predictor=with_players(release, predictor, players),
+            predictor=with_players(release, predictor, players, crowds),
             margin=release.margin_predictor(),
             kernel=release.kernel(),
             processed=frozenset(release.trained_through.processed_game_ids),
@@ -685,6 +690,7 @@ class _Models:
                 )
             ),
             players=players,
+            crowds=crowds,
         )
 
 

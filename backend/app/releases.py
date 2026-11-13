@@ -22,6 +22,7 @@ from cassandra.predictor import (
     UnknownPredictorClass,
     load_predictor_class,
 )
+from cassandra.predictor.crowds import CrowdIndex, CrowdsFile
 from cassandra.predictor.qb_out import QbOutFile
 from pydantic import ValidationError
 
@@ -97,21 +98,45 @@ def parse_player_ratings(raw: str | bytes, league: str) -> PlayerRatingIndex:
     return PlayerRatingIndex.from_file(stored)
 
 
+def parse_crowds(raw: str | bytes, league: str) -> CrowdIndex:
+    """The league's published home crowd readings, as the basketball models read them.
+
+    `models/{league}/crowds.json` is each team's newest reading of how big a
+    crowd it plays its home games in front of, published beside the releases
+    because the file itself only exists where cassandra's sweep ran. The
+    release's `home_crowd_slope` scales it into the home side's edge.
+    """
+    try:
+        stored = CrowdsFile.model_validate(json.loads(raw))
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ReleaseUnreadable(
+            f"{league}/crowds.json does not match the current CrowdsFile schema"
+        ) from exc
+    return CrowdIndex.from_file(stored)
+
+
 def with_players(
-    release: ModelRelease, predictor: Predictor, players: PlayerRatingIndex
+    release: ModelRelease,
+    predictor: Predictor,
+    players: PlayerRatingIndex,
+    crowds: CrowdIndex | None = None,
 ) -> Predictor:
-    """`predictor`, rebuilt to read the league's players' rows.
+    """`predictor`, rebuilt to read the league's players' rows and home crowds.
 
     Without them a `glicko_players` release predicts every game as Glicko
-    alone -- a different model from the one that was scored and stored. A
-    league with no rows, or a class that reads no sources, is returned as is:
-    it has nothing to blend.
+    alone -- a different model from the one that was scored and stored, and
+    without the crowds every home side gets the league's plain edge. A league
+    with neither, or a class that reads no sources, is returned as is: it has
+    nothing to blend.
     """
-    if not len(players):
+    crowds = crowds if crowds is not None else CrowdIndex()
+    if not len(players) and not len(crowds):
         return predictor
     # Nothing else a reader would state: the quarterback index and rest are
     # football's, and a basketball game has neither.
-    sources = MatchupSources(QbOutIndex(), RestLedger(), player_ratings=players)
+    sources = MatchupSources(
+        QbOutIndex(), RestLedger(), player_ratings=players, crowds=crowds
+    )
     try:
         return type(predictor).from_ratings(
             release.league, predictor.ratings, **release.params, sources=sources
@@ -129,6 +154,16 @@ def league_players(store: ReleaseStore, league: str) -> PlayerRatingIndex:
     except ReleaseUnreadable as exc:
         log.warning("predicting %s without its players' rows: %s", league, exc)
         return PlayerRatingIndex()
+
+
+def league_crowds(store: ReleaseStore, league: str) -> CrowdIndex:
+    """`store.get_crowds`, an unreadable file read as none, for the reason
+    `league_players` is."""
+    try:
+        return store.get_crowds(league)
+    except ReleaseUnreadable as exc:
+        log.warning("predicting %s without its home crowds: %s", league, exc)
+        return CrowdIndex()
 
 
 class ReleaseStore(Protocol):
@@ -157,6 +192,15 @@ class ReleaseStore(Protocol):
         Empty for a league with none -- everything but mens and womens --
         which is also what those models read when the file is missing, so
         the number is still the release's, just unblended.
+        """
+        ...
+
+    def get_crowds(self, league: str) -> CrowdIndex:
+        """Each team's newest home crowd reading, for a league's basketball models.
+
+        Empty for a league with none, which is also what those models read
+        when the file is missing: every home side then gets the league's
+        edge alone.
         """
         ...
 
@@ -294,6 +338,14 @@ class LocalReleaseStore:
         except FileNotFoundError:
             return PlayerRatingIndex()
         return parse_player_ratings(raw, league)
+
+    def get_crowds(self, league: str) -> CrowdIndex:
+        path = self._models_dir / league / "crowds.json"
+        try:
+            raw = path.read_text()
+        except FileNotFoundError:
+            return CrowdIndex()
+        return parse_crowds(raw, league)
 
 
 def latest_releases(store: ReleaseStore, league: str) -> list[ModelRelease]:

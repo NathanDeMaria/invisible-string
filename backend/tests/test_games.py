@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 from cassandra.predictor import PlayerRatingIndex, QbOutIndex
+from cassandra.predictor.crowds import CrowdIndex
 from fastapi.testclient import TestClient
 
 from app.api.games import MatchupUnsupported
@@ -649,6 +650,9 @@ class Drifted:
     def get_player_ratings(self, league: str) -> PlayerRatingIndex:
         return self._inner.get_player_ratings(league)
 
+    def get_crowds(self, league: str) -> CrowdIndex:
+        return self._inner.get_crowds(league)
+
     def get_latest(self, league: str, model: str):
         release = self._inner.get_latest(league, model)
         return release.model_copy(
@@ -735,6 +739,9 @@ class Football:
 
     def get_player_ratings(self, league: str) -> PlayerRatingIndex:
         return PlayerRatingIndex()
+
+    def get_crowds(self, league: str) -> CrowdIndex:
+        return CrowdIndex()
 
 
 NOTHING_STATED = {

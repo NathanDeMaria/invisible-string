@@ -63,7 +63,7 @@ packages = ["app"]
 [tool.uv.sources]
 # Pinned by rev (DESIGN.md sections 8 and 9.6, 16 and 16.8): bumping either is
 # manual, and what each comment above says about why still applies.
-cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "b1708afa8437ede45c2cb939970e4c2d69efa7bb" }
+cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "afae6ec1d28edb22bd4842ad4d53dfad63a42aec" }
 lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "99e79fb9ed68deef0800b53d580677d1036b1dca" }
 # say-youll-remember-me pins call-it-what-you-want in its own [tool.uv.sources],
 # and uv reads that, so it would conflict with cassandra's pin of the same

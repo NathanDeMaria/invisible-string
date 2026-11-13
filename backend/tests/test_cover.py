@@ -14,6 +14,7 @@ decides -- rather than about the kernel's arithmetic.
 
 import pytest
 from cassandra.predictor import PlayerRatingIndex, QbOutIndex
+from cassandra.predictor.crowds import CrowdIndex
 from cassandra.predictor.distribution import Cover
 from fastapi.testclient import TestClient
 
@@ -66,6 +67,9 @@ class _NoKernelStore:
 
     def get_player_ratings(self, league: str) -> PlayerRatingIndex:
         return PlayerRatingIndex()
+
+    def get_crowds(self, league: str) -> CrowdIndex:
+        return CrowdIndex()
 
     def get_latest(self, league: str, model: str) -> ModelRelease:
         release = self._inner.get_latest(league, model)

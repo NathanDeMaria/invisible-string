@@ -263,3 +263,26 @@ class TestThePlayersRows:
         assert len(store.get_player_ratings("nfl")) == 0
         store.get_player_ratings("nfl")
         assert client.get_object_calls == 1
+
+
+class TestTheHomeCrowds:
+    """`models/{league}/crowds.json`, read and cached as the players' rows are."""
+
+    def test_reads_a_league_s_readings(self, s3: Any) -> None:
+        s3.put_object(
+            Bucket=BUCKET,
+            Key="models/mens/crowds.json",
+            Body=json.dumps(
+                {"league": "mens", "as_of": "2026-11-12", "teams": {"Duke": 0.75}}
+            ),
+        )
+        store = S3ReleaseStore(bucket=BUCKET, client=s3, ttl_seconds=60)
+        index = store.get_crowds("mens")
+        assert len(index) == 1
+
+    def test_a_league_without_them_is_empty_and_cached(self, s3: Any) -> None:
+        client = CountingClient(s3)
+        store = S3ReleaseStore(bucket=BUCKET, client=client, ttl_seconds=60)
+        assert len(store.get_crowds("nfl")) == 0
+        store.get_crowds("nfl")
+        assert client.get_object_calls == 1
