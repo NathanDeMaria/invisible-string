@@ -170,7 +170,7 @@ source = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev
 [[package]]
 name = "cassandra"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=b1708afa8437ede45c2cb939970e4c2d69efa7bb#b1708afa8437ede45c2cb939970e4c2d69efa7bb" }
+source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=afae6ec1d28edb22bd4842ad4d53dfad63a42aec#afae6ec1d28edb22bd4842ad4d53dfad63a42aec" }
 dependencies = [
     { name = "aiofiles" },
     { name = "call-it-what-you-want" },
@@ -443,7 +443,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.41.0,<2" },
-    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=b1708afa8437ede45c2cb939970e4c2d69efa7bb" },
+    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=afae6ec1d28edb22bd4842ad4d53dfad63a42aec" },
     { name = "fastapi", specifier = ">=0.121.0,<0.122" },
     { name = "lucky-ones", extras = ["data"], git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=99e79fb9ed68deef0800b53d580677d1036b1dca" },
     { name = "pydantic", specifier = ">=2.12.5,<3" },

@@ -20,9 +20,11 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 from cassandra.predictor import PlayerRatingIndex, QbOutIndex
+from cassandra.predictor.crowds import CrowdIndex
 
 from app.releases import (
     ReleaseNotFound,
+    parse_crowds,
     parse_player_ratings,
     parse_qb_out,
     parse_release,
@@ -49,7 +51,7 @@ class _CachedListing:
 
 @dataclass
 class _CachedIndex:
-    index: QbOutIndex | PlayerRatingIndex
+    index: QbOutIndex | PlayerRatingIndex | CrowdIndex
     # Empty for a league with no index in the bucket, which then re-checks
     # on the TTL like everything else rather than on every request.
     etag: str
@@ -79,6 +81,7 @@ class S3ReleaseStore:
         self._listings: dict[str, _CachedListing] = {}
         self._qb_out: dict[str, _CachedIndex] = {}
         self._player_ratings: dict[str, _CachedIndex] = {}
+        self._crowds: dict[str, _CachedIndex] = {}
 
     # -- listing ---------------------------------------------------------
 
@@ -172,14 +175,22 @@ class S3ReleaseStore:
         assert isinstance(index, PlayerRatingIndex)
         return index
 
+    def get_crowds(self, league: str) -> CrowdIndex:
+        """`{prefix}{league}/crowds.json`, cached as `get_qb_out` is."""
+        index = self._league_index(
+            league, "crowds.json", self._crowds, parse_crowds, CrowdIndex
+        )
+        assert isinstance(index, CrowdIndex)
+        return index
+
     def _league_index(
         self,
         league: str,
         name: str,
         cache: dict[str, _CachedIndex],
-        parse: Callable[[bytes, str], QbOutIndex | PlayerRatingIndex],
-        empty: Callable[[], QbOutIndex | PlayerRatingIndex],
-    ) -> QbOutIndex | PlayerRatingIndex:
+        parse: Callable[[bytes, str], QbOutIndex | PlayerRatingIndex | CrowdIndex],
+        empty: Callable[[], QbOutIndex | PlayerRatingIndex | CrowdIndex],
+    ) -> QbOutIndex | PlayerRatingIndex | CrowdIndex:
         key = f"{self._prefix}{league}/{name}"
 
         with self._lock:

@@ -31,6 +31,7 @@ from cassandra.predictor import (
     RestLedger,
     StatedRest,
 )
+from cassandra.predictor.crowds import CrowdIndex
 from endgame.types import Game
 from pydantic import BaseModel
 
@@ -111,6 +112,7 @@ def stated_sources(
     game: ScheduledGame,
     overrides: MatchupOverrides,
     players: PlayerRatingIndex | None = None,
+    crowds: CrowdIndex | None = None,
 ) -> MatchupSources:
     """The sources that make the model see the game the reader described.
 
@@ -120,10 +122,10 @@ def stated_sources(
     to lose by replacing them. Starting empty also keeps the answer a function
     of the four flags alone, which is what makes the toggles legible.
 
-    Except for `players`, the league's published players' rows: not a fact
-    about this game a reader could state, but part of how a basketball model
-    prices every game, so a what-if that dropped them would answer for a
-    different model.
+    Except for `players` and `crowds`, the league's published players' rows
+    and home crowd readings: not facts about this game a reader could state,
+    but part of how a basketball model prices every game, so a what-if that
+    dropped them would answer for a different model.
     """
     game_id = matchup_game_id(game)
 
@@ -147,6 +149,7 @@ def stated_sources(
         qb_out=QbOutIndex({game_id: out} if out else {}),
         rest=StatedRest({game_id: rested} if rested else {}),
         player_ratings=players if players is not None else PlayerRatingIndex(),
+        crowds=crowds if crowds is not None else CrowdIndex(),
     )
 
 
