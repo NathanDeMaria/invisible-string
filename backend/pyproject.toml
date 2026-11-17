@@ -101,3 +101,9 @@ testpaths = ["tests"]
 
 [tool.uv]
 override-dependencies = ["call-it-what-you-want"]
+
+# Read by cassandra's bump_deps.py, which the Pins workflow runs: these two
+# take whatever rev cassandra pins them at, in cassandra's pull request,
+# rather than moving to their own repositories' heads.
+[tool.bump-deps]
+follow = { call-it-what-you-want = "cassandra", lucky-ones = "cassandra" }
