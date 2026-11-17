@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # For branches pushed by a workflow's own token, which raise no `push` or
+  # `pull_request` event: pins.yml dispatches this on its `pins/*` branches
+  # so the required check reports. A dispatch runs every stack.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,13 +22,16 @@ jobs:
   # per-stack jobs are the ones that get skipped.
   changes:
     runs-on: ubuntu-latest
+    # A dispatch has no pull request to diff against, so it skips the filter
+    # and runs everything.
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      infra: ${{ steps.filter.outputs.infra }}
+      backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend }}
+      infra: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.infra }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
+        if: github.event_name != 'workflow_dispatch'
         id: filter
         with:
           # Each stack also watches this workflow, so a change to CI itself
