@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "call-it-what-you-want", git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev=cc9c9e19e3e56eb48f7745853613aff51ca372b8" }]
+overrides = [{ name = "call-it-what-you-want", git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev=93c026bf18ab6ea41e89ebaf78fa7ef844c7545e" }]
 
 [[package]]
 name = "aiofiles"
@@ -165,12 +165,12 @@ wheels = [
 [[package]]
 name = "call-it-what-you-want"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev=cc9c9e19e3e56eb48f7745853613aff51ca372b8#cc9c9e19e3e56eb48f7745853613aff51ca372b8" }
+source = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git?rev=93c026bf18ab6ea41e89ebaf78fa7ef844c7545e#93c026bf18ab6ea41e89ebaf78fa7ef844c7545e" }
 
 [[package]]
 name = "cassandra"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=afae6ec1d28edb22bd4842ad4d53dfad63a42aec#afae6ec1d28edb22bd4842ad4d53dfad63a42aec" }
+source = { git = "https://github.com/NathanDeMaria/cassandra.git?rev=df974032461a62704e0033e6cece553617082148#df974032461a62704e0033e6cece553617082148" }
 dependencies = [
     { name = "aiofiles" },
     { name = "call-it-what-you-want" },
@@ -443,9 +443,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.41.0,<2" },
-    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=afae6ec1d28edb22bd4842ad4d53dfad63a42aec" },
+    { name = "cassandra", git = "https://github.com/NathanDeMaria/cassandra.git?rev=df974032461a62704e0033e6cece553617082148" },
     { name = "fastapi", specifier = ">=0.121.0,<0.122" },
-    { name = "lucky-ones", extras = ["data"], git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=99e79fb9ed68deef0800b53d580677d1036b1dca" },
+    { name = "lucky-ones", extras = ["data"], git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=6cbc46673b618153e6773bb3bde3b17901ea621f" },
     { name = "pydantic", specifier = ">=2.12.5,<3" },
     { name = "pydantic-settings", specifier = ">=2.13.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0,<0.41" },
@@ -473,7 +473,7 @@ wheels = [
 [[package]]
 name = "lucky-ones"
 version = "0.1.0"
-source = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=99e79fb9ed68deef0800b53d580677d1036b1dca#99e79fb9ed68deef0800b53d580677d1036b1dca" }
+source = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git?rev=6cbc46673b618153e6773bb3bde3b17901ea621f#6cbc46673b618153e6773bb3bde3b17901ea621f" }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
