@@ -63,13 +63,13 @@ packages = ["app"]
 [tool.uv.sources]
 # Pinned by rev (DESIGN.md sections 8 and 9.6, 16 and 16.8): bumping either is
 # manual, and what each comment above says about why still applies.
-cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "afae6ec1d28edb22bd4842ad4d53dfad63a42aec" }
-lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "99e79fb9ed68deef0800b53d580677d1036b1dca" }
+cassandra = { git = "https://github.com/NathanDeMaria/cassandra.git", rev = "df974032461a62704e0033e6cece553617082148" }
+lucky-ones = { git = "https://github.com/NathanDeMaria/the-lucky-ones.git", rev = "6cbc46673b618153e6773bb3bde3b17901ea621f" }
 # say-youll-remember-me pins call-it-what-you-want in its own [tool.uv.sources],
 # and uv reads that, so it would conflict with cassandra's pin of the same
 # package. This is the one pin for the whole install (the rev cassandra pins);
 # override-dependencies below is what makes it so.
-call-it-what-you-want = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "cc9c9e19e3e56eb48f7745853613aff51ca372b8" }
+call-it-what-you-want = { git = "https://github.com/NathanDeMaria/call-it-what-you-want.git", rev = "93c026bf18ab6ea41e89ebaf78fa7ef844c7545e" }
 
 # Below here is the template's. `copier update` brings changes to it from
 # mirrorball, so per-repo additions are better made as new keys than as edits.
