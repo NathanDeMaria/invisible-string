@@ -3,7 +3,8 @@
 # that decides where each pin goes is cassandra's `bump_deps.py`, checked out
 # from its main so the two repositories run one copy. `[tool.bump-deps]` in
 # backend/pyproject.toml makes call-it-what-you-want and lucky-ones follow the
-# revs cassandra pins, in cassandra's pull request. Merging stays a person's.
+# revs cassandra pins, in cassandra's pull request. It also regenerates
+# openapi.json and the frontend's types, which a new cassandra can change. Merging stays a person's.
 name: Pins
 
 on:
@@ -51,6 +52,18 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
 
+      # A new cassandra can change the API's response models, and CI fails on
+      # a stale openapi.json or schema.d.ts, so the bump regenerates both
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
       # Needs the repository setting "Allow GitHub Actions to create and
       # approve pull requests" (Settings > Actions > General). Without it the
       # branch is pushed and `gh pr create` fails, which fails the run.
@@ -75,8 +88,16 @@ jobs:
               git checkout --quiet -- .
               continue
             fi
-            git commit --quiet --message "$(head -n 1 "$RUNNER_TEMP/message.md")" \
-              -- backend/pyproject.toml backend/uv.lock
+            # The schema and the types generated from it follow the new pins
+            if ! (cd backend && make openapi) || ! (cd frontend && npm run codegen); then
+              echo "::error::regenerating the schema failed for $group"
+              failed=1
+              git checkout --quiet -- .
+              continue
+            fi
+            git add backend/pyproject.toml backend/uv.lock openapi.json \
+              frontend/src/api/schema.d.ts
+            git commit --quiet --message "$(head -n 1 "$RUNNER_TEMP/message.md")"
             # Same tree as the branch already pushed: main and the upstream are
             # where they were, and pushing again would only re-run CI
             if git fetch --quiet origin "$branch" 2>/dev/null \
