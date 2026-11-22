@@ -1552,6 +1552,17 @@
             "title": "Projected",
             "type": "boolean"
           },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
           "share": {
             "anyOf": [
               {

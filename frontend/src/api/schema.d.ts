@@ -1025,6 +1025,8 @@ export interface components {
             player?: string | null;
             /** Projected */
             projected: boolean;
+            /** Role */
+            role?: string | null;
             /** Share */
             share?: number | null;
             /** Starts */
