@@ -34,12 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Public, so no token: just the one script, outside the working tree's
-      # paths that get committed
+      # cassandra is private: its deploy key, for this checkout and for the
+      # `uv lock` below, which fetches it
+      - name: Read access to cassandra
+        run: .github/cassandra-access.sh
+        env:
+          CASSANDRA_DEPLOY_KEY: ${{ secrets.CASSANDRA_DEPLOY_KEY }}
+
+      # Just the one script, outside the working tree's paths that get
+      # committed
       - uses: actions/checkout@v5
         with:
           repository: NathanDeMaria/cassandra
           path: .bump-tools
+          ssh-key: ${{ secrets.CASSANDRA_DEPLOY_KEY }}
           sparse-checkout: bump_deps.py
           sparse-checkout-cone-mode: false
 

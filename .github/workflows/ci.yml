@@ -62,6 +62,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # cassandra is private; `uv sync` fetches it with its deploy key
+      - name: Read access to cassandra
+        run: ../.github/cassandra-access.sh
+        env:
+          CASSANDRA_DEPLOY_KEY: ${{ secrets.CASSANDRA_DEPLOY_KEY }}
+
       # Installs uv, restores its cache keyed on uv.lock, and provisions the
       # interpreter from backend/.python-version. The same uv version as the
       # devcontainer and the image.

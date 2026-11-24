@@ -43,7 +43,21 @@ WORKDIR /srv
 # whole tree on every build. `--no-dev` and no project: the app is copied in
 # below, not installed.
 COPY backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+
+# cassandra is private (README, "cassandra is private"), so its fetch goes over
+# ssh with the builder's agent: `ssh: default` in image.yml, where the agent
+# holds cassandra's deploy key, or `ssh: [default]` in compose.yaml, where it's
+# whatever key the laptop has. Git rewrites the https URL uv.lock pins, the
+# same way .github/cassandra-access.sh does in CI, and checks GitHub's host key
+# against the pinned file. Neither the key nor the config outlives this RUN,
+# and this stage never reaches the runtime image anyway.
+COPY .github/github_known_hosts /tmp/github_known_hosts
+RUN --mount=type=ssh \
+    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/github_known_hosts" \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.git@github.com:NathanDeMaria/cassandra.insteadOf" \
+    GIT_CONFIG_VALUE_0="https://github.com/NathanDeMaria/cassandra" \
+    uv sync --locked --no-dev --no-install-project
 
 # ------------------------------------------------------------------------------
 # Runtime
