@@ -223,3 +223,22 @@ def test_create_app_gates_when_password_set(
     client = TestClient(create_app())
     assert client.get("/healthz").status_code == 200
     assert client.get("/api/leagues").status_code == 401
+
+
+def test_session_says_login_is_off_without_a_password(
+    monkeypatch: pytest.MonkeyPatch, fresh_settings: None
+) -> None:
+    monkeypatch.delenv("INVISIBLE_STRING_PASSWORD", raising=False)
+    client = TestClient(create_app())
+    assert client.get("/api/session").json() == {"login_enabled": False}
+
+
+def test_session_says_login_is_on_once_logged_in(
+    monkeypatch: pytest.MonkeyPatch, fresh_settings: None
+) -> None:
+    monkeypatch.setenv("INVISIBLE_STRING_PASSWORD", PASSWORD)
+    monkeypatch.setenv("INVISIBLE_STRING_SECURE_COOKIE", "false")
+    client = TestClient(create_app())
+    assert client.get("/api/session").status_code == 401
+    client.post("/login", data={"password": PASSWORD})
+    assert client.get("/api/session").json() == {"login_enabled": True}

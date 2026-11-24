@@ -1986,6 +1986,19 @@
         "title": "SeasonObject",
         "type": "object"
       },
+      "SessionInfo": {
+        "properties": {
+          "login_enabled": {
+            "title": "Login Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "login_enabled"
+        ],
+        "title": "SessionInfo",
+        "type": "object"
+      },
       "SuccessRating": {
         "description": "A team's offense's success rate and the rate its defense allows.\n\nOpponent-adjusted: each against an average opponent on a neutral field.\nFor a reader only -- the units models keep it beside their sides and\nnever predict from it, and `rating_predictor` drops it. See\n`UnitMarginGlickoPredictor`'s \"What a release carries\".\n\n`passes` and `runs` are the same two rates over each kind of down\nalone, each rated on its own. None in a release written before them,\nand where the play-by-play read carried no split.",
         "properties": {
@@ -3486,6 +3499,24 @@
           }
         },
         "summary": "Predict"
+      }
+    },
+    "/api/session": {
+      "get": {
+        "operationId": "get_session_api_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Session"
       }
     },
     "/healthz": {

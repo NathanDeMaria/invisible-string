@@ -1048,6 +1048,8 @@ const player = (over: Partial<PlayerRow>): PlayerRow => ({
 
 export const handlers = [
   http.get("/api/leagues", () => HttpResponse.json(leagues)),
+  // No login unless a test says otherwise, the way local dev runs.
+  http.get("/api/session", () => HttpResponse.json({ login_enabled: false })),
   http.get("/api/leagues/:league/players/seasons", ({ params }) =>
     HttpResponse.json(
       params.league === "mens"
