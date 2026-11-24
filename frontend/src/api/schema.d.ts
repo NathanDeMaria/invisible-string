@@ -274,6 +274,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session */
+        get: operations["get_session_api_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -1186,6 +1203,11 @@ export interface components {
             /** Year */
             year: number;
         };
+        /** SessionInfo */
+        SessionInfo: {
+            /** Login Enabled */
+            login_enabled: boolean;
+        };
         /**
          * SuccessRating
          * @description A team's offense's success rate and the rate its defense allows.
@@ -1853,6 +1875,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_api_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
                 };
             };
         };

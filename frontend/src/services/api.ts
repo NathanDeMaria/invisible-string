@@ -50,6 +50,7 @@ export type EpaPerPlay = components["schemas"]["EpaPerPlay"];
 export type ExpectedPointsFit = components["schemas"]["ExpectedPointsFit"];
 export type LeagueDistributions = components["schemas"]["LeagueDistributions"];
 export type MetricDistribution = components["schemas"]["MetricDistribution"];
+export type SessionInfo = components["schemas"]["SessionInfo"];
 
 export interface PlayersArgs {
   league: string;
@@ -182,6 +183,9 @@ export const api = createApi({
     getLeagues: builder.query<LeagueSummary[], void>({
       query: () => "leagues",
     }),
+    getSession: builder.query<SessionInfo, void>({
+      query: () => "session",
+    }),
     getRatings: builder.query<RatingsResponse, RatingsArgs>({
       query: ({ league, model }) => ({
         url: `leagues/${league}/ratings`,
@@ -300,6 +304,7 @@ export const api = createApi({
 
 export const {
   useGetLeaguesQuery,
+  useGetSessionQuery,
   useGetRatingsQuery,
   useGetPlayerSeasonsQuery,
   useGetPlayersQuery,

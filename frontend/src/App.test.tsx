@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { App } from "./App";
 import { renderApp } from "./test/render";
+import { server } from "./test/server";
 
 const at = () => screen.getByTestId("location").textContent;
 
@@ -79,5 +81,28 @@ describe("navigation", () => {
   it("sends the bare root somewhere useful", async () => {
     renderApp(<App />, { route: "/" });
     await waitFor(() => expect(at()).toBe("/mens/ratings"));
+  });
+});
+
+describe("log out", () => {
+  it("is offered when the site has a login", async () => {
+    server.use(
+      http.get("/api/session", () =>
+        HttpResponse.json({ login_enabled: true }),
+      ),
+    );
+    renderApp(<App />, { route: "/mens/ratings" });
+
+    const button = await screen.findByRole("button", { name: "Log out" });
+    const form = button.closest("form");
+    expect(form).toHaveAttribute("method", "post");
+    expect(form).toHaveAttribute("action", "/logout");
+  });
+
+  it("is not offered when there is no login", async () => {
+    renderApp(<App />, { route: "/mens/ratings" });
+    await screen.findByRole("link", { name: "mens" });
+
+    expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 });

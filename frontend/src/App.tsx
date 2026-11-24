@@ -20,10 +20,11 @@ import { PlayersPage } from "./features/players/PlayersPage";
 import { ChartPage } from "./features/ratings/ChartPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
 import { TeamPage } from "./features/team/TeamPage";
-import { useGetLeaguesQuery } from "./services/api";
+import { useGetLeaguesQuery, useGetSessionQuery } from "./services/api";
 
 export function App() {
   const { data: leagues } = useGetLeaguesQuery();
+  const { data: session } = useGetSessionQuery();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -97,6 +98,16 @@ export function App() {
           >
             <kbd>?</kbd> Shortcuts
           </button>
+          {/* A plain form post rather than a fetch: the server clears the
+              cookie and redirects to its login page, which is a full page
+              load either way. Only when the site has a login at all. */}
+          {session?.login_enabled && (
+            <form method="post" action="/logout" className="logout">
+              <button type="submit" className="keys-hint">
+                Log out
+              </button>
+            </form>
+          )}
         </div>
         <nav aria-label="Section">
           <NavLink to="/games">Games</NavLink>

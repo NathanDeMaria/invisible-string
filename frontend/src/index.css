@@ -85,6 +85,17 @@ header h1 {
   color: var(--fg);
 }
 
+/* Log out sits beside the shortcuts hint, both at the right: the title's auto
+   margin takes the free space that space-between would otherwise split. */
+.titlebar h1 {
+  margin-right: auto;
+}
+
+.logout {
+  flex: none;
+  margin: 0;
+}
+
 /* A key, wherever one is printed: in the hint above and down the help sheet.
    Monospace and boxed, because the point is that it is a thing you press. */
 kbd {
