@@ -5,9 +5,8 @@ fail independently: Batch throttling shouldn't blank the volume tables, and a
 bucket permission that hasn't been granted yet shouldn't take the run history
 with it. The page renders whichever half answered.
 
-Public read, like everything outside `/api/admin/*` (section 3). Job names and
-failure reasons are the most operational thing this site exposes; if that ever
-feels like too much, it's one `Depends` away from being admin-only.
+Behind the site's login like every other page (section 3, Auth). Job names
+and failure reasons are the most operational thing this site exposes.
 """
 
 import logging

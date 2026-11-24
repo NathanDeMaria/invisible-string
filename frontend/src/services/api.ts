@@ -1,4 +1,10 @@
-import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+import {
+  type BaseQueryFn,
+  createApi,
+  type FetchArgs,
+  fetchBaseQuery,
+  type FetchBaseQueryError,
+} from "@reduxjs/toolkit/query/react";
 
 import type { components } from "../api/schema";
 
@@ -146,9 +152,32 @@ export interface PredictArgs {
 // SPA from the same origin -- so there's no environment switch here.
 const baseUrl = new URL("/api", window.location.origin).toString();
 
+const rawBaseQuery = fetchBaseQuery({ baseUrl });
+
+// The backend answers a request without a live session with a 401 (its
+// `app.auth`). Only an expired cookie gets here -- a fresh visit is sent to the
+// login page before the SPA ever loads -- so send the reader back there, and
+// back to this page once they're in.
+export const redirectToLogin = () => {
+  const here = window.location.pathname + window.location.search;
+  window.location.assign(`/login?next=${encodeURIComponent(here)}`);
+};
+
+const baseQuery: BaseQueryFn<
+  string | FetchArgs,
+  unknown,
+  FetchBaseQueryError
+> = async (args, queryApi, extraOptions) => {
+  const result = await rawBaseQuery(args, queryApi, extraOptions);
+  if (result.error?.status === 401) {
+    redirectToLogin();
+  }
+  return result;
+};
+
 export const api = createApi({
   reducerPath: "api",
-  baseQuery: fetchBaseQuery({ baseUrl }),
+  baseQuery,
   endpoints: (builder) => ({
     getLeagues: builder.query<LeagueSummary[], void>({
       query: () => "leagues",

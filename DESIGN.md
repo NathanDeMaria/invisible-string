@@ -338,10 +338,31 @@ Ratings change at most once a day.
 
 ### Auth
 
-Single bearer token from Secrets Manager, checked by a FastAPI dependency on
-`/api/admin/*`. Everything else is public read. If you'd rather not have a public
-write path at all, drop `POST /api/admin/releases` — the jobs already write to S3
-directly with their own role (see §5).
+The whole site is behind one shared password (`backend/app/auth.py`).
+Everything but `/healthz` (App Runner's health check) and `/login` needs a
+session cookie; without one, a page is redirected to `/login?next=<page>` and
+`/api/*` answers 401, which the SPA turns into the same redirect
+(`frontend/src/services/api.ts`). There is no write path: the jobs write to S3
+with their own role (see §5).
+
+- **The password** is 32 generated letters and digits in Secrets Manager
+  (`invisible-string/password`), made once by hand so its value is never in
+  terraform state, a plan or CI (`infra/login.tf`). App Runner injects it as
+  `INVISIBLE_STRING_PASSWORD`. `INVISIBLE_STRING_LOGIN_REQUIRED=true` beside it
+  makes a deploy that lost the secret fail to start rather than serve the site
+  open. Locally neither is set, and there is no login.
+- **The cookie** is `<issued-at>.<HMAC-SHA256>`, keyed on a hash of the
+  password: HttpOnly, Secure, SameSite=Lax, 30 days. No second secret and no
+  session store. Rotating the password changes the key, which logs everyone
+  out; that is the only revocation, and the trade a shared password makes
+  against per-person accounts.
+- **Guessing** is answered by the password's length, not by the form. As a
+  backstop, five wrong passwords from one address in fifteen minutes lock that
+  address out for the window. The address is the last `X-Forwarded-For` entry,
+  the one App Runner's proxy appends. The count is in memory per instance,
+  which with at most two instances changes nothing against ~190 bits.
+- `next` is followed only if it is a plain local path, so the login page is not
+  an open redirect.
 
 ---
 
@@ -1247,9 +1268,10 @@ Phases 2–4 need nothing from phase 5, so the app is useful — just manually r
    replay rewrites the whole file. Chart defaults to the current season with a range
    picker back through 2010 — all-time as a default view is unreadable at 360 teams.
 
-4. **Public reads, bearer-token auth on `/api/admin/*`.** Ratings, matchup and
-   history are open; the token lives in Secrets Manager. Shareable matchup and
-   comparison links work, which §4 leans on.
+4. **Everything behind one shared password** (§3, Auth). This replaced the
+   original public reads with bearer-token auth on `/api/admin/*`. Shareable
+   matchup and comparison links still work for anyone logged in: the login page
+   sends them on to the link they opened.
 
 5. **cassandra CI: not now.** The schema contract test in this repo (§8) catches
    drift when the pinned rev is bumped, which covers the case that actually breaks
@@ -1323,9 +1345,8 @@ GET /api/jobs/volume?days=7
       seasons: [{league, year, artifact, key, bytes, last_modified}]}
 ```
 
-Public read, like everything outside `/api/admin/*` (§3). Job names and failure
-reasons are the most operational thing the site exposes; if that ever feels like too
-much, this is one `Depends` away from being admin-only.
+Behind the site's login like every other page (§3, Auth). Job names and failure
+reasons are the most operational thing the site exposes.
 
 ### 12.2 What this costs at the boundary
 
