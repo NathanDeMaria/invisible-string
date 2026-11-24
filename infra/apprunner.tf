@@ -262,10 +262,21 @@ resource "aws_apprunner_service" "app" {
           INVISIBLE_STRING_STATIC_DIR      = "/srv/static"
           INVISIBLE_STRING_BATCH_JOB_QUEUE = local.endgame_job_queue_arn
           INVISIBLE_STRING_ENDGAME_BUCKET  = local.endgame_bucket
+          # Refuse to start without the password below, rather than serve
+          # the site to everyone (backend `app.main`).
+          INVISIBLE_STRING_LOGIN_REQUIRED = "true"
+        }
+
+        # Fetched with the instance role at deploy; see login.tf.
+        runtime_environment_secrets = {
+          INVISIBLE_STRING_PASSWORD = data.aws_secretsmanager_secret.password.arn
         }
       }
     }
   }
+
+  # The deploy fetches the secret, so the role must be able to read it first.
+  depends_on = [aws_iam_role_policy_attachment.apprunner_password_read]
 
   instance_configuration {
     cpu               = var.app_runner_cpu

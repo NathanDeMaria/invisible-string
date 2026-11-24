@@ -9,6 +9,7 @@ from app.api.predict import router as predict_router
 from app.api.ratings import router as ratings_router
 from app.api.team_games import router as team_games_router
 from app.api.win_probability import router as win_probability_router
+from app.auth import install_login
 from app.settings import get_settings
 from app.spa import mount_spa
 
@@ -29,9 +30,23 @@ def create_app() -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    # Before the SPA: its catch-all would otherwise answer /login.
+    settings = get_settings()
+    if settings.password is not None:
+        install_login(
+            app,
+            settings.password.get_secret_value(),
+            secure_cookie=settings.secure_cookie,
+        )
+    elif settings.login_required:
+        raise RuntimeError(
+            "INVISIBLE_STRING_LOGIN_REQUIRED is set but INVISIBLE_STRING_PASSWORD "
+            "is not; refusing to serve the site without a login"
+        )
+
     # Only when a build is present. Running the API bare (tests, `make run`
     # alongside the vite dev server) is the normal local case.
-    static_dir = get_settings().static_dir
+    static_dir = settings.static_dir
     if static_dir.is_dir():
         mount_spa(app, static_dir)
 

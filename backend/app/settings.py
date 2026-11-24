@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,6 +72,20 @@ class Settings(BaseSettings):
     # it is rebuilt about once a season rather than nightly.
     distributions_prefix: str = "distributions/"
     distributions_cache_ttl_seconds: float = 900.0
+
+    # The site's one password (`app.auth`). App Runner reads it from Secrets
+    # Manager; unset, there's no login at all, which is what tests and local
+    # dev run on.
+    password: SecretStr | None = None
+
+    # Set in production beside the password, so a deploy that loses the secret
+    # refuses to start instead of quietly serving the site to everyone.
+    login_required: bool = False
+
+    # Secure cookies only travel over HTTPS. App Runner terminates TLS in
+    # front of us, so this stays on there; turn it off to log in over plain
+    # http on localhost.
+    secure_cookie: bool = True
 
 
 @lru_cache(maxsize=1)
