@@ -45,11 +45,19 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # cassandra is private. This puts its deploy key in an ssh-agent, which
+      # `ssh: default` hands to the Dockerfile's `RUN --mount=type=ssh`.
+      - name: Read access to cassandra
+        run: .github/cassandra-access.sh
+        env:
+          CASSANDRA_DEPLOY_KEY: ${{ secrets.CASSANDRA_DEPLOY_KEY }}
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          ssh: default
           # :latest is what App Runner watches; the sha tag is immutable and is
           # what a rollback re-points :latest at.
           tags: |
@@ -111,7 +119,33 @@ jobs:
           curl -fsS --retry 10 --retry-all-errors --retry-delay 6 "$URL/healthz"
           echo
 
-          # 2. It can reach the bucket. /api/leagues lists prefixes, so this
+          # 2. The login is on: without a session the API refuses. A deploy
+          #    that served the site open would otherwise pass every check
+          #    below.
+          status=$(curl -sS -o /dev/null -w '%{http_code}' "$URL/api/leagues")
+          if [ "$status" != "401" ]; then
+            echo "::error::/api/leagues answered $status without a session, not 401"
+            exit 1
+          fi
+
+          # Then log in the way a browser does, so the checks below read
+          # through the session. The apply role can read the secret; the
+          # value is masked before anything could echo it.
+          password=$(aws secretsmanager get-secret-value \
+            --secret-id invisible-string/password \
+            --query SecretString --output text)
+          echo "::add-mask::$password"
+          jar=$(mktemp)
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -c "$jar" \
+            --data-urlencode "password=$password" "$URL/login")
+          if [ "$status" != "303" ]; then
+            echo "::error::logging in answered $status, not 303"
+            exit 1
+          fi
+          # Every curl from here on carries the session cookie.
+          curl() { command curl -b "$jar" "$@"; }
+
+          # 3. It can reach the bucket. /api/leagues lists prefixes, so this
           #    fails on a missing s3:ListBucket -- which /healthz would not
           #    notice.
           leagues=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
@@ -136,7 +170,7 @@ jobs:
             exit 1
           fi
 
-          # 3. Rows actually come back. This is the assertion that earns its
+          # 4. Rows actually come back. This is the assertion that earns its
           #    keep: /healthz passes while GetObject is broken.
           league=$(echo "$leagues" | jq -r '.[0].league')
           body=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 6 \
@@ -144,7 +178,7 @@ jobs:
           echo "$body" | jq -e '.ratings | length > 0' > /dev/null
           echo "$body" | jq -r '"\(.league)/\(.model): \(.ratings | length) teams"'
 
-          # 4. The SPA is served from the same origin, so a deep link must
+          # 5. The SPA is served from the same origin, so a deep link must
           #    return HTML rather than a 404 (DESIGN.md section 4). Independent
           #    of whether any data exists -- the route is resolved in the
           #    browser, so all this proves is that the fallback is wired up.

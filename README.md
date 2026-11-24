@@ -34,6 +34,34 @@ This is the easiest way to run the one-time infra bootstrap:
 cd infra && make init && make apply
 ```
 
+## cassandra is private
+
+The backend depends on cassandra, a private repository, pinned in `uv.lock` by
+its https URL. Who fetches it, and how:
+
+- **A laptop or the devcontainer:** with your own GitHub login, the way git
+  fetches anything private (`gh auth setup-git` if `uv sync` can't reach it).
+  `docker compose build` passes your ssh agent into the build instead
+  (`ssh: [default]` in `compose.yaml`), so it needs a key in the agent that
+  GitHub accepts (`ssh-add -l`).
+- **CI** (backend checks, the image build, Pins): cassandra's deploy key,
+  read-only and good for that repository alone, in the `CASSANDRA_DEPLOY_KEY`
+  secret. `.github/cassandra-access.sh` loads it into an ssh-agent and has git
+  rewrite cassandra's https URL to ssh, which `uv` follows because it fetches
+  through the git binary. GitHub's host keys are pinned in
+  `.github/github_known_hosts`.
+
+To replace the key, make a new pair, add the public half to cassandra as a
+read-only deploy key, and put the private half in the secret:
+
+```sh
+ssh-keygen -t ed25519 -N "" -C "invisible-string CI reads cassandra" -f key
+gh api repos/NathanDeMaria/cassandra/keys -f title="invisible-string CI (read-only)" \
+  -f key="$(cat key.pub)" -F read_only=true
+gh secret set CASSANDRA_DEPLOY_KEY -R NathanDeMaria/invisible-string < key
+rm key key.pub
+```
+
 ## Running it locally
 
 Both modes read the test fixtures in `backend/tests/fixtures`, so neither needs
